@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: rag-api-monitor
+  namespace: rag-system
+  labels:
+    app: rag-api
+spec:
+  selector:
+    matchLabels:
+      app: rag-api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: sparse-service-monitor
+  namespace: rag-system
+  labels:
+    app: sparse-service
+spec:
+  selector:
+    matchLabels:
+      app: sparse-service
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s

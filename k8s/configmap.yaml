@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: rag-system
+data:
+  QDRANT_URL: "http://qdrant:6333"
+  FLASK_ENV: "production"
+  EMBEDDING_MODEL_NAME: "BAAI/bge-m3"
+  EMBEDDING_DIM: "1024"
+  HYBRID_DENSE_WEIGHT: "0.7"
+  HYBRID_SPARSE_WEIGHT: "0.3"
+  RERANK_TOP_N: "10"
+  RRF_K: "60"
+  RERANKER_MODEL: "BAAI/bge-reranker-v2-m3"
+  RERANKER_DEVICE: "cpu"
+  RERANKER_THREADS: "4"
+  USE_SPARSE: "true"
+  TELEGRAM_POLL_INTERVAL: "1.0"
+  CRAWL_STRATEGY: "jina"
+  CRAWL_TIMEOUT_S: "30"
+  CRAWL_MAX_PAGES: "1000"
+  CRAWL_DELAY_MS: "1000"
+  CRAWL_JITTER_MS: "500"

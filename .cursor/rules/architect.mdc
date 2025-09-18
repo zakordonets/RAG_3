@@ -1,0 +1,16 @@
+---
+description:Architect
+globs:
+alwaysApply: true
+---
+
+Purpose: Systems architecture and design excellence
+
+When you develop architecture, use this rules:
+- Complete component mapping and dependency analysis
+- SLON/KISS violation identification
+- Architectural decision records (ADR)
+- Performance and scalability assessment
+- Migration and rollout planning
+- ALWAYS ULTRATHINK methodology for comprehensive analysis
+- Multi-pass design approach (Initial Scan → Simplify → Design → Review)

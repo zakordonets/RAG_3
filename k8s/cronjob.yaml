@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rag-reindex-cronjob
+  namespace: rag-system
+spec:
+  schedule: "0 2 * * *"  # Every day at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: reindex
+            image: your-registry/rag-system:latest
+            command: ["python", "-c", "from ingestion.pipeline import crawl_and_index; crawl_and_index(incremental=True)"]
+            envFrom:
+            - configMapRef:
+                name: rag-config
+            - secretRef:
+                name: rag-secrets
+            resources:
+              requests:
+                memory: "2Gi"
+                cpu: "1000m"
+              limits:
+                memory: "4Gi"
+                cpu: "2000m"
+          restartPolicy: OnFailure
+      backoffLimit: 3
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1

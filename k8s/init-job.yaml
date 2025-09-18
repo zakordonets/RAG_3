@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-init-job
+  namespace: rag-system
+spec:
+  template:
+    spec:
+      containers:
+      - name: init
+        image: your-registry/rag-system:latest
+        command: ["python", "scripts/init_qdrant.py"]
+        envFrom:
+        - configMapRef:
+            name: rag-config
+        - secretRef:
+            name: rag-secrets
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      restartPolicy: OnFailure
+  backoffLimit: 3
