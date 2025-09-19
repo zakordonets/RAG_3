@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from loguru import logger
 from tqdm import tqdm
-from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap
+from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap, crawl_with_sitemap_progress
 from ingestion.parsers import parse_api_documentation, parse_release_notes, parse_faq_content, parse_guides
 from ingestion.chunker import chunk_text, text_hash
 from ingestion.indexer import upsert_chunks
@@ -20,29 +20,22 @@ def classify_page(url: str) -> str:
     return "guide"
 
 
-def crawl_and_index(incremental: bool = True) -> dict[str, Any]:
+def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[str, Any]:
     """Полный цикл: краулинг → чанкинг → эмбеддинги → upsert в Qdrant.
     incremental: если True — в будущем можно сравнивать hash и пропускать неизменённые.
+    strategy: стратегия crawling (jina, http, browser).
     Возвращает статистику по страницам и чанкам.
     """
-    # 0) Если есть sitemap.xml — соберём список URL и скачаем обычным HTTP
-    urls = crawl_sitemap()
-    pages: list[dict] = []
-    if urls:
-        for u in urls:
-            try:
-                sub = crawl(start_url=u, strategy="jina")
-                pages.extend(sub)
-            except Exception:
-                pass
-    # 1) Фолбэк: если sitemap пуст, возьмём корень через Jina
+    # 1) Используем улучшенный crawling с правильным прогрессом
+    logger.info(f"Начинаем crawling со стратегией: {strategy}")
+    pages = crawl_with_sitemap_progress(strategy=strategy)
+    
+    # 2) Фолбэки если основной метод не сработал
     if not pages:
-        pages = crawl(strategy="jina")
-    if not pages:
-        # 2) MkDocs index
+        logger.warning("Sitemap crawling не дал результатов, пробуем MkDocs index...")
         pages = crawl_mkdocs_index()
     if not pages:
-        # 3) Фолбэк: браузерный обход
+        logger.warning("MkDocs index недоступен, пробуем браузерный обход...")
         pages = crawl(strategy="browser")
     total_chunks = 0
     with tqdm(total=len(pages), desc="Indexing") as pbar:

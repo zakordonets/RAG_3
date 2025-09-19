@@ -235,6 +235,77 @@ def crawl_seed(urls: list[str] | None = None) -> list[dict]:
 
 
 # --- Альтернативный парсер для MkDocs search_index.json ---
+def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina") -> list[dict]:
+    """
+    Улучшенный crawling с правильным отображением прогресса.
+    Сначала получает все URL из sitemap, затем показывает прогресс для каждой страницы.
+    """
+    # 1. Получаем список всех URL из sitemap
+    urls = crawl_sitemap(base_url)
+    if not urls:
+        logger.warning("Sitemap пуст или недоступен, используем fallback к обычному crawling")
+        return crawl(start_url=base_url, strategy=strategy)
+    
+    logger.info(f"Найдено {len(urls)} URL в sitemap, начинаем crawling...")
+    
+    # 2. Обрабатываем каждый URL с единым прогресс-баром
+    pages: list[dict] = []
+    session = _build_session()
+    
+    with tqdm(total=len(urls), desc="Crawling pages", unit="page") as pbar:
+        for i, url in enumerate(urls, 1):
+            try:
+                url = _normalize_url(url)
+                timeout = CONFIG.crawl_timeout_s
+                pbar.set_description(f"Crawling ({i}/{len(urls)})")
+                logger.info(f"GET {url} [{i}/{len(urls)}] timeout={timeout}s strategy={strategy}")
+                
+                if strategy == "browser":
+                    html = fetch_html_sync(url, timeout_s=timeout, headless=False)
+                    pages.append({"url": url, "html": html})
+                elif strategy == "jina":
+                    text = _jina_reader_fetch(url, timeout=timeout)
+                    pages.append({"url": url, "html": text, "text": text})
+                else:
+                    # HTTP (https) с фолбэками: HTTP → Playwright → Jina
+                    try:
+                        resp = session.get(url, timeout=timeout, allow_redirects=True)
+                        resp.raise_for_status()
+                        # если редиректнули на http, переиграем на https через normalize
+                        final_url = resp.url
+                        if str(final_url).startswith("http://docs-chatcenter.edna.ru"):
+                            raise requests.exceptions.ConnectTimeout("downgraded to http, fallback")
+                        html = resp.text
+                        content_type = resp.headers.get("Content-Type", "")
+                        logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)}")
+                        pages.append({"url": url, "html": html})
+                    except Exception as e_http:
+                        logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying browser…")
+                        try:
+                            html = fetch_html_sync(url, timeout_s=timeout, headless=False)
+                            pages.append({"url": url, "html": html})
+                        except Exception as e_browser:
+                            logger.warning(f"Browser fetch failed for {url}: {type(e_browser).__name__}: {e_browser}. Trying Jina…")
+                            try:
+                                text = _jina_reader_fetch(url, timeout=timeout)
+                                pages.append({"url": url, "html": text, "text": text})
+                            except Exception as e_jina:
+                                logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
+                                # Не поднимаем исключение, просто пропускаем эту страницу
+                                pass
+                
+            except Exception as e:
+                logger.warning(f"Failed {url}: {type(e).__name__}: {e}")
+            
+            # вежливая задержка + джиттер
+            delay = (CONFIG.crawl_delay_ms + random.randint(0, CONFIG.crawl_jitter_ms)) / 1000.0
+            time.sleep(delay)
+            pbar.update(1)
+    
+    logger.info(f"Crawling завершен: {len(pages)} страниц из {len(urls)} URL")
+    return pages
+
+
 def crawl_mkdocs_index(base_url: str = "https://docs-chatcenter.edna.ru/") -> list[dict]:
     """Если сайт собран на MkDocs, доступен search_index.json с готовыми текстами.
     Это позволяет обойти антибот и парсить контент без рендера.
