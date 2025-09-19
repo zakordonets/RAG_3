@@ -25,43 +25,44 @@
 
 4) Retrieval Layer
    - HybridRetriever для Qdrant:
-     - Dense-векторы: BGE-M3 (через Ollama embedding API).
-     - Sparse-векторы: BGE-M3 sparse (локальный сервис на FlagEmbedding). Хранение вместе с dense в Qdrant.
+     - Dense-векторы: BGE-M3 через ONNX с DirectML (GPU ускорение) или CPU fallback.
+     - Sparse-векторы: BGE-M3 sparse (локальная генерация через BGE-M3 на CPU). Хранение вместе с dense в Qdrant как named vectors.
    - Fusion: RRF (Reciprocal Rank Fusion) поверх отдельных результатов dense и sparse.
    - Metadata-boost: учет `page_type` (API/FAQ/guide/release_notes), свежести `release_notes` и формы вопроса (вопросительные — boost FAQ).
    - Реранкинг (второй шаг): bge-reranker-v2-m3 по top-N (например, N=30 → топ-10).
-   - Ресурсы: CPU-инференс (12 потоков, 48 GB RAM). Параллелизм ограничиваем по числу потоков.
+   - Ресурсы: Hybrid CPU+GPU инференс (DirectML для dense, CPU для sparse, 12 потоков, 48 GB RAM). Параллелизм ограничиваем по числу потоков.
 
 5) Generation Layer
    - LLM Router:
-     - Основные провайдеры: YandexGPT 5.1 Pro (дефолт), GPT-5 (быстрое переключение), Deepseek (fallback).
+     - Основные провайдеры: YandexGPT RC (yandexgpt/rc - дефолт), GPT-5 (быстрое переключение), Deepseek (fallback).
      - Fallback-логика: если недоступен YandexGPT — переключить на GPT-5; если и он недоступен — Deepseek.
    - Prompt Composer: формирование системного промпта с инструкциями, стилем и ограничениями на опору на контекст.
    - Iterative RAG (retrieve→generate→retrieve) для сложных запросов (ограничение глубины).
    - Правила ответов: один финальный ответ без streaming; включать цитаты-источники (URL) и списки; добавлять ссылку «Подробнее» на релевантную документацию; при отсутствии релевантного контекста — явно сообщать и запрашивать уточнение.
 
 6) Ingestion & Indexing
-   - HTML Crawler для `docs-chatcenter.edna.ru` (полное индексирование всего портала; карты сайта нет; без ограничений глубины/скорости).
+   - HTML Crawler для `docs-chatcenter.edna.ru` (инкрементальное индексирование с использованием sitemap.xml и кеширования).
    - Specialized Parsers:
      - API docs: извлечение endpoints/parameters/examples/responses.
      - Release Notes: version/features/fixes/breaking_changes + приоритизация свежих версий.
      - FAQ: извлечение QA-пар.
      - Guides/Manuals: заголовки, параграфы, таблицы, списки, ссылки и контекст изображений (alt/figcaption).
    - Chunker с Quality Gates:
+     - Оптимальное разбиение: 60-250 токенов, сохранение целостности параграфов, автоматический выбор между семантическим и простым чанкингом.
      - Контроль min/max длины (в токенах), no-empty, deduplication (hash/SimHash/MinHash на нормализованном тексте).
      - Сохранение семантики заголовков (иерархия H1–H6) и таблиц.
    - Embedding Service:
-     - Dense: Ollama (BGE-M3) → вектор.
-     - Sparse: локальный сервис на `FlagEmbedding` (BGE-M3 sparse) → словарь {term: weight}.
+     - Dense: BGE-M3 через ONNX с DirectML (GPU ускорение) → вектор.
+     - Sparse: BGE-M3 sparse (локальная генерация на CPU) → словарь {term: weight}.
    - Qdrant Writer:
-     - Гибридная коллекция с полями: dense-вектор, sparse-вектор, payload.
+     - Гибридная коллекция с named vectors: dense-вектор, sparse-вектор, payload.
      - Инкрементальность: сравнение хэшей контента/updated_at; upsert измененных чанков, удаление убывших. Запуск пока вручную (cron позже).
-   - Визуальный прогресс: отображение хода краулинга и индексации (CLI прогресс-бар и/или простая страница статуса).
+   - Визуальный прогресс: отображение хода краулинга и индексации (CLI прогресс-бар с sitemap-based подсчетом).
 
 7) Storage (Qdrant)
    - Коллекция: `chatcenter_docs`
-     - Dense vector size: соответствует BGE-M3 (как в модели).
-     - Sparse vector: Qdrant sparse payload.
+     - Named vectors: `dense` (1024 измерения) и `sparse` (SparseVectorParams).
+     - 100% покрытие sparse векторами (512/512 точек содержат и dense, и sparse векторы).
      - Payload (метаданные):
        - `url`, `title`, `breadcrumbs`, `section` (e.g., «АРМ агента»), `page_type` (api|faq|guide|release_notes),
        - `version` (для релиз-нот), `updated_at`, `hash`, `anchors`, `headings`, `images`, `links`.
@@ -117,9 +118,9 @@ def crawl_and_index(incremental: bool = True) -> dict: ...
 
 ### Qdrant: схема коллекции и запросы
 - Коллекция `chatcenter_docs`:
-  - vectors: `dense: float32[dim]`
-  - sparse: `sparse` (Qdrant sparse vector)
+  - Named vectors: `dense: float32[1024]`, `sparse: SparseVector`
   - payload: поля метаданных
+  - 100% покрытие sparse векторами
 
 - Пример гибридного поиска (концептуально):
 ```python
@@ -134,7 +135,7 @@ client.search(collection_name,
 ### Конфигурация и окружение
 - **ENV переменные** (полный список в `env.example`):
   - **Qdrant**: QDRANT_URL, QDRANT_API_KEY, QDRANT_HNSW_M, QDRANT_HNSW_EF_CONSTRUCT, QDRANT_HNSW_EF_SEARCH, QDRANT_HNSW_FULL_SCAN_THRESHOLD
-  - **Эмбеддинги**: OLLAMA_URL, EMBEDDING_MODEL_TYPE=BGE-M3, EMBEDDING_MODEL_NAME=bge-m3:latest, SPARSE_SERVICE_URL, USE_SPARSE
+  - **Эмбеддинги**: EMBEDDINGS_BACKEND=auto, EMBEDDING_DEVICE=auto, USE_SPARSE=true
   - **LLM провайдеры**: DEEPSEEK_API_URL, DEEPSEEK_API_KEY, DEEPSEEK_MODEL, YANDEX_API_URL, YANDEX_CATALOG_ID, YANDEX_API_KEY, YANDEX_MODEL, YANDEX_MAX_TOKENS, GPT5_API_URL, GPT5_API_KEY, GPT5_MODEL
   - **Telegram**: TELEGRAM_BOT_TOKEN, TELEGRAM_POLL_INTERVAL
   - **Кэширование**: REDIS_URL, CACHE_ENABLED
@@ -143,15 +144,17 @@ client.search(collection_name,
 
 ### ADR (ключевые решения)
 1) **Qdrant** как единая база для dense+sparse → упрощение стека и гибридный поиск «из коробки»
-2) **BGE-M3**: dense → SentenceTransformers (локально); sparse → локальный FlagEmbedding. Хранение обоих представлений в одной коллекции
-3) **RRF + bge-reranker-v2-m3** (CPU, 12 потоков): старт равные веса (0.5/0.5), затем A/B-тест (например 0.6/0.4)
-4) **Инкрементальная индексация** по hash/updated_at и дифф-стратегии; запуск вручную (cron позднее)
+2) **BGE-M3**: dense → ONNX с DirectML (GPU ускорение); sparse → локальная генерация через BGE-M3 на CPU. Хранение обоих представлений в одной коллекции как named vectors
+3) **RRF + bge-reranker-v2-m3** (Hybrid CPU+GPU, 12 потоков): старт равные веса (0.5/0.5), затем A/B-тест (например 0.6/0.4)
+4) **Инкрементальная индексация** по hash/updated_at и дифф-стратегии с кешированием и sitemap-based прогрессом; запуск вручную (cron позднее)
 5) **Ограниченная глубина** пошагового RAG (max_depth=3) для контроля стоимости и латентности
 6) **Comprehensive Error Handling**: Try-catch на каждом этапе с graceful degradation и fallback логикой
 7) **Circuit Breaker Pattern**: Защита от каскадных сбоев внешних сервисов с автоматическим восстановлением
 8) **Кэширование**: Redis + in-memory fallback для эмбеддингов и результатов поиска
 9) **Валидация и санитизация**: Marshmallow схемы и защита от XSS/инъекций
 10) **Prometheus метрики**: Полный мониторинг производительности, ошибок и состояния системы
+11) **Sparse векторы**: Полная замена коллекции с 100% покрытием sparse векторами (512/512 точек)
+12) **Оптимальный чанкинг**: 60-250 токенов с сохранением целостности параграфов
 
 ### Масштабирование и производительность
 - **Асинхронная индексация** и парсинг (пулы воркеров)
@@ -215,6 +218,13 @@ client.search(collection_name,
 - **`rag_llm_duration_seconds`** — время генерации LLM
 - **`rag_cache_hits_total`** — попадания в кэш
 - **`rag_errors_total`** — ошибки по типам и компонентам
+
+### Управление коллекциями и sparse векторами
+- **Полная замена коллекции**: Скрипт `recreate_collection_with_sparse.py` для создания новой коллекции с поддержкой sparse векторов
+- **Полная переиндексация**: Скрипт `full_reindex.py` для переиндексации всех документов с sparse векторами
+- **Проверка покрытия**: Скрипт `verify_sparse_coverage.py` для верификации 100% покрытия sparse векторами
+- **Детальное тестирование**: Скрипт `test_sparse_search_detailed.py` для comprehensive тестирования sparse поиска
+- **Управление кешем**: Скрипты для очистки и статистики кеша краулинга
 
 ### Будущие интерфейсы
 - Реализация дополнительных `ChannelAdapter`: Web-виджет и edna API Bot Connect (двусторонние вложения не требуются на старте)
