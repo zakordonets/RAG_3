@@ -22,7 +22,7 @@ def classify_page(url: str) -> str:
 
 def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto") -> dict[str, Any]:
     """Полный цикл: краулинг → чанкинг → эмбеддинги → upsert в Qdrant.
-    
+
     Args:
         incremental: если True — использует инкрементальное обновление
         strategy: стратегия crawling (jina, http, browser)
@@ -31,20 +31,20 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             - "auto": только новые/измененные страницы (по умолчанию)
             - "force": переиндексировать все страницы
             - "cache_only": использовать только кешированные страницы
-    
+
     Returns:
         Статистика по страницам и чанкам
     """
     logger.info(f"Начинаем {'инкрементальную ' if incremental else ''}индексацию")
     logger.info(f"Параметры: strategy={strategy}, use_cache={use_cache}, reindex_mode={reindex_mode}")
-    
+
     # 1) Используем улучшенный crawling с кешированием
     if reindex_mode == "cache_only":
         logger.info("Режим cache_only: используем только кешированные страницы")
         from ingestion.crawl_cache import get_crawl_cache
         cache = get_crawl_cache()
         pages = []
-        
+
         for url in cache.get_cached_urls():
             cached_page = cache.get_page(url)
             if cached_page:
@@ -55,7 +55,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                     "title": cached_page.title,
                     "cached": True
                 })
-        
+
         logger.info(f"Загружено {len(pages)} страниц из кеша")
     else:
         pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache)

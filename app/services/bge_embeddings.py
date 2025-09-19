@@ -367,6 +367,18 @@ def _embed_unified_hybrid(
         bge_result = _embed_unified_bge(text, max_length, False, return_sparse, return_colbert, context)
         result["lexical_weights"] = bge_result["lexical_weights"]
         result["colbert_vecs"] = bge_result["colbert_vecs"]
+        # Добавляем sparse векторы из BGE-M3 результата
+        if "sparse_vecs" in bge_result:
+            result["sparse_vecs"] = bge_result["sparse_vecs"]
+
+        # Преобразуем lexical_weights в формат sparse векторов для поиска
+        if "lexical_weights" in bge_result and bge_result["lexical_weights"]:
+            lexical_weights = bge_result["lexical_weights"][0]
+            if isinstance(lexical_weights, dict) and lexical_weights:
+                # Преобразуем словарь в indices/values формат
+                indices = list(lexical_weights.keys())
+                values = list(lexical_weights.values())
+                result["sparse_vecs"] = [{"indices": indices, "values": values}]
 
     return result
 

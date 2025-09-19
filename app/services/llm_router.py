@@ -37,7 +37,8 @@ def _escape_markdown_v2(text: str) -> str:
 
 
 def _yandex_complete(prompt: str, max_tokens: int = 800) -> str:
-    url = f"{CONFIG.yandex_api_url}/text:generate"
+    url = f"{CONFIG.yandex_api_url}/completion"
+    logger.debug(f"Yandex URL: {url}")
     headers = {
         "Authorization": f"Api-Key {CONFIG.yandex_api_key}",
         "x-folder-id": CONFIG.yandex_catalog_id,
@@ -45,9 +46,17 @@ def _yandex_complete(prompt: str, max_tokens: int = 800) -> str:
     }
     payload = {
         "modelUri": f"gpt://{CONFIG.yandex_catalog_id}/{CONFIG.yandex_model}",
-        "maxTokens": str(min(max_tokens, CONFIG.yandex_max_tokens)),
-        "temperature": 0.2,
-        "texts": [prompt],
+        "completionOptions": {
+            "stream": False,
+            "temperature": 0.2,
+            "maxTokens": str(min(max_tokens, CONFIG.yandex_max_tokens))
+        },
+        "messages": [
+            {
+                "role": "user",
+                "text": prompt
+            }
+        ]
     }
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=60)
@@ -64,9 +73,9 @@ def _yandex_complete(prompt: str, max_tokens: int = 800) -> str:
     except Exception as e:
         logger.error(f"Yandex JSON parse error: {e}; body preview={body_preview!r}")
         raise
-    # Ответ Yandex может отличаться; извлекаем текст первой альтернативы
+    # Ответ Yandex может отличаться; извлекаем текст из completion
     try:
-        text = data["result"]["alternatives"][0]["text"]
+        text = data["result"]["alternatives"][0]["message"]["text"]
     except Exception:
         text = str(data)
     # Логируем сырой ответ (repr, чтобы видеть экранирования)
@@ -146,11 +155,12 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
         "- ссылки только в формате [текст](URL); не выдумывайте URL;\n"
         "- код/команды — в тройных кавычках ``` (без языка);\n"
         "- избегайте лишних символов, которые могут вызвать проблемы при форматировании.\n\n"
-        "Структура (соблюдайте порядок и названия разделов):\n"
-        "**Кратко** — 1–3 предложения сути.\n"
-        "**Шаги** — подробная пошаговая инструкция (маркированный список).\n"
-        "**Важно** — риски/заметки/ограничения (по необходимости).\n"
-        "**Ссылки** — перечень только из переданных URL (если они были).\n"
+//        "Структура (соблюдайте порядок и названия разделов):\n"
+//        "**Кратко** — 1–3 предложения сути.\n"
+//        "**Шаги** — подробная пошаговая инструкция (маркированный список).\n"
+//        "**Важно** — риски/заметки/ограничения (по необходимости).\n"
+//        "**Ссылки** — перечень только из переданных URL (если они были).\n"
+//        "**Ссылки** — перечень только из переданных URL (если они были).\n"
         f"Вопрос: {query}\n\n"
         f"Контекст (ссылки):\n{sources_block}"
     )

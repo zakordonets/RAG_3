@@ -53,34 +53,42 @@ def upsert_chunks(chunks: list[dict]) -> int:
         pid = str(uuid.UUID(hex=hex32))
         payload = ch.get("payload", {})
         payload.update({"hash": pid})
-        point_kwargs = {
-            "id": pid,
-            "vector": {"dense": dense_vecs[i]},
-            "payload": payload,
-        }
+        # Начинаем с dense вектора
+        vector_dict = {"dense": dense_vecs[i]}
+
         # Добавляем sparse только если сервис включён и вернул непустые данные
         if CONFIG.use_sparse:
             try:
-                if CONFIG.embeddings_backend in ["bge", "hybrid"]:
+                if CONFIG.embeddings_backend in ["bge", "hybrid", "auto"]:
                     # BGE-M3 format: lexical_weights dict
                     lex_weights = sparse_results[i]
+                    logger.debug(f"Chunk {i}: sparse_results type: {type(lex_weights)}, content: {lex_weights}")
                     if lex_weights and isinstance(lex_weights, dict):
-                        indices = list(lex_weights.keys())
-                        values = [float(lex_weights[k]) for k in indices]
+                        indices = [int(k) for k in lex_weights.keys()]  # Ensure int indices
+                        values = [float(lex_weights[k]) for k in lex_weights.keys()]
+                        logger.debug(f"Chunk {i}: indices={len(indices)}, values={len(values)}")
                         if indices:  # Only add if non-empty
-                            point_kwargs["sparse_vectors"] = {
-                                "sparse": SparseVector(indices=indices, values=values)
-                            }
+                            # Добавляем sparse вектор в тот же dict
+                            vector_dict["sparse"] = SparseVector(indices=indices, values=values)
+                            logger.debug(f"Chunk {i}: Added sparse vector with {len(indices)} indices")
+                        else:
+                            logger.debug(f"Chunk {i}: No indices, skipping sparse vector")
+                    else:
+                        logger.debug(f"Chunk {i}: lex_weights is empty or not dict: {lex_weights}")
                 else:
                     # Legacy format: dict with indices/values
                     sv = sparse_results[i]
                     if isinstance(sv, dict) and ("indices" in sv and "values" in sv) and sv.get("indices"):
-                        point_kwargs["sparse_vectors"] = {
-                            "sparse": SparseVector(indices=sv["indices"], values=[float(v) for v in sv["values"]])
-                        }
+                        vector_dict["sparse"] = SparseVector(indices=sv["indices"], values=[float(v) for v in sv["values"]])
             except Exception as e:
                 logger.warning(f"Failed to process sparse vector for chunk {i}: {e}")
                 pass
+
+        point_kwargs = {
+            "id": pid,
+            "vector": vector_dict,
+            "payload": payload,
+        }
         points.append(PointStruct(**point_kwargs))
 
     if not points:

@@ -65,10 +65,10 @@ class AppConfig:
     gpt5_api_url: str = os.getenv("GPT5_API_URL", "")
     gpt5_api_key: str = os.getenv("GPT5_API_KEY", "")
     gpt5_model: str = os.getenv("GPT5_MODEL", "")
-    yandex_api_url: str = os.getenv("YANDEX_API_URL", "https://llm.api.cloud.yandex.net/v1")
+    yandex_api_url: str = os.getenv("YANDEX_API_URL", "https://llm.api.cloud.yandex.net/foundationModels/v1")
     yandex_catalog_id: str = os.getenv("YANDEX_CATALOG_ID", "")
     yandex_api_key: str = os.getenv("YANDEX_API_KEY", "")
-    yandex_model: str = os.getenv("YANDEX_MODEL", "yandexgpt")
+    yandex_model: str = os.getenv("YANDEX_MODEL", "yandexgpt/rc")
     yandex_max_tokens: int = int(os.getenv("YANDEX_MAX_TOKENS", "4000"))
 
     # Telegram
