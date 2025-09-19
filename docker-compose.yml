@@ -47,26 +47,6 @@ services:
     networks:
       - rag-network
 
-  sparse-service:
-    build: .
-    container_name: rag-sparse-service
-    command: python sparse_service/app.py
-    ports:
-      - "8001:8001"
-    environment:
-      - QDRANT_URL=http://qdrant:6333
-    depends_on:
-      qdrant:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - rag-network
-
   rag-api:
     build: .
     container_name: rag-api
@@ -90,7 +70,6 @@ services:
       - GPT5_API_KEY=${GPT5_API_KEY}
       - GPT5_MODEL=${GPT5_MODEL:-gpt-5}
       - DEFAULT_LLM=${DEFAULT_LLM:-yandex}
-      - SPARSE_SERVICE_URL=http://sparse-service:8001
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-BAAI/bge-m3}
       - EMBEDDING_DIM=${EMBEDDING_DIM:-1024}
       - HYBRID_DENSE_WEIGHT=${HYBRID_DENSE_WEIGHT:-0.7}
@@ -108,8 +87,6 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
-      sparse-service:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -144,7 +121,6 @@ services:
       - DEFAULT_LLM=${DEFAULT_LLM:-yandex}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_POLL_INTERVAL=${TELEGRAM_POLL_INTERVAL:-1.0}
-      - SPARSE_SERVICE_URL=http://sparse-service:8001
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-BAAI/bge-m3}
       - EMBEDDING_DIM=${EMBEDDING_DIM:-1024}
       - HYBRID_DENSE_WEIGHT=${HYBRID_DENSE_WEIGHT:-0.7}

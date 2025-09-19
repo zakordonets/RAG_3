@@ -4,7 +4,7 @@ from loguru import logger
 
 from typing import Any
 from app.services.query_processing import process_query
-from app.services.embeddings import embed_dense, embed_sparse
+from app.services.embeddings import embed_dense
 from app.services.bge_embeddings import embed_unified, embed_dense_optimized, embed_sparse_optimized
 from app.config import CONFIG
 from app.services.retrieval import hybrid_search

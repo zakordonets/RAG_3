@@ -36,7 +36,7 @@ class AppConfig:
     embedding_use_colbert: bool = os.getenv("EMBEDDING_USE_COLBERT", "false").lower() in ("1", "true", "yes")
     embedding_use_fp16: bool = os.getenv("EMBEDDING_USE_FP16", "true").lower() in ("1", "true", "yes")
 
-    # Sparse service
+    # Sparse service (deprecated - now handled by BGE-M3 locally)
     sparse_service_url: str = os.getenv("SPARSE_SERVICE_URL", "http://localhost:8001")
     use_sparse: bool = os.getenv("USE_SPARSE", "true").lower() in ("1", "true", "yes")
 

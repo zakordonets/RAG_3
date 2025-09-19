@@ -106,11 +106,11 @@ class CacheManager:
                 self.memory_cache.set(key, value, ttl)
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
-    
+
     def _make_serializable(self, obj: Any) -> Any:
         """Конвертирует объекты в JSON-сериализуемые типы."""
         import numpy as np
-        
+
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, np.floating):
