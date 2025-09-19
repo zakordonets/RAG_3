@@ -129,9 +129,8 @@ class SemanticChunker:
 
             # Проверяем, поместится ли предложение в текущий чанк
             if current_tokens + sentence_tokens > self.max_chunk_size:
-                # Чанк заполнен, сохраняем его
-                if current_tokens >= self.min_chunk_size:
-                    chunks.append(' '.join(current_chunk))
+                # Чанк заполнен, сохраняем его (quality gates отфильтруют позже)
+                chunks.append(' '.join(current_chunk))
                 current_chunk = [sentence]
                 current_tokens = sentence_tokens
                 continue
@@ -145,13 +144,12 @@ class SemanticChunker:
                 current_tokens += sentence_tokens
             else:
                 # Предложения разные, начинаем новый чанк
-                if current_tokens >= self.min_chunk_size:
-                    chunks.append(' '.join(current_chunk))
+                chunks.append(' '.join(current_chunk))
                 current_chunk = [sentence]
                 current_tokens = sentence_tokens
 
-        # Добавляем последний чанк
-        if current_chunk and current_tokens >= self.min_chunk_size:
+        # Добавляем последний чанк (всегда, quality gates отфильтруют позже)
+        if current_chunk:
             chunks.append(' '.join(current_chunk))
 
         return chunks
@@ -171,8 +169,8 @@ class SemanticChunker:
 
             # Проверяем размер
             if current_tokens + paragraph_tokens > self.max_chunk_size:
-                if current_tokens >= self.min_chunk_size:
-                    chunks.append('\n\n'.join(current_chunk))
+                # Сохраняем чанк даже если он меньше минимального (quality gates отфильтруют позже)
+                chunks.append('\n\n'.join(current_chunk))
                 current_chunk = [paragraph]
                 current_tokens = paragraph_tokens
                 continue
@@ -184,13 +182,13 @@ class SemanticChunker:
                 current_chunk.append(paragraph)
                 current_tokens += paragraph_tokens
             else:
-                if current_tokens >= self.min_chunk_size:
-                    chunks.append('\n\n'.join(current_chunk))
+                # Сохраняем чанк даже если он меньше минимального
+                chunks.append('\n\n'.join(current_chunk))
                 current_chunk = [paragraph]
                 current_tokens = paragraph_tokens
 
-        # Добавляем последний чанк
-        if current_chunk and current_tokens >= self.min_chunk_size:
+        # Добавляем последний чанк (всегда, quality gates отфильтруют позже)
+        if current_chunk:
             chunks.append('\n\n'.join(current_chunk))
 
         return chunks
@@ -206,49 +204,74 @@ class SemanticChunker:
             Список чанков
         """
         if not text or not text.strip():
+            logger.debug("Empty text provided to semantic chunker")
             return []
+
+        text_tokens = self._estimate_tokens(text)
+        logger.debug(f"Semantic chunker: processing text with {text_tokens} tokens")
 
         # Сначала пробуем разбить по абзацам
         paragraphs = self._split_into_paragraphs(text)
+        logger.debug(f"Split into {len(paragraphs)} paragraphs")
 
         # Если абзацы слишком большие, разбиваем по предложениям
-        if any(self._estimate_tokens(p) > self.max_chunk_size for p in paragraphs):
-            logger.debug("Using sentence-based chunking due to large paragraphs")
+        large_paragraphs = [p for p in paragraphs if self._estimate_tokens(p) > self.max_chunk_size]
+        if large_paragraphs:
+            logger.debug(f"Using sentence-based chunking due to {len(large_paragraphs)} large paragraphs")
             sentences = []
             for paragraph in paragraphs:
                 sentences.extend(self._split_into_sentences(paragraph))
+            logger.debug(f"Split into {len(sentences)} sentences")
             chunks = self._create_chunks_from_sentences(sentences)
         else:
             logger.debug("Using paragraph-based chunking")
             chunks = self._create_chunks_from_paragraphs(paragraphs)
 
+        logger.debug(f"Created {len(chunks)} chunks before quality gates")
+
         # Применяем quality gates
         chunks = self._apply_quality_gates(chunks)
+
+        logger.debug(f"Final result: {len(chunks)} chunks after quality gates")
+        if not chunks:
+            logger.warning(f"Semantic chunker produced no chunks from {text_tokens} tokens of text")
 
         return chunks
 
     def _apply_quality_gates(self, chunks: List[str]) -> List[str]:
         """Применяет quality gates к чанкам."""
+        logger.debug(f"Quality gates: starting with {len(chunks)} chunks")
+        
         # Удаляем пустые чанки
-        chunks = [chunk for chunk in chunks if chunk.strip()]
+        non_empty = [chunk for chunk in chunks if chunk.strip()]
+        logger.debug(f"Quality gates: {len(non_empty)} non-empty chunks (removed {len(chunks) - len(non_empty)})")
 
         # Дедупликация
         seen = set()
         unique_chunks = []
-        for chunk in chunks:
+        for chunk in non_empty:
             chunk_hash = hashlib.sha256(chunk.strip().encode("utf-8")).hexdigest()
             if chunk_hash not in seen:
                 seen.add(chunk_hash)
                 unique_chunks.append(chunk)
+        
+        duplicates_removed = len(non_empty) - len(unique_chunks)
+        if duplicates_removed > 0:
+            logger.debug(f"Quality gates: {len(unique_chunks)} unique chunks (removed {duplicates_removed} duplicates)")
 
         # Проверяем минимальный размер
         filtered_chunks = []
+        too_small_count = 0
         for chunk in unique_chunks:
             tokens = self._estimate_tokens(chunk)
             if tokens >= self.min_chunk_size:
                 filtered_chunks.append(chunk)
             else:
-                logger.debug(f"Chunk too small ({tokens} tokens), skipping")
+                too_small_count += 1
+                logger.debug(f"Chunk too small ({tokens} < {self.min_chunk_size} tokens), skipping: '{chunk[:100]}...'")
+        
+        if too_small_count > 0:
+            logger.debug(f"Quality gates: {len(filtered_chunks)} chunks passed size filter (removed {too_small_count} too small)")
 
         return filtered_chunks
 
@@ -297,9 +320,12 @@ def get_semantic_chunker() -> SemanticChunker:
     global _semantic_chunker
     if _semantic_chunker is None:
         _semantic_chunker = SemanticChunker(
-            min_chunk_size=CONFIG.chunk_min_tokens,
-            max_chunk_size=CONFIG.chunk_max_tokens
+            min_chunk_size=max(CONFIG.chunk_min_tokens // 2, 60),  # Более мягкий минимум
+            max_chunk_size=CONFIG.chunk_max_tokens,
+            similarity_threshold=0.6  # Менее строгий порог сходства
         )
+        logger.info(f"Semantic chunker initialized: min_size={_semantic_chunker.min_chunk_size}, "
+                   f"max_size={_semantic_chunker.max_chunk_size}, threshold={_semantic_chunker.similarity_threshold}")
     return _semantic_chunker
 
 

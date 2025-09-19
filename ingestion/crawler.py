@@ -245,13 +245,13 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
     if not urls:
         logger.warning("Sitemap пуст или недоступен, используем fallback к обычному crawling")
         return crawl(start_url=base_url, strategy=strategy)
-    
+
     logger.info(f"Найдено {len(urls)} URL в sitemap, начинаем crawling...")
-    
+
     # 2. Обрабатываем каждый URL с единым прогресс-баром
     pages: list[dict] = []
     session = _build_session()
-    
+
     with tqdm(total=len(urls), desc="Crawling pages", unit="page") as pbar:
         for i, url in enumerate(urls, 1):
             try:
@@ -259,7 +259,7 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                 timeout = CONFIG.crawl_timeout_s
                 pbar.set_description(f"Crawling ({i}/{len(urls)})")
                 logger.info(f"GET {url} [{i}/{len(urls)}] timeout={timeout}s strategy={strategy}")
-                
+
                 if strategy == "browser":
                     html = fetch_html_sync(url, timeout_s=timeout, headless=False)
                     pages.append({"url": url, "html": html})
@@ -293,15 +293,15 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                                 logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
                                 # Не поднимаем исключение, просто пропускаем эту страницу
                                 pass
-                
+
             except Exception as e:
                 logger.warning(f"Failed {url}: {type(e).__name__}: {e}")
-            
+
             # вежливая задержка + джиттер
             delay = (CONFIG.crawl_delay_ms + random.randint(0, CONFIG.crawl_jitter_ms)) / 1000.0
             time.sleep(delay)
             pbar.update(1)
-    
+
     logger.info(f"Crawling завершен: {len(pages)} страниц из {len(urls)} URL")
     return pages
 
@@ -358,4 +358,3 @@ def crawl_mkdocs_index(base_url: str = "https://docs-chatcenter.edna.ru/") -> li
     for p in pages:
         uniq.setdefault(p["url"], p)
     return list(uniq.values())
-

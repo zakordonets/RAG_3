@@ -29,7 +29,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
     # 1) Используем улучшенный crawling с правильным прогрессом
     logger.info(f"Начинаем crawling со стратегией: {strategy}")
     pages = crawl_with_sitemap_progress(strategy=strategy)
-    
+
     # 2) Фолбэки если основной метод не сработал
     if not pages:
         logger.warning("Sitemap crawling не дал результатов, пробуем MkDocs index...")
@@ -37,8 +37,11 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
     if not pages:
         logger.warning("MkDocs index недоступен, пробуем браузерный обход...")
         pages = crawl(strategy="browser")
-    total_chunks = 0
-    with tqdm(total=len(pages), desc="Indexing") as pbar:
+    # Собираем все чанки для батчевой обработки
+    all_chunks = []
+    logger.info("Обрабатываем страницы и собираем чанки...")
+    
+    with tqdm(total=len(pages), desc="Processing pages") as pbar:
         for p in pages:
             url = p["url"]
             html = p.get("html") or ""
@@ -53,10 +56,10 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
                 parsed = parse_guides(html)
                 text = parsed.get("text") or html
                 title = parsed.get("title")
+            
             chunks_text = chunk_text(text)
-            chunks = []
             for ct in chunks_text:
-                chunks.append({
+                all_chunks.append({
                     "text": ct,
                     "payload": {
                         "url": url,
@@ -67,8 +70,25 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
                         "text": ct,
                     },
                 })
-            total_chunks += upsert_chunks(chunks)
             pbar.update(1)
+    
+    logger.info(f"Собрано {len(all_chunks)} чанков, начинаем батчевую индексацию...")
+    
+    # Батчевая индексация с правильным размером батча
+    from app.config import CONFIG
+    batch_size = CONFIG.embedding_batch_size
+    total_chunks = 0
+    
+    with tqdm(total=len(all_chunks), desc="Indexing chunks", unit="chunk") as pbar:
+        for i in range(0, len(all_chunks), batch_size):
+            batch = all_chunks[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(all_chunks) + batch_size - 1) // batch_size
+            
+            logger.info(f"Индексируем батч {batch_num}/{total_batches}: {len(batch)} чанков")
+            indexed = upsert_chunks(batch)
+            total_chunks += indexed
+            pbar.update(len(batch))
     return {"pages": len(pages), "chunks": total_chunks}
 
 
