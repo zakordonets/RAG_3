@@ -99,11 +99,30 @@ class CacheManager:
         """Установить значение в кэш."""
         try:
             if self.redis_client:
-                self.redis_client.setex(key, ttl, json.dumps(value))
+                # Конвертируем numpy типы в Python типы для JSON сериализации
+                serializable_value = self._make_serializable(value)
+                self.redis_client.setex(key, ttl, json.dumps(serializable_value))
             else:
                 self.memory_cache.set(key, value, ttl)
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
+    
+    def _make_serializable(self, obj: Any) -> Any:
+        """Конвертирует объекты в JSON-сериализуемые типы."""
+        import numpy as np
+        
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, dict):
+            return {k: self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_serializable(item) for item in obj]
+        else:
+            return obj
 
     def delete(self, key: str) -> None:
         """Удалить значение из кэша."""

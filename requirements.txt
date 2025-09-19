@@ -33,7 +33,7 @@ torch==2.4.1
 torchvision==0.19.1
 torchaudio==2.4.1
 torch-directml
-telegramify-markdown==0.1.0
+telegramify-markdown
 pytelegrambotapi==4.29.1
 mistletoe==1.4.0
 marshmallow==3.23.1

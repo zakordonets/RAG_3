@@ -14,6 +14,7 @@ class AppConfig:
     qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
     qdrant_api_key: str = os.getenv("QDRANT_API_KEY", "")
     qdrant_collection: str = os.getenv("QDRANT_COLLECTION", "chatcenter_docs")
+    qdrant_grpc: bool = os.getenv("QDRANT_GRPC", "false").lower() in ("1", "true", "yes")
     qdrant_hnsw_m: int = int(os.getenv("QDRANT_HNSW_M", "16"))
     qdrant_hnsw_ef_construct: int = int(os.getenv("QDRANT_HNSW_EF_CONSTRUCT", "200"))
     qdrant_hnsw_ef_search: int = int(os.getenv("QDRANT_HNSW_EF_SEARCH", "200"))

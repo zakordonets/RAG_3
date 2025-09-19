@@ -1,6 +1,32 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    command: >
+      sh -c "
+        if [ -n \"$$REDIS_PASSWORD\" ]; then
+          redis-server --requirepass $$REDIS_PASSWORD --appendonly yes
+        else
+          redis-server --appendonly yes
+        fi
+      "
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - rag-network
+
   qdrant:
     image: qdrant/qdrant:latest
     container_name: rag-qdrant
@@ -50,6 +76,8 @@ services:
     environment:
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - YANDEX_API_KEY=${YANDEX_API_KEY}
       - YANDEX_CATALOG_ID=${YANDEX_CATALOG_ID}
       - YANDEX_API_URL=${YANDEX_API_URL:-https://llm.api.cloud.yandex.net/foundationModels/v1/completion}
@@ -77,6 +105,8 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
     depends_on:
+      redis:
+        condition: service_healthy
       qdrant:
         condition: service_healthy
       sparse-service:
@@ -98,6 +128,8 @@ services:
       - PYTHONPATH=/app
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - YANDEX_API_KEY=${YANDEX_API_KEY}
       - YANDEX_CATALOG_ID=${YANDEX_CATALOG_ID}
       - YANDEX_API_URL=${YANDEX_API_URL:-https://llm.api.cloud.yandex.net/foundationModels/v1/completion}
@@ -148,6 +180,8 @@ services:
       - rag-network
 
 volumes:
+  redis_data:
+    driver: local
   qdrant_data:
     driver: local
 

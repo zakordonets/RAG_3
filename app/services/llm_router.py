@@ -109,6 +109,9 @@ def _format_for_telegram(text: str) -> str:
     try:
         # Используем markdownify для конвертации в MarkdownV2
         out = telegramify_markdown.markdownify(text)
+        if out is None:
+            logger.warning("telegramify_markdown.markdownify returned None")
+            return text
         logger.debug("telegramify_markdown.markdownify: preview=%s", out[:120])
         return out
     except Exception as e:
@@ -145,10 +148,9 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
         "- избегайте лишних символов, которые могут вызвать проблемы при форматировании.\n\n"
         "Структура (соблюдайте порядок и названия разделов):\n"
         "**Кратко** — 1–3 предложения сути.\n"
-        "**Шаги** — пошаговая инструкция (маркированный список).\n"
+        "**Шаги** — подробная пошаговая инструкция (маркированный список).\n"
         "**Важно** — риски/заметки/ограничения (по необходимости).\n"
         "**Ссылки** — перечень только из переданных URL (если они были).\n"
-        "В самом конце отдельной строкой добавьте: [Подробнее](https://docs-chatcenter.edna.ru/)\n\n"
         f"Вопрос: {query}\n\n"
         f"Контекст (ссылки):\n{sources_block}"
     )

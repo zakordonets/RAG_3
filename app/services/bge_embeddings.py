@@ -272,14 +272,14 @@ def _embed_unified_onnx(
                 return_tensors="np"
             )
 
-            # Prepare input dict based on available keys
+            # Prepare input dict based on available keys - ensure int64 for ONNX
             input_dict = {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"]
+                "input_ids": inputs["input_ids"].astype(np.int64),
+                "attention_mask": inputs["attention_mask"].astype(np.int64)
             }
             # Only add token_type_ids if present in tokenizer output
             if "token_type_ids" in inputs:
-                input_dict["token_type_ids"] = inputs["token_type_ids"]
+                input_dict["token_type_ids"] = inputs["token_type_ids"].astype(np.int64)
 
             outputs = embedder.run(None, input_dict)
             embeddings = outputs[0]  # Assuming the first output is the embeddings
@@ -475,14 +475,14 @@ def _embed_batch_onnx(texts: List[str], max_length: int, return_dense: bool, ret
                 return_tensors="np"
             )
 
-            # Prepare input dict based on available keys
+            # Prepare input dict based on available keys - ensure int64 for ONNX
             input_dict = {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"]
+                "input_ids": inputs["input_ids"].astype(np.int64),
+                "attention_mask": inputs["attention_mask"].astype(np.int64)
             }
             # Only add token_type_ids if present in tokenizer output
             if "token_type_ids" in inputs:
-                input_dict["token_type_ids"] = inputs["token_type_ids"]
+                input_dict["token_type_ids"] = inputs["token_type_ids"].astype(np.int64)
 
             outputs = embedder.run(None, input_dict)
             embeddings = outputs[0]

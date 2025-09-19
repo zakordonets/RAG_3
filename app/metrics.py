@@ -98,7 +98,7 @@ app_info.info({
 class MetricsCollector:
     """Коллектор метрик для RAG системы."""
 
-    def __init__(self, enable_http_server: bool = True, port: int = 8000):
+    def __init__(self, enable_http_server: bool = True, port: int = 9001):
         """
         Инициализация коллектора метрик.
 
