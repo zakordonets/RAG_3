@@ -20,15 +20,45 @@ def classify_page(url: str) -> str:
     return "guide"
 
 
-def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[str, Any]:
+def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto") -> dict[str, Any]:
     """Полный цикл: краулинг → чанкинг → эмбеддинги → upsert в Qdrant.
-    incremental: если True — в будущем можно сравнивать hash и пропускать неизменённые.
-    strategy: стратегия crawling (jina, http, browser).
-    Возвращает статистику по страницам и чанкам.
+    
+    Args:
+        incremental: если True — использует инкрементальное обновление
+        strategy: стратегия crawling (jina, http, browser)
+        use_cache: использовать кеширование результатов crawling
+        reindex_mode: режим переиндексации:
+            - "auto": только новые/измененные страницы (по умолчанию)
+            - "force": переиндексировать все страницы
+            - "cache_only": использовать только кешированные страницы
+    
+    Returns:
+        Статистика по страницам и чанкам
     """
-    # 1) Используем улучшенный crawling с правильным прогрессом
-    logger.info(f"Начинаем crawling со стратегией: {strategy}")
-    pages = crawl_with_sitemap_progress(strategy=strategy)
+    logger.info(f"Начинаем {'инкрементальную ' if incremental else ''}индексацию")
+    logger.info(f"Параметры: strategy={strategy}, use_cache={use_cache}, reindex_mode={reindex_mode}")
+    
+    # 1) Используем улучшенный crawling с кешированием
+    if reindex_mode == "cache_only":
+        logger.info("Режим cache_only: используем только кешированные страницы")
+        from ingestion.crawl_cache import get_crawl_cache
+        cache = get_crawl_cache()
+        pages = []
+        
+        for url in cache.get_cached_urls():
+            cached_page = cache.get_page(url)
+            if cached_page:
+                pages.append({
+                    "url": url,
+                    "html": cached_page.html,
+                    "text": cached_page.text,
+                    "title": cached_page.title,
+                    "cached": True
+                })
+        
+        logger.info(f"Загружено {len(pages)} страниц из кеша")
+    else:
+        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache)
 
     # 2) Фолбэки если основной метод не сработал
     if not pages:
@@ -40,7 +70,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
     # Собираем все чанки для батчевой обработки
     all_chunks = []
     logger.info("Обрабатываем страницы и собираем чанки...")
-    
+
     with tqdm(total=len(pages), desc="Processing pages") as pbar:
         for p in pages:
             url = p["url"]
@@ -56,7 +86,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
                 parsed = parse_guides(html)
                 text = parsed.get("text") or html
                 title = parsed.get("title")
-            
+
             chunks_text = chunk_text(text)
             for ct in chunks_text:
                 all_chunks.append({
@@ -71,20 +101,20 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina") -> dict[st
                     },
                 })
             pbar.update(1)
-    
+
     logger.info(f"Собрано {len(all_chunks)} чанков, начинаем батчевую индексацию...")
-    
+
     # Батчевая индексация с правильным размером батча
     from app.config import CONFIG
     batch_size = CONFIG.embedding_batch_size
     total_chunks = 0
-    
+
     with tqdm(total=len(all_chunks), desc="Indexing chunks", unit="chunk") as pbar:
         for i in range(0, len(all_chunks), batch_size):
             batch = all_chunks[i:i + batch_size]
             batch_num = i // batch_size + 1
             total_batches = (len(all_chunks) + batch_size - 1) // batch_size
-            
+
             logger.info(f"Индексируем батч {batch_num}/{total_batches}: {len(batch)} чанков")
             indexed = upsert_chunks(batch)
             total_chunks += indexed

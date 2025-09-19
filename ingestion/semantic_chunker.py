@@ -241,7 +241,7 @@ class SemanticChunker:
     def _apply_quality_gates(self, chunks: List[str]) -> List[str]:
         """Применяет quality gates к чанкам."""
         logger.debug(f"Quality gates: starting with {len(chunks)} chunks")
-        
+
         # Удаляем пустые чанки
         non_empty = [chunk for chunk in chunks if chunk.strip()]
         logger.debug(f"Quality gates: {len(non_empty)} non-empty chunks (removed {len(chunks) - len(non_empty)})")
@@ -254,7 +254,7 @@ class SemanticChunker:
             if chunk_hash not in seen:
                 seen.add(chunk_hash)
                 unique_chunks.append(chunk)
-        
+
         duplicates_removed = len(non_empty) - len(unique_chunks)
         if duplicates_removed > 0:
             logger.debug(f"Quality gates: {len(unique_chunks)} unique chunks (removed {duplicates_removed} duplicates)")
@@ -269,7 +269,7 @@ class SemanticChunker:
             else:
                 too_small_count += 1
                 logger.debug(f"Chunk too small ({tokens} < {self.min_chunk_size} tokens), skipping: '{chunk[:100]}...'")
-        
+
         if too_small_count > 0:
             logger.debug(f"Quality gates: {len(filtered_chunks)} chunks passed size filter (removed {too_small_count} too small)")
 

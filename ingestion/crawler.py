@@ -235,37 +235,84 @@ def crawl_seed(urls: list[str] | None = None) -> list[dict]:
 
 
 # --- Альтернативный парсер для MkDocs search_index.json ---
-def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina") -> list[dict]:
+def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina", use_cache: bool = True) -> list[dict]:
     """
-    Улучшенный crawling с правильным отображением прогресса.
-    Сначала получает все URL из sitemap, затем показывает прогресс для каждой страницы.
+    Улучшенный crawling с правильным отображением прогресса и кешированием.
+    Сначала получает все URL из sitemap, затем проверяет кеш и обрабатывает только измененные страницы.
+    
+    Args:
+        base_url: Базовый URL для crawling
+        strategy: Стратегия получения контента (jina, http, browser)
+        use_cache: Использовать кеширование результатов
     """
+    from ingestion.crawl_cache import get_crawl_cache
+    
     # 1. Получаем список всех URL из sitemap
     urls = crawl_sitemap(base_url)
     if not urls:
         logger.warning("Sitemap пуст или недоступен, используем fallback к обычному crawling")
         return crawl(start_url=base_url, strategy=strategy)
-
-    logger.info(f"Найдено {len(urls)} URL в sitemap, начинаем crawling...")
-
-    # 2. Обрабатываем каждый URL с единым прогресс-баром
+    
+    logger.info(f"Найдено {len(urls)} URL в sitemap")
+    
+    # 2. Инициализируем кеш если нужно
+    cache = get_crawl_cache() if use_cache else None
     pages: list[dict] = []
+    
+    if cache:
+        # Очищаем устаревшие записи из кеша
+        cache.cleanup_old_pages(set(urls))
+        
+        # Проверяем, какие страницы уже есть в кеше
+        cached_urls = cache.get_cached_urls()
+        urls_to_fetch = set(urls) - cached_urls
+        
+        logger.info(f"Кеш содержит {len(cached_urls)} страниц, нужно загрузить {len(urls_to_fetch)} новых")
+        
+        # Загружаем закешированные страницы
+        for url in cached_urls:
+            if url in urls:  # Проверяем, что URL все еще актуален
+                cached_page = cache.get_page(url)
+                if cached_page:
+                    pages.append({
+                        "url": url,
+                        "html": cached_page.html,
+                        "text": cached_page.text,
+                        "title": cached_page.title,
+                        "cached": True
+                    })
+                    logger.debug(f"Loaded from cache: {url}")
+        
+        urls_to_process = list(urls_to_fetch)
+    else:
+        urls_to_process = urls
+        logger.info("Кеширование отключено, загружаем все страницы")
+    
+    if not urls_to_process:
+        logger.info("Все страницы загружены из кеша")
+        return pages
+    
+    # 3. Обрабатываем URL, которых нет в кеше
+    logger.info(f"Начинаем crawling {len(urls_to_process)} страниц...")
     session = _build_session()
-
-    with tqdm(total=len(urls), desc="Crawling pages", unit="page") as pbar:
-        for i, url in enumerate(urls, 1):
+    
+    with tqdm(total=len(urls_to_process), desc="Crawling new pages", unit="page") as pbar:
+        for i, url in enumerate(urls_to_process, 1):
             try:
                 url = _normalize_url(url)
                 timeout = CONFIG.crawl_timeout_s
-                pbar.set_description(f"Crawling ({i}/{len(urls)})")
-                logger.info(f"GET {url} [{i}/{len(urls)}] timeout={timeout}s strategy={strategy}")
-
+                pbar.set_description(f"Crawling ({i}/{len(urls_to_process)})")
+                logger.info(f"GET {url} [{i}/{len(urls_to_process)}] timeout={timeout}s strategy={strategy}")
+                
+                html = ""
+                text = ""
+                title = None
+                
                 if strategy == "browser":
                     html = fetch_html_sync(url, timeout_s=timeout, headless=False)
-                    pages.append({"url": url, "html": html})
                 elif strategy == "jina":
                     text = _jina_reader_fetch(url, timeout=timeout)
-                    pages.append({"url": url, "html": text, "text": text})
+                    html = text  # Для совместимости
                 else:
                     # HTTP (https) с фолбэками: HTTP → Playwright → Jina
                     try:
@@ -278,31 +325,68 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                         html = resp.text
                         content_type = resp.headers.get("Content-Type", "")
                         logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)}")
-                        pages.append({"url": url, "html": html})
                     except Exception as e_http:
                         logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying browser…")
                         try:
                             html = fetch_html_sync(url, timeout_s=timeout, headless=False)
-                            pages.append({"url": url, "html": html})
                         except Exception as e_browser:
                             logger.warning(f"Browser fetch failed for {url}: {type(e_browser).__name__}: {e_browser}. Trying Jina…")
                             try:
                                 text = _jina_reader_fetch(url, timeout=timeout)
-                                pages.append({"url": url, "html": text, "text": text})
+                                html = text  # Для совместимости
                             except Exception as e_jina:
                                 logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
                                 # Не поднимаем исключение, просто пропускаем эту страницу
-                                pass
-
+                                continue
+                
+                # Определяем тип страницы для кеширования
+                page_type = "unknown"
+                if "api" in url.lower():
+                    page_type = "api"
+                elif "faq" in url.lower():
+                    page_type = "faq"
+                elif "guide" in url.lower() or "docs" in url.lower():
+                    page_type = "guide"
+                elif "blog" in url.lower():
+                    page_type = "blog"
+                
+                # Сохраняем в кеш если включено
+                if cache and html:
+                    try:
+                        cache.save_page(url, html, text, title=title, page_type=page_type)
+                        logger.debug(f"Cached: {url}")
+                    except Exception as e:
+                        logger.warning(f"Failed to cache {url}: {e}")
+                
+                # Добавляем в результат
+                page_data = {"url": url, "html": html}
+                if text:
+                    page_data["text"] = text
+                if title:
+                    page_data["title"] = title
+                page_data["cached"] = False
+                
+                pages.append(page_data)
+                
             except Exception as e:
                 logger.warning(f"Failed {url}: {type(e).__name__}: {e}")
-
+            
             # вежливая задержка + джиттер
             delay = (CONFIG.crawl_delay_ms + random.randint(0, CONFIG.crawl_jitter_ms)) / 1000.0
             time.sleep(delay)
             pbar.update(1)
-
-    logger.info(f"Crawling завершен: {len(pages)} страниц из {len(urls)} URL")
+    
+    # 4. Статистика
+    total_pages = len(pages)
+    cached_pages = sum(1 for p in pages if p.get("cached", False))
+    new_pages = total_pages - cached_pages
+    
+    logger.info(f"Crawling завершен: {total_pages} страниц ({cached_pages} из кеша, {new_pages} новых)")
+    
+    if cache:
+        stats = cache.get_cache_stats()
+        logger.info(f"Кеш содержит {stats['total_pages']} страниц, размер: {stats['total_size_mb']} MB")
+    
     return pages
 
 
