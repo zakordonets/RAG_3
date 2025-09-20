@@ -565,22 +565,64 @@ kubectl get ingress -n rag-system
 
 ## Мониторинг и логирование
 
-### 1. Prometheus + Grafana
+### 1. Быстрый запуск мониторинга
+
+```bash
+# Запуск Grafana + Prometheus
+.\start_monitoring.ps1
+
+# Доступ к интерфейсам
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:8080 (admin/admin123)
+```
+
+### 2. Docker Compose мониторинг
+
+```bash
+# Запуск только мониторинга
+docker-compose -f docker-compose.monitoring.yml up -d
+
+# Проверка статуса
+docker ps | grep -E "(prometheus|grafana)"
+```
+
+### 3. Prometheus конфигурация
 
 ```yaml
 # monitoring/prometheus.yml
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
 
 scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+      
   - job_name: 'rag-api'
     static_configs:
-      - targets: ['rag-api:9000']
-    metrics_path: '/metrics'
+      - targets: ['172.17.0.1:9001']  # Windows WSL
     scrape_interval: 5s
+    metrics_path: '/metrics'
 ```
 
-### 2. Логирование
+### 4. Grafana дашборды
+
+Система автоматически создает готовый дашборд "RAG System Overview" с визуализацией:
+
+- **Query Performance** — производительность запросов и этапов обработки
+- **Cache Analytics** — эффективность кэширования
+- **Error Monitoring** — мониторинг ошибок и их типов
+- **System Health** — общее состояние системы
+
+```bash
+# Доступ к Grafana
+# URL: http://localhost:8080
+# Login: admin
+# Password: admin123
+```
+
+### 5. Логирование
 
 ```yaml
 # logging/fluentd.yml

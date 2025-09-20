@@ -411,6 +411,75 @@ def crawl_and_index(incremental: bool = True) -> dict[str, Any]:
         # ... остальной код ...
 ```
 
+## Мониторинг и отладка
+
+### 1. Запуск системы мониторинга
+
+```bash
+# Запуск Grafana + Prometheus для разработки
+.\start_monitoring.ps1
+
+# Доступ к интерфейсам
+# Prometheus: http://localhost:9090
+# Grafana: http://localhost:8080 (admin/admin123)
+```
+
+### 2. Отладка метрик
+
+```python
+# Проверка доступности метрик
+import requests
+
+# Проверка RAG API метрик
+response = requests.get('http://localhost:9001/metrics')
+print(f"RAG API метрики: {response.status_code}")
+
+# Проверка Prometheus
+response = requests.get('http://localhost:9090/api/v1/targets')
+print(f"Prometheus targets: {response.status_code}")
+```
+
+### 3. Создание кастомных дашбордов
+
+Создайте новый дашборд в `monitoring/grafana/dashboards/`:
+
+```json
+{
+  "dashboard": {
+    "title": "Custom RAG Dashboard",
+    "panels": [
+      {
+        "title": "Custom Metric",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rag_queries_total",
+            "legendFormat": "Total Queries"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 4. Добавление новых метрик
+
+```python
+# app/metrics.py
+from prometheus_client import Counter, Histogram
+
+# Новая метрика
+custom_counter = Counter(
+    'rag_custom_metric_total',
+    'Custom metric description',
+    ['label1', 'label2']
+)
+
+# Использование
+custom_counter.labels(label1='value1', label2='value2').inc()
+```
+
 ## Тестирование
 
 ### 1. Unit тесты

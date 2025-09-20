@@ -206,6 +206,13 @@ client.search(collection_name,
 - **`GET /v1/admin/cache`** — статистика кэша
 - **`POST /v1/admin/metrics/reset`** — сброс метрик (только для тестирования)
 
+#### Система мониторинга
+- **Prometheus** (порт 9090) — сбор метрик с RAG API
+- **Grafana** (порт 8080) — визуализация метрик и дашборды
+- **HTTP сервер метрик** (порт 9001) — экспорт метрик в формате Prometheus
+- **Готовый дашборд** "RAG System Overview" с ключевыми метриками
+- **Автоматическая конфигурация** через Docker Compose
+
 #### Rate Limiting
 - **`GET /v1/admin/rate-limiter`** — состояние Rate Limiter
 - **`GET /v1/admin/rate-limiter/<user_id>`** — состояние пользователя
@@ -224,6 +231,13 @@ client.search(collection_name,
 - **`rag_llm_duration_seconds`** — время генерации LLM
 - **`rag_cache_hits_total`** — попадания в кэш
 - **`rag_errors_total`** — ошибки по типам и компонентам
+
+#### Grafana дашборды
+- **RAG System Overview** — основной дашборд с визуализацией всех ключевых метрик
+- **Query Performance** — производительность запросов и этапов обработки
+- **Cache Analytics** — эффективность кэширования
+- **Error Monitoring** — мониторинг ошибок и их типов
+- **System Health** — общее состояние системы и активные соединения
 
 ### Управление коллекциями и sparse векторами
 - **Единый модуль индексации**: `scripts/indexer.py` - production-ready модуль для всех операций индексации
