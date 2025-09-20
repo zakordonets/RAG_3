@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus сам себя мониторит
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # RAG API метрики
+  - job_name: 'rag-api'
+    static_configs:
+      - targets: ['172.17.0.1:9001']
+    scrape_interval: 5s
+    metrics_path: '/metrics'
+
+  # Telegram Bot метрики (если есть)
+  - job_name: 'telegram-bot'
+    static_configs:
+      - targets: ['172.17.0.1:9002']
+    scrape_interval: 5s
+    metrics_path: '/metrics'

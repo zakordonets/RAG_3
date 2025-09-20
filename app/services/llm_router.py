@@ -146,7 +146,7 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
         url = payload.get("url")
         if url:
             urls.append(str(url))
-        
+
         # Добавляем контент документа
         text = payload.get("text", "")
         title = payload.get("title", "")
@@ -156,7 +156,7 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
             content_block += f"🔗 {url}\n"
             content_block += f"📝 {text[:800]}..."  # Ограничиваем длину
             content_blocks.append(content_block)
-    
+
     sources_block = "\n".join(urls)
     context_block = "\n\n".join(content_blocks)
     prompt = (
