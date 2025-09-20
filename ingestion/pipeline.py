@@ -20,7 +20,7 @@ def classify_page(url: str) -> str:
     return "guide"
 
 
-def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto") -> dict[str, Any]:
+def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto", max_pages: int = None) -> dict[str, Any]:
     """Полный цикл: краулинг → чанкинг → эмбеддинги → upsert в Qdrant.
 
     Args:
@@ -56,6 +56,10 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                     "cached": True
                 })
 
+                # Ограничиваем количество страниц для тестирования
+                if max_pages and len(pages) >= max_pages:
+                    break
+
         logger.info(f"Загружено {len(pages)} страниц из кеша")
     else:
         pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache)
@@ -82,12 +86,34 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             if raw_text:
                 text = raw_text
                 title = p.get("title")
+
+                # Улучшенное извлечение заголовка из Jina Reader текста
+                if not title and raw_text.startswith("Title:"):
+                    # Извлекаем заголовок из формата "Title: Заголовок | Сайт"
+                    try:
+                        title_line = raw_text.split('\n')[0]  # Первая строка
+                        if "Title:" in title_line:
+                            title_part = title_line.split("Title:")[1].strip()
+                            if "|" in title_part:
+                                title = title_part.split("|")[0].strip()
+                            else:
+                                title = title_part
+                    except Exception:
+                        pass
+
             else:
                 parsed = parse_guides(html)
                 text = parsed.get("text") or html
                 title = parsed.get("title")
 
             chunks_text = chunk_text(text)
+
+            # Fallback для заголовка, если он пустой
+            if not title:
+                # Извлекаем заголовок из URL
+                url_parts = url.split('/')
+                title = url_parts[-1].replace('-', ' ').replace('_', ' ').title()
+
             for ct in chunks_text:
                 all_chunks.append({
                     "text": ct,
