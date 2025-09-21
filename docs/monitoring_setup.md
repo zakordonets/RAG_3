@@ -9,7 +9,14 @@
 
 ## Быстрый старт
 
-### 1. Запуск мониторинга
+### 1. Запуск RAG API (обязательно!)
+
+```bash
+# Запустите RAG API для сбора метрик
+python wsgi.py
+```
+
+### 2. Запуск мониторинга
 
 ```bash
 # Windows (PowerShell)
@@ -22,7 +29,7 @@ start_monitoring.bat
 docker-compose -f docker-compose.monitoring.yml up -d
 ```
 
-### 2. Доступ к интерфейсам
+### 3. Доступ к интерфейсам
 
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:8080
@@ -88,7 +95,7 @@ docker-compose -f docker-compose.monitoring.yml up -d
 scrape_configs:
   - job_name: 'rag-api'
     static_configs:
-      - targets: ['host.docker.internal:9001']
+      - targets: ['host.docker.internal:9002']
     scrape_interval: 5s
 ```
 
@@ -122,8 +129,9 @@ GF_USERS_ALLOW_SIGN_UP=false
 ### Проблемы с подключением
 
 1. **Метрики не доступны**:
-   - Проверьте, что RAG API запущен на порту 9001
+   - Проверьте, что RAG API запущен на порту 9002
    - Убедитесь, что `host.docker.internal` доступен
+   - **Важно**: RAG API должен быть запущен (`python wsgi.py`) для сбора метрик
 
 2. **Grafana не загружается**:
    - Проверьте логи: `docker logs rag-grafana`

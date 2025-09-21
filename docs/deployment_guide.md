@@ -598,7 +598,7 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
-      
+
   - job_name: 'rag-api'
     static_configs:
       - targets: ['172.17.0.1:9001']  # Windows WSL

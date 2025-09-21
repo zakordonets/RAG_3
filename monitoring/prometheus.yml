@@ -15,13 +15,13 @@ scrape_configs:
   # RAG API метрики
   - job_name: 'rag-api'
     static_configs:
-      - targets: ['172.17.0.1:9001']
+      - targets: ['host.docker.internal:9002']
     scrape_interval: 5s
     metrics_path: '/metrics'
 
   # Telegram Bot метрики (если есть)
   - job_name: 'telegram-bot'
     static_configs:
-      - targets: ['172.17.0.1:9002']
+      - targets: ['host.docker.internal:9003']
     scrape_interval: 5s
     metrics_path: '/metrics'

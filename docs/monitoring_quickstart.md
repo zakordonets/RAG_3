@@ -3,10 +3,13 @@
 ## Запуск за 30 секунд
 
 ```bash
-# 1. Запуск мониторинга
+# 1. Запуск RAG API (обязательно!)
+python wsgi.py
+
+# 2. Запуск мониторинга
 .\start_monitoring.ps1
 
-# 2. Открыть в браузере
+# 3. Открыть в браузере
 # Prometheus: http://localhost:9090
 # Grafana: http://localhost:8080 (admin/admin123)
 ```
