@@ -1,5 +1,6 @@
 from __future__ import annotations
 import time
+import asyncio
 from loguru import logger
 
 from typing import Any
@@ -10,7 +11,8 @@ from app.config import CONFIG
 from app.services.retrieval import hybrid_search
 from app.services.rerank import rerank
 from app.services.llm_router import generate_answer
-from app.metrics import metrics_collector
+from app.metrics import get_metrics_collector
+from app.services.quality_manager import quality_manager
 
 
 class RAGError(Exception):
@@ -109,19 +111,19 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
 
                 embedding_duration = time.time() - embedding_start
                 logger.info(f"Unified embeddings (dense+sparse) in {embedding_duration:.2f}s")
-                metrics_collector.record_embedding_duration("unified", embedding_duration)
+                get_metrics_collector().record_embedding_duration("unified", embedding_duration)
 
             else:
                 # Legacy separate embedding generation (ONNX-only mode)
                 q_dense = embed_dense_optimized(normalized, max_length=CONFIG.embedding_max_length_query)
                 embedding_duration_dense = time.time() - embedding_start
-                metrics_collector.record_embedding_duration("dense", embedding_duration_dense)
+                get_metrics_collector().record_embedding_duration("dense", embedding_duration_dense)
 
                 if CONFIG.use_sparse:
                     sparse_start = time.time()
                     q_sparse = embed_sparse_optimized(normalized, max_length=CONFIG.embedding_max_length_query)
                     sparse_duration = time.time() - sparse_start
-                    metrics_collector.record_embedding_duration("sparse", sparse_duration)
+                    get_metrics_collector().record_embedding_duration("sparse", sparse_duration)
                 else:
                     q_sparse = {"indices": [], "values": []}
 
@@ -131,7 +133,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             error_type = "embedding_failed"
-            metrics_collector.record_error("embedding_failed", "embedding_generation")
+            get_metrics_collector().record_error("embedding_failed", "embedding_generation")
             return {
                 "error": "embedding_failed",
                 "message": "Сервис эмбеддингов временно недоступен. Попробуйте позже.",
@@ -146,12 +148,12 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             candidates = hybrid_search(q_dense, q_sparse, k=20, boosts=boosts)
             search_duration = time.time() - search_start
             logger.info(f"Hybrid search in {search_duration:.2f}s")
-            metrics_collector.record_search_duration("hybrid", search_duration)
+            get_metrics_collector().record_search_duration("hybrid", search_duration)
 
             if not candidates:
                 logger.warning("No candidates found in search")
                 error_type = "no_results"
-                metrics_collector.record_error("no_results", "search")
+                get_metrics_collector().record_error("no_results", "search")
                 return {
                     "error": "no_results",
                     "message": "К сожалению, не удалось найти релевантную информацию по вашему запросу. Попробуйте переформулировать вопрос или использовать другие ключевые слова.",
@@ -162,7 +164,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         except Exception as e:
             logger.error(f"Hybrid search failed: {e}")
             error_type = "search_failed"
-            metrics_collector.record_error("search_failed", "hybrid_search")
+            get_metrics_collector().record_error("search_failed", "hybrid_search")
             return {
                 "error": "search_failed",
                 "message": "Ошибка поиска в базе знаний. Попробуйте позже.",
@@ -186,11 +188,11 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             answer = generate_answer(normalized, top_docs, policy={})
             llm_duration = time.time() - llm_start
             logger.info(f"LLM generation in {llm_duration:.2f}s")
-            metrics_collector.record_llm_duration("default", llm_duration)
+            get_metrics_collector().record_llm_duration("default", llm_duration)
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
             error_type = "llm_failed"
-            metrics_collector.record_error("llm_failed", "llm_generation")
+            get_metrics_collector().record_error("llm_failed", "llm_generation")
             return {
                 "error": "llm_failed",
                 "message": "Сервис генерации ответов временно недоступен. Попробуйте позже.",
@@ -216,16 +218,36 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         logger.info(f"Total processing time: {total_time:.2f}s")
 
         # Записываем метрики успешного запроса
-        metrics_collector.record_query(channel, status, error_type)
-        metrics_collector.record_query_duration("total", total_time)
-        metrics_collector.record_search_results("hybrid", len(candidates))
+        get_metrics_collector().record_query(channel, status, error_type)
+        get_metrics_collector().record_query_duration("total", total_time)
+        get_metrics_collector().record_search_results("hybrid", len(candidates))
+
+        # Создаем quality interaction асинхронно
+        interaction_id = None
+        if CONFIG.enable_ragas_evaluation:
+            try:
+                # Подготавливаем данные для quality evaluation
+                contexts = [doc.get("text", "") for doc in top_docs]
+                source_urls = [source.get("url", "") for source in sources]
+
+                # Создаем quality interaction
+                interaction_id = asyncio.run(quality_manager.evaluate_interaction(
+                    query=normalized,
+                    response=answer,
+                    contexts=contexts,
+                    sources=source_urls
+                ))
+                logger.info(f"Created quality interaction: {interaction_id}")
+            except Exception as e:
+                logger.warning(f"Failed to create quality interaction: {e}")
 
         return {
             "answer": answer,
             "sources": sources,
             "channel": channel,
             "chat_id": chat_id,
-            "processing_time": total_time
+            "processing_time": total_time,
+            "interaction_id": interaction_id
         }
 
     except Exception as e:
@@ -234,8 +256,8 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         # Записываем метрики ошибки
         error_type = type(e).__name__
         status = "error"
-        metrics_collector.record_query(channel, status, error_type)
-        metrics_collector.record_error(error_type, "orchestrator")
+        get_metrics_collector().record_query(channel, status, error_type)
+        get_metrics_collector().record_error(error_type, "orchestrator")
 
         return {
             "error": "internal_error",

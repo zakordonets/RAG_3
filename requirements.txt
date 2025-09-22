@@ -38,3 +38,11 @@ pytelegrambotapi==4.29.1
 mistletoe==1.4.0
 marshmallow==3.23.1
 redis==5.0.8
+# RAGAS Quality Evaluation Dependencies
+ragas==0.1.21
+datasets==2.19.0
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-core==0.2.38
+sqlalchemy==2.0.23
+alembic==1.13.1

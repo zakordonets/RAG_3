@@ -20,9 +20,11 @@ def create_app() -> Flask:
     # Blueprints
     from .routes.chat import bp as chat_bp
     from .routes.admin import bp as admin_bp
+    from .routes.quality import bp as quality_bp
 
     app.register_blueprint(chat_bp, url_prefix="/v1/chat")
     app.register_blueprint(admin_bp, url_prefix="/v1/admin")
+    app.register_blueprint(quality_bp, url_prefix="/v1/admin/quality")
 
     # Swagger/OpenAPI отключен (Flasgger удалён по требованию)
 

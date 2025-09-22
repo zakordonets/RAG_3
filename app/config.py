@@ -90,5 +90,20 @@ class AppConfig:
     chunk_min_tokens: int = int(os.getenv("CHUNK_MIN_TOKENS", "60"))
     chunk_max_tokens: int = int(os.getenv("CHUNK_MAX_TOKENS", "250"))
 
+    # RAGAS Quality Evaluation
+    enable_ragas_evaluation: bool = os.getenv("ENABLE_RAGAS_EVALUATION", "false").lower() in ("1", "true", "yes")
+    ragas_evaluation_sample_rate: float = float(os.getenv("RAGAS_EVALUATION_SAMPLE_RATE", "0.2"))
+    ragas_batch_size: int = int(os.getenv("RAGAS_BATCH_SIZE", "5"))
+    ragas_async_timeout: int = int(os.getenv("RAGAS_ASYNC_TIMEOUT", "60"))
+    ragas_llm_model: str = os.getenv("RAGAS_LLM_MODEL", "yandexgpt")
+
+    # Quality Database
+    quality_db_enabled: bool = os.getenv("QUALITY_DB_ENABLED", "false").lower() in ("1", "true", "yes")
+    database_url: str = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/rag_quality")
+
+    # Quality Metrics
+    enable_quality_metrics: bool = os.getenv("ENABLE_QUALITY_METRICS", "false").lower() in ("1", "true", "yes")
+    quality_prediction_threshold: float = float(os.getenv("QUALITY_PREDICTION_THRESHOLD", "0.7"))
+
 
 CONFIG = AppConfig()

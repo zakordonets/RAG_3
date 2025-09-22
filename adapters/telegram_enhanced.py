@@ -11,7 +11,7 @@ import telegramify_markdown
 
 from app.config import CONFIG
 from adapters.rate_limiter import rate_limiter
-from app.metrics import metrics_collector
+from app.metrics import get_metrics_collector
 
 
 class TelegramBot:
@@ -265,7 +265,7 @@ class TelegramBot:
                 )
 
                 # Записываем метрики
-                metrics_collector.record_query("telegram", "success")
+                get_metrics_collector().record_query("telegram", "success")
 
             else:
                 logger.error(f"Core API error: {response.status_code} - {response.text}")
@@ -274,7 +274,7 @@ class TelegramBot:
                     "❌ Ошибка сервера. Попробуйте позже.",
                     message_id
                 )
-                metrics_collector.record_query("telegram", "error", "api_error")
+                get_metrics_collector().record_query("telegram", "error", "api_error")
 
         except requests.exceptions.Timeout:
             logger.error(f"Timeout processing message for chat {chat_id}")
@@ -283,7 +283,7 @@ class TelegramBot:
                 "⏰ Обработка запроса занимает больше времени, чем ожидалось. Попробуйте позже.",
                 message_id
             )
-            metrics_collector.record_query("telegram", "error", "timeout")
+            get_metrics_collector().record_query("telegram", "error", "timeout")
 
         except Exception as e:
             logger.error(f"Error processing message for chat {chat_id}: {e}")
@@ -292,7 +292,7 @@ class TelegramBot:
                 "❌ Произошла ошибка при обработке вашего сообщения. Попробуйте позже.",
                 message_id
             )
-            metrics_collector.record_query("telegram", "error", "processing_error")
+            get_metrics_collector().record_query("telegram", "error", "processing_error")
 
     def _get_updates(self) -> list[Dict[str, Any]]:
         """

@@ -1,31 +1,34 @@
 #!/usr/bin/env python3
 """
-Проверка конфигурации
+Check configuration values
 """
-import os
 import sys
-from loguru import logger
+from pathlib import Path
 
-# Добавляем корневую директорию проекта в PYTHONPATH
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from app.config import CONFIG
 
-# Настраиваем логирование
-logger.remove()
-logger.add(sys.stderr, level="INFO")
-
 def check_config():
-    """Проверяет конфигурацию"""
-
-    logger.info("🔧 Проверка конфигурации")
-    logger.info("=" * 60)
-
-    logger.info(f"📋 CONFIG.use_sparse: {CONFIG.use_sparse}")
-    logger.info(f"📋 CONFIG.embeddings_backend: {CONFIG.embeddings_backend}")
-    logger.info(f"📋 CONFIG.embedding_device: {CONFIG.embedding_device}")
-    logger.info(f"📋 CONFIG.embedding_normalize: {CONFIG.embedding_normalize}")
-    logger.info(f"📋 CONFIG.embedding_use_fp16: {CONFIG.embedding_use_fp16}")
+    """Check configuration values"""
+    print("🔍 Configuration Check")
+    print("=" * 50)
+    
+    print(f"ENABLE_RAGAS_EVALUATION: {CONFIG.enable_ragas_evaluation}")
+    print(f"QUALITY_DB_ENABLED: {CONFIG.quality_db_enabled}")
+    print(f"ENABLE_QUALITY_METRICS: {CONFIG.enable_quality_metrics}")
+    print(f"QUALITY_PREDICTION_THRESHOLD: {CONFIG.quality_prediction_threshold}")
+    
+    print("\n📊 Quality Configuration:")
+    print(f"RAGAS_EVALUATION_SAMPLE_RATE: {CONFIG.ragas_evaluation_sample_rate}")
+    print(f"RAGAS_BATCH_SIZE: {CONFIG.ragas_batch_size}")
+    print(f"RAGAS_ASYNC_TIMEOUT: {CONFIG.ragas_async_timeout}")
+    print(f"RAGAS_LLM_MODEL: {CONFIG.ragas_llm_model}")
+    
+    print("\n🗄️ Database Configuration:")
+    print(f"DATABASE_URL: {CONFIG.database_url}")
 
 if __name__ == "__main__":
     check_config()

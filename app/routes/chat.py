@@ -62,6 +62,9 @@ def chat_query():
               type: number
             request_id:
               type: string
+            interaction_id:
+              type: string
+              description: Идентификатор для системы оценки качества
             security_warnings:
               type: array
               items:
