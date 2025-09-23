@@ -271,3 +271,55 @@ datasets/
 # Browser cache and cookies
 .cache/
 cookies.json
+
+# ===== PHASE 2: RAGAS QUALITY SYSTEM =====
+
+# Quality Database files
+data/quality_interactions.db
+data/quality_interactions_test.db
+data/quality_interactions_*.db
+*.db-journal
+
+# RAGAS evaluation cache and temporary files
+.ragas_cache/
+ragas_evaluation_cache/
+*.ragas_cache
+
+# Quality metrics and monitoring data
+metrics/
+monitoring/data/
+prometheus_data/
+grafana_data/
+
+# Test artifacts and reports
+test_reports/
+quality_test_results/
+ragas_evaluation_results/
+
+# Model checkpoints and embeddings cache
+embeddings_cache/
+model_checkpoints/
+*.embeddings
+
+# Quality interaction exports
+quality_export_*.json
+quality_export_*.csv
+quality_backup_*.sql
+
+# RAGAS specific temporary files
+ragas_temp/
+ragas_logs/
+*.ragas_log
+
+# Quality system configuration overrides
+quality_config_override.json
+ragas_config_override.yaml
+
+# Performance profiling data
+*.prof
+*.profile
+performance_logs/
+
+# Quality system backups
+quality_backups/
+ragas_backups/
