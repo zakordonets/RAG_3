@@ -17,8 +17,10 @@
 - **Rate Limiting**: Защита от злоупотреблений с burst protection
 - **Мониторинг**: Prometheus метрики и детальное логирование
 - **Надежность**: Graceful degradation и автоматическое восстановление
-- **Оценка качества**: RAGAS система для автоматической оценки качества ответов
-- **Пользовательский фидбек**: Система сбора и анализа пользовательских оценок
+- **Phase 2: RAGAS Quality System**: Автоматическая оценка качества с RAGAS метриками (Faithfulness, Context Precision, Answer Relevancy)
+- **Пользовательский фидбек**: Inline кнопки в Telegram для оценки ответов
+- **Quality Analytics**: REST API для анализа качества и трендов
+- **Prometheus метрики**: Мониторинг качества через Grafana dashboard
 
 ## 🏗️ Архитектура
 
@@ -202,6 +204,13 @@ EMBEDDING_DIM=1024
 HYBRID_DENSE_WEIGHT=0.7
 HYBRID_SPARSE_WEIGHT=0.3
 RERANK_TOP_N=10
+
+# Phase 2: RAGAS Quality System
+ENABLE_RAGAS_EVALUATION=true
+RAGAS_EVALUATION_SAMPLE_RATE=1.0
+QUALITY_DB_ENABLED=true
+DATABASE_URL=sqlite+aiosqlite:///data/quality_interactions.db
+ENABLE_QUALITY_METRICS=true
 ```
 
 ### BGE-M3 Unified Embeddings
@@ -281,6 +290,13 @@ CRAWL_MAX_PAGES=1000
 ### Chat API
 - `POST /v1/chat/query` - Обработка запросов пользователей с валидацией
 
+### Quality API (Phase 2)
+- `GET /v1/admin/quality/stats` - Статистика качества взаимодействий
+- `GET /v1/admin/quality/interactions` - Список взаимодействий с метриками
+- `GET /v1/admin/quality/trends` - Тренды качества по времени
+- `GET /v1/admin/quality/correlation` - Корреляционный анализ метрик
+- `POST /v1/admin/quality/feedback` - Добавление пользовательского фидбека
+
 ### Admin API
 - `GET /v1/admin/health` - Проверка состояния системы с Circuit Breakers
 - `POST /v1/admin/reindex` - Переиндексация документации
@@ -306,6 +322,19 @@ CRAWL_MAX_PAGES=1000
 - `POST /v1/admin/security/user/<user_id>/block` - Блокировка пользователя
 
 ## 🧪 Тестирование
+
+### Phase 2: RAGAS Quality System
+```bash
+# Интеграционные тесты Phase 2
+$env:PYTHONPATH=(Get-Location).Path; pytest scripts/test_phase2_integration.py -v
+
+# Тесты с отключенным RAGAS (быстрые)
+$env:RAGAS_EVALUATION_SAMPLE_RATE="0"; pytest scripts/test_phase2_integration.py -v
+
+# Проверка Quality API
+curl http://localhost:9000/v1/admin/quality/stats
+curl http://localhost:9000/v1/admin/quality/interactions
+```
 
 ### Тест API
 ```bash
@@ -719,8 +748,9 @@ MIT License
 ## 📞 Поддержка
 
 - Документация: [docs/](docs/)
+- **Phase 2 RAGAS Quality System**: [docs/phase2_ragas_quality_system.md](docs/phase2_ragas_quality_system.md)
 - API Документация: [OpenAPI/Swagger](docs/api_documentation.md)
-- RAGAS Quality System: [docs/ragas_quality_system.md](docs/ragas_quality_system.md)
+- RAGAS Quality System (Legacy): [docs/ragas_quality_system.md](docs/ragas_quality_system.md)
 - GPU настройка (Linux): [ROCm](docs/gpu_setup.md)
 - GPU настройка (Windows): [DirectML](docs/gpu_setup_windows.md)
 - Интерактивная документация: http://localhost:9000/apidocs

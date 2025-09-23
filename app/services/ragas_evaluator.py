@@ -199,7 +199,7 @@ class RAGASEvaluatorWithoutGroundTruth:
             if os.getenv("RAGAS_EVALUATION_SAMPLE_RATE", "1.0") == "0":
                 logger.info("RAGAS evaluation disabled, using fallback scores")
                 return self._calculate_fallback_scores(query, response, contexts)
-            
+
             # Prepare data for RAGAS using datasets library
             from datasets import Dataset
 
