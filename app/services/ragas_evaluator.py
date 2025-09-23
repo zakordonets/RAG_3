@@ -4,11 +4,15 @@ RAGAS Evaluator for quality assessment without ground truth
 from __future__ import annotations
 
 import asyncio
+import math
+import os
 from typing import Dict, List, Any, Optional
 from loguru import logger
 
 from ragas import evaluate
 from ragas.metrics import Faithfulness, ContextPrecision, AnswerRelevancy
+from ragas.llms import LangchainLLMWrapper
+from ragas.embeddings import LangchainEmbeddingsWrapper
 from langchain_core.language_models.base import BaseLanguageModel
 from langchain_core.embeddings import Embeddings
 from langchain_core.output_parsers import StrOutputParser
@@ -16,7 +20,7 @@ from langchain_core.outputs import LLMResult, Generation
 from langchain_core.messages import BaseMessage
 
 from app.config import CONFIG
-from app.services.llm_router import generate_answer
+from app.services.llm_router import _yandex_complete as _raw_yandex_complete
 from app.services.bge_embeddings import embed_unified
 
 class YandexGPTLangChainWrapper(BaseLanguageModel):
@@ -27,17 +31,41 @@ class YandexGPTLangChainWrapper(BaseLanguageModel):
 
     def _generate(self, messages, **kwargs):
         """Generate response using YandexGPT"""
-        # Extract the last user message
-        user_message = messages[-1].content if messages else ""
+        # Normalize inputs to a list of LangChain messages
+        from langchain_core.messages import HumanMessage
 
-        # Call our YandexGPT service
-        response = generate_answer(
-            message=user_message,
-            context_documents=[],
-            chat_id="ragas_eval"
-        )
+        normalized_messages = []
+        if messages is None:
+            normalized_messages = []
+        elif isinstance(messages, list):
+            for m in messages:
+                if hasattr(m, 'to_messages'):
+                    # PromptValue
+                    normalized_messages.extend(m.to_messages())
+                elif hasattr(m, 'content'):
+                    normalized_messages.append(m)
+                elif isinstance(m, str):
+                    normalized_messages.append(HumanMessage(content=m))
+                else:
+                    # Fallback: convert to string
+                    normalized_messages.append(HumanMessage(content=str(m)))
+        else:
+            # Single item
+            m = messages
+            if hasattr(m, 'to_messages'):
+                normalized_messages = m.to_messages()
+            elif hasattr(m, 'content'):
+                normalized_messages = [m]
+            elif isinstance(m, str):
+                normalized_messages = [HumanMessage(content=m)]
+            else:
+                normalized_messages = [HumanMessage(content=str(m))]
 
-        # Return in LangChain format
+        # Build raw prompt from messages for evaluator LLM
+        prompt = "\n\n".join(m.content for m in normalized_messages) if normalized_messages else ""
+        # Call low-level Yandex completion (no formatting), deterministic for RAGAS
+        response = _raw_yandex_complete(prompt, temperature=0.0, top_p=1.0)
+        # Return LLMResult for LangChain compatibility
         return LLMResult(generations=[[Generation(text=response)]])
 
     def _llm_type(self) -> str:
@@ -52,8 +80,13 @@ class YandexGPTLangChainWrapper(BaseLanguageModel):
             from langchain_core.messages import HumanMessage
             return self._generate([HumanMessage(content=str(input))])
 
-    def ainvoke(self, input, **kwargs):
-        return asyncio.run(self.invoke(input, **kwargs))
+    async def ainvoke(self, input, **kwargs):
+        # Run sync generation in a thread for true async
+        if isinstance(input, BaseMessage):
+            return await asyncio.to_thread(self._generate, [input])
+        else:
+            from langchain_core.messages import HumanMessage
+            return await asyncio.to_thread(self._generate, [HumanMessage(content=str(input))])
 
     def generate_prompt(self, prompts, **kwargs):
         return self._generate(prompts, **kwargs)
@@ -61,17 +94,35 @@ class YandexGPTLangChainWrapper(BaseLanguageModel):
     def agenerate_prompt(self, prompts, **kwargs):
         return asyncio.run(self.generate_prompt(prompts, **kwargs))
 
+    # Methods expected by some LangChain integrations
+    def generate(self, prompts, **kwargs):
+        # Accept string or list of strings/messages
+        if isinstance(prompts, str):
+            from langchain_core.messages import HumanMessage
+            return self._generate([HumanMessage(content=prompts)])
+        if isinstance(prompts, list):
+            # If list of strings, convert; if list of messages, pass through
+            if prompts and isinstance(prompts[0], str):
+                from langchain_core.messages import HumanMessage
+                msgs = [HumanMessage(content=p) for p in prompts]
+                return self._generate(msgs)
+            return self._generate(prompts)
+        return self._generate([prompts])
+
+    async def agenerate(self, prompts, **kwargs):
+        return await asyncio.to_thread(self.generate, prompts)
+
     def predict(self, text, **kwargs):
         return self._generate([text])
 
-    def apredict(self, text, **kwargs):
-        return asyncio.run(self.predict(text, **kwargs))
+    async def apredict(self, text, **kwargs):
+        return await asyncio.to_thread(self.predict, text)
 
     def predict_messages(self, messages, **kwargs):
         return self._generate(messages, **kwargs)
 
-    def apredict_messages(self, messages, **kwargs):
-        return asyncio.run(self.predict_messages(messages, **kwargs))
+    async def apredict_messages(self, messages, **kwargs):
+        return await asyncio.to_thread(self.predict_messages, messages)
 
     def set_run_config(self, config=None, **kwargs):
         """Set run configuration (required by RAGAS)"""
@@ -88,13 +139,16 @@ class BGELangChainWrapper(Embeddings):
         embeddings = []
         for text in texts:
             result = embed_unified(text, return_dense=True, return_sparse=False)
-            embeddings.append(result['dense'].tolist())
+            # embed_unified returns {'dense_vecs': [[...]]}
+            vec = result.get('dense_vecs', [[0.0] * 1024])
+            embeddings.append(vec[0] if vec and len(vec) > 0 else [0.0] * 1024)
         return embeddings
 
     def embed_query(self, text: str) -> List[float]:
         """Embed query"""
         result = embed_unified(text, return_dense=True, return_sparse=False)
-        return result['dense'].tolist()
+        vec = result.get('dense_vecs', [[0.0] * 1024])
+        return vec[0] if vec and len(vec) > 0 else [0.0] * 1024
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         """Async embed documents"""
@@ -110,11 +164,14 @@ class RAGASEvaluatorWithoutGroundTruth:
     def __init__(self):
         self.llm_wrapper = YandexGPTLangChainWrapper()
         self.embeddings_wrapper = BGELangChainWrapper()
+        # Wrap for RAGAS compatibility
+        self.evaluator_llm = LangchainLLMWrapper(self.llm_wrapper)
+        self.evaluator_embeddings = LangchainEmbeddingsWrapper(self.embeddings_wrapper)
 
-        # Initialize RAGAS metrics (only LLM, embeddings are handled internally)
-        self.faithfulness = Faithfulness(llm=self.llm_wrapper)
-        self.context_precision = ContextPrecision(llm=self.llm_wrapper)
-        self.answer_relevancy = AnswerRelevancy(llm=self.llm_wrapper)
+        # Initialize RAGAS metrics with evaluator LLM wrapper
+        self.faithfulness = Faithfulness(llm=self.evaluator_llm)
+        self.context_precision = ContextPrecision(llm=self.evaluator_llm)
+        self.answer_relevancy = AnswerRelevancy(llm=self.evaluator_llm)
 
         logger.info("RAGAS evaluator initialized")
 
@@ -138,6 +195,11 @@ class RAGASEvaluatorWithoutGroundTruth:
             Dictionary with RAGAS scores
         """
         try:
+            # Check if RAGAS evaluation is disabled
+            if os.getenv("RAGAS_EVALUATION_SAMPLE_RATE", "1.0") == "0":
+                logger.info("RAGAS evaluation disabled, using fallback scores")
+                return self._calculate_fallback_scores(query, response, contexts)
+            
             # Prepare data for RAGAS using datasets library
             from datasets import Dataset
 
@@ -148,21 +210,55 @@ class RAGASEvaluatorWithoutGroundTruth:
                 'ground_truth': [""]  # Empty ground truth for no-reference evaluation
             })
 
-            # Evaluate with RAGAS
-            result = evaluate(
-                dataset,
-                metrics=[
-                    self.faithfulness,
-                    self.context_precision,
-                    self.answer_relevancy
-                ]
-            )
+            # Evaluate with RAGAS with timeout
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        evaluate,
+                        dataset,
+                        metrics=[
+                            self.faithfulness,
+                            self.context_precision,
+                            self.answer_relevancy
+                        ],
+                        llm=self.evaluator_llm,
+                        embeddings=self.evaluator_embeddings
+                    ),
+                    timeout=25.0  # 25 seconds timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("RAGAS evaluation timeout, using fallback scores")
+                return self._calculate_fallback_scores(query, response, contexts)
 
-            # Extract scores
+            # Extract scores (datasets returns a columnar structure)
+            try:
+                faith_list = result.get('faithfulness') or result['faithfulness']
+                ctxp_list = result.get('context_precision') or result['context_precision']
+                ansr_list = result.get('answer_relevancy') or result['answer_relevancy']
+                faith = float(faith_list[0]) if isinstance(faith_list, (list, tuple)) else float(faith_list)
+                ctxp = float(ctxp_list[0]) if isinstance(ctxp_list, (list, tuple)) else float(ctxp_list)
+                ansr = float(ansr_list[0]) if isinstance(ansr_list, (list, tuple)) else float(ansr_list)
+            except Exception:
+                # Some versions return dict-like rows
+                row0 = result[0] if isinstance(result, list) else None
+                faith = float(row0.get('faithfulness', 0.0)) if row0 else 0.0
+                ctxp = float(row0.get('context_precision', 0.0)) if row0 else 0.0
+                ansr = float(row0.get('answer_relevancy', 0.0)) if row0 else 0.0
+
+            # Sanitize NaN/inf
+            for name, val in (('faithfulness', faith), ('context_precision', ctxp), ('answer_relevancy', ansr)):
+                if val is None or math.isnan(val) or math.isinf(val):
+                    if name == 'faithfulness':
+                        faith = 0.0
+                    elif name == 'context_precision':
+                        ctxp = 0.0
+                    else:
+                        ansr = 0.0
+
             scores = {
-                'faithfulness': float(result['faithfulness'][0]) if 'faithfulness' in result else 0.0,
-                'context_precision': float(result['context_precision'][0]) if 'context_precision' in result else 0.0,
-                'answer_relevancy': float(result['answer_relevancy'][0]) if 'answer_relevancy' in result else 0.0,
+                'faithfulness': faith,
+                'context_precision': ctxp,
+                'answer_relevancy': ansr,
             }
 
             # Calculate overall score

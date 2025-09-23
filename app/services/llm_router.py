@@ -36,7 +36,7 @@ def _escape_markdown_v2(text: str) -> str:
     return re.sub(r"(?<!\\)([_*\[\]()~`>#+\-=|{}.!])", repl, text)
 
 
-def _yandex_complete(prompt: str, max_tokens: int = 800) -> str:
+def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | None = None, top_p: float | None = None) -> str:
     url = f"{CONFIG.yandex_api_url}/completion"
     logger.debug(f"Yandex URL: {url}")
     headers = {
@@ -44,11 +44,16 @@ def _yandex_complete(prompt: str, max_tokens: int = 800) -> str:
         "x-folder-id": CONFIG.yandex_catalog_id,
         "Content-Type": "application/json",
     }
+    # Allow deterministic overrides from callers (e.g., RAGAS evaluator)
+    _temperature = 0.2 if temperature is None else float(temperature)
+    _top_p = 1.0 if top_p is None else float(top_p)
+
     payload = {
         "modelUri": f"gpt://{CONFIG.yandex_catalog_id}/{CONFIG.yandex_model}",
         "completionOptions": {
             "stream": False,
-            "temperature": 0.2,
+            "temperature": _temperature,
+            "topP": _top_p,
             "maxTokens": str(min(max_tokens, CONFIG.yandex_max_tokens))
         },
         "messages": [

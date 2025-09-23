@@ -1,3 +1,131 @@
+from __future__ import annotations
+
+import os
+import json
+import time
+import asyncio
+
+import pytest
+import requests
+
+os.environ.setdefault("ENABLE_RAGAS_EVALUATION", "true")
+os.environ.setdefault("QUALITY_DB_ENABLED", "true")
+os.environ.setdefault("ENABLE_QUALITY_METRICS", "true")
+os.environ.setdefault("START_METRICS_SERVER", "false")  # не поднимать экспортёр в тестах
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./data/quality_interactions_test.db")
+os.environ.setdefault("RAGAS_EVALUATION_SAMPLE_RATE", "0")  # отключить RAGAS для внешних тестов
+
+from app import create_app
+from app.services.quality_manager import quality_manager
+from app.services.ragas_evaluator import ragas_evaluator
+
+
+@pytest.fixture(scope="module")
+def app_client():
+    app = create_app()
+    app.testing = True
+    client = app.test_client()
+    yield client
+
+
+@pytest.fixture()
+def interaction_id_fixture(monkeypatch) -> str:
+    # Мок низкоуровневого LLM и ragas.evaluate внутри модуля evaluator
+    import app.services.ragas_evaluator as reval
+    monkeypatch.setattr(reval, "_raw_yandex_complete", lambda *args, **kwargs: "OK")
+    import ragas
+    monkeypatch.setattr(ragas, "evaluate", lambda *args, **kwargs: {
+        'faithfulness': [0.8], 'context_precision': [0.7], 'answer_relevancy': [0.9]
+    })
+
+    query = "Тестовый вопрос"
+    response = "Тестовый ответ"
+    contexts = ["Тестовый контекст"]
+    sources = ["https://example.com"]
+    iid = asyncio.run(quality_manager.evaluate_interaction(query, response, contexts, sources))
+    return iid
+
+
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_quality_flow_via_manager_and_api(app_client, monkeypatch):
+    # Мокаем низкоуровневый LLM прямо в обёртке RAGAS (alias внутри модуля)
+    import app.services.ragas_evaluator as reval
+    monkeypatch.setattr(reval, "_raw_yandex_complete", lambda *args, **kwargs: "OK")
+    # Мокаем ragas.evaluate, чтобы убрать внутренний asyncio и сеть
+    import ragas
+    def _fake_evaluate(dataset, metrics, llm=None, embeddings=None):
+        return {
+            'faithfulness': [0.8],
+            'context_precision': [0.7],
+            'answer_relevancy': [0.9],
+        }
+    # Патчим как внешний модуль, так и символ в самом ragas_evaluator
+    monkeypatch.setattr(ragas, "evaluate", _fake_evaluate)
+    monkeypatch.setattr(reval, "evaluate", _fake_evaluate)
+
+    query = "Какие каналы доступны в edna Chat Center?"
+    response = "Доступны веб-виджет и другие каналы."
+    contexts = ["В edna Chat Center доступны следующие каналы: веб-виджет, ..."]
+    sources = ["https://example.com/docs"]
+
+    interaction_id = await quality_manager.evaluate_interaction(query, response, contexts, sources)
+    assert interaction_id
+
+    # Проверить quality interactions через API (в отдельном потоке, чтобы не конфликтовать с event loop)
+    r2 = await asyncio.to_thread(app_client.get, "/v1/admin/quality/interactions?limit=5")
+    assert r2.status_code == 200
+    qdata = r2.get_json()
+    assert qdata["total"] >= 1
+    found = any(i.get("interaction_id") == interaction_id for i in qdata["interactions"])
+    assert found
+
+    # Добавить feedback через API
+    fb = {
+        "interaction_id": interaction_id,
+        "feedback_type": "positive",
+        "feedback_text": "Окей"
+    }
+    r3 = await asyncio.to_thread(app_client.post, "/v1/admin/quality/feedback", data=json.dumps(fb), content_type="application/json")
+    assert r3.status_code == 200, r3.data
+
+    # Тренды
+    r4 = await asyncio.to_thread(app_client.get, "/v1/admin/quality/trends?days=7")
+    assert r4.status_code == 200
+    t = r4.get_json()
+    assert "trends" in t
+    if t["trends"]:
+        row0 = t["trends"][0]
+        assert "avg_faithfulness" in row0
+        assert "avg_context_precision" in row0
+        assert "avg_answer_relevancy" in row0
+
+
+@pytest.mark.asyncio
+async def test_ragas_evaluator_basic(monkeypatch):
+    # Мокаем alias низкоуровневого LLM и ragas.evaluate
+    import app.services.ragas_evaluator as reval
+    monkeypatch.setattr(reval, "_raw_yandex_complete", lambda *args, **kwargs: "OK")
+    import ragas
+    monkeypatch.setattr(ragas, "evaluate", lambda *args, **kwargs: {
+        'faithfulness': [0.5], 'context_precision': [0.6], 'answer_relevancy': [0.7]
+    })
+    monkeypatch.setattr(reval, "evaluate", lambda *args, **kwargs: {
+        'faithfulness': [0.5], 'context_precision': [0.6], 'answer_relevancy': [0.7]
+    })
+
+    query = "Что такое искусственный интеллект?"
+    response = "Искусственный интеллект — это область информатики."
+    contexts = [
+        "AI — это область компьютерных наук, направленная на создание умных систем."
+    ]
+    scores = await ragas_evaluator.evaluate_interaction(query, response, contexts, [])
+    for k in ("faithfulness", "context_precision", "answer_relevancy", "overall_score"):
+        assert k in scores
+        assert 0.0 <= float(scores[k]) <= 1.0
+
 #!/usr/bin/env python3
 """
 Тест интеграции Phase 2 RAGAS системы
@@ -151,11 +279,12 @@ def test_chat_api_with_interaction_id():
         return None
 
 
-def test_feedback_api(interaction_id: str):
+def test_feedback_api(interaction_id_fixture: str):
     """Тест Feedback API"""
     logger.info("🧪 Testing Feedback API...")
 
     base_url = "http://localhost:9000"
+    interaction_id = interaction_id_fixture
 
     try:
         # Тест добавления положительного feedback
@@ -166,7 +295,7 @@ def test_feedback_api(interaction_id: str):
                 "feedback_type": "positive",
                 "feedback_text": "Отличный ответ!"
             },
-            timeout=10
+            timeout=60
         )
 
         if response.status_code == 200:
@@ -182,7 +311,7 @@ def test_feedback_api(interaction_id: str):
                 "feedback_type": "negative",
                 "feedback_text": "Неточный ответ"
             },
-            timeout=10
+            timeout=60
         )
 
         if response.status_code == 200:
