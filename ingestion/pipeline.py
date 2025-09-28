@@ -8,6 +8,8 @@ from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap, crawl_wi
 from ingestion.parsers import parse_api_documentation, parse_release_notes, parse_faq_content, parse_guides
 from ingestion.chunker import chunk_text, text_hash
 from ingestion.indexer import upsert_chunks
+from app.services.metadata_aware_indexer import MetadataAwareIndexer
+from app.services.optimized_pipeline import run_optimized_indexing
 
 
 def classify_page(url: str) -> str:
@@ -133,24 +135,63 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 })
             pbar.update(1)
 
-    logger.info(f"Собрано {len(all_chunks)} чанков, начинаем батчевую индексацию...")
+    logger.info(f"Собрано {len(all_chunks)} чанков, начинаем enhanced metadata-aware индексацию...")
 
-    # Батчевая индексация с правильным размером батча
-    from app.config import CONFIG
-    batch_size = CONFIG.embedding_batch_size
+    # Enhanced metadata-aware индексация
+    metadata_indexer = MetadataAwareIndexer()
     total_chunks = 0
 
-    with tqdm(total=len(all_chunks), desc="Indexing chunks", unit="chunk") as pbar:
-        for i in range(0, len(all_chunks), batch_size):
-            batch = all_chunks[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            total_batches = (len(all_chunks) + batch_size - 1) // batch_size
-
-            logger.info(f"Индексируем батч {batch_num}/{total_batches}: {len(batch)} чанков")
-            indexed = upsert_chunks(batch)
-            total_chunks += indexed
-            pbar.update(len(batch))
+    # Используем enhanced metadata indexer для всей коллекции чанков
+    indexed = metadata_indexer.index_chunks_with_metadata(all_chunks)
+    total_chunks = indexed
     return {"pages": len(pages), "chunks": total_chunks}
+
+
+def crawl_and_index_optimized(
+    source_name: str = "edna_docs",
+    max_pages: Optional[int] = None,
+    chunk_strategy: str = "adaptive"
+) -> dict[str, Any]:
+    """Optimized crawling and indexing using new architecture.
+
+    Args:
+        source_name: Name of the data source to use
+        max_pages: Maximum number of pages to process
+        chunk_strategy: Chunking strategy ("adaptive" or "standard")
+
+    Returns:
+        Dictionary with indexing results and statistics
+    """
+    logger.info(f"Starting optimized indexing with source: {source_name}")
+
+    try:
+        # Use the new optimized pipeline
+        result = run_optimized_indexing(
+            source_name=source_name,
+            max_pages=max_pages,
+            chunk_strategy=chunk_strategy
+        )
+
+        if result["success"]:
+            logger.info(f"✅ Optimized indexing completed successfully:")
+            logger.info(f"   Pages: {result['pages']}")
+            logger.info(f"   Chunks: {result['chunks']}")
+            logger.info(f"   Duration: {result['duration']:.2f}s")
+        else:
+            logger.error(f"❌ Optimized indexing failed: {result.get('error', 'Unknown error')}")
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Optimized indexing failed: {e}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "pages": 0,
+            "chunks": 0,
+            "duration": 0.0
+        }
 
 
 if __name__ == "__main__":

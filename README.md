@@ -323,6 +323,65 @@ CRAWL_MAX_PAGES=1000
 
 ## 🧪 Тестирование
 
+### Автотесты (Рекомендуется)
+
+Система включает полный набор автотестов для end-to-end проверки pipeline:
+
+```bash
+# Все быстрые тесты
+make test-fast
+
+# Только unit тесты
+make test-unit
+
+# Все тесты (включая медленные)
+make test
+
+# Тесты с покрытием кода
+make test-coverage
+
+# Линтинг и форматирование
+make lint
+make format
+```
+
+**Доступные команды:**
+- `make test-unit` - только unit тесты
+- `make test-integration` - интеграционные тесты
+- `make test-e2e` - end-to-end тесты
+- `make test-slow` - медленные тесты
+- `make test-fast` - быстрые тесты (без медленных)
+
+### End-to-End Pipeline Тесты
+
+```bash
+# Полный тест pipeline от извлечения до записи в Qdrant
+python scripts/test_full_pipeline.py
+
+# Запуск через pytest
+python scripts/run_tests.py --type fast --verbose
+```
+
+**Покрываемые сценарии:**
+- ✅ Извлечение и chunking документов
+- ✅ Адаптивные стратегии chunking
+- ✅ Индексация с enhanced metadata
+- ✅ Валидация конфигурации
+- ✅ Система плагинов источников данных
+- ✅ Метрики качества chunking
+
+### CI/CD Pipeline
+
+Автоматические тесты запускаются при:
+- Push в ветки `main`, `develop`
+- Создании Pull Request
+
+**GitHub Actions:**
+- Поддержка Python 3.9, 3.10, 3.11
+- Сервисы Redis и Qdrant для тестов
+- Линтинг и проверка типов
+- Генерация отчетов о покрытии
+
 ### Phase 2: RAGAS Quality System
 ```bash
 # Интеграционные тесты Phase 2
@@ -686,11 +745,72 @@ docker-compose up -d redis qdrant rag-api
 ├── adapters/           # Адаптеры каналов (Telegram, Web)
 ├── app/               # Core API (Flask)
 │   ├── routes/        # API endpoints
-│   └── services/      # Бизнес-логика
+│   ├── services/      # Бизнес-логика
+│   ├── abstractions/  # Абстракции и плагины
+│   └── sources/       # Источники данных
 ├── ingestion/         # Парсинг и индексация
-├── sparse_service/    # Сервис sparse эмбеддингов
-├── scripts/           # Утилиты
-└── docs/             # Документация
+├── tests/             # Автотесты
+├── scripts/           # Утилиты и тесты
+├── docs/             # Документация
+├── .github/workflows/ # CI/CD
+├── Makefile          # Команды разработки
+└── pytest.ini       # Конфигурация тестов
+```
+
+### Настройка среды разработки
+
+```bash
+# Установка зависимостей для разработки
+make dev-setup
+
+# Запуск автотестов
+make test-fast
+
+# Проверка кода
+make lint
+
+# Форматирование
+make format
+```
+
+### Добавление новых тестов
+
+1. **Unit тесты** - в `tests/test_*.py`:
+```python
+def test_new_feature():
+    """Тест новой функциональности"""
+    # Ваш тест
+    assert result == expected
+```
+
+2. **End-to-End тесты** - в `tests/test_end_to_end_pipeline.py`:
+```python
+def test_new_pipeline_step(self):
+    """Тест нового этапа pipeline"""
+    # Полный тест от извлечения до записи
+```
+
+3. **Маркировка тестов**:
+```python
+@pytest.mark.slow        # Медленные тесты
+@pytest.mark.integration # Интеграционные тесты
+@pytest.mark.unit        # Unit тесты
+```
+
+### Система плагинов
+
+Добавление новых источников данных:
+
+```python
+@register_data_source("my_source")
+class MyDataSource(DataSourceBase):
+    def fetch_pages(self, max_pages: Optional[int] = None) -> CrawlResult:
+        # Реализация извлечения данных
+        pass
+
+    def classify_page(self, page: Page) -> PageType:
+        # Классификация страниц
+        pass
 ```
 
 ### Добавление нового канала
@@ -747,15 +867,36 @@ MIT License
 
 ## 📞 Поддержка
 
-- Документация: [docs/](docs/)
+### Документация
+- **Основная документация**: [docs/](docs/)
+- **Автотесты и CI/CD**: [docs/autotests_integration_report.md](docs/autotests_integration_report.md)
 - **Phase 2 RAGAS Quality System**: [docs/phase2_ragas_quality_system.md](docs/phase2_ragas_quality_system.md)
-- API Документация: [OpenAPI/Swagger](docs/api_documentation.md)
-- RAGAS Quality System (Legacy): [docs/ragas_quality_system.md](docs/ragas_quality_system.md)
-- GPU настройка (Linux): [ROCm](docs/gpu_setup.md)
-- GPU настройка (Windows): [DirectML](docs/gpu_setup_windows.md)
-- Интерактивная документация: http://localhost:9000/apidocs
-- Issues: [GitHub Issues](https://github.com/your-repo/issues)
-- Email: support@example.com
+- **API Документация**: [OpenAPI/Swagger](docs/api_documentation.md)
+- **RAGAS Quality System (Legacy)**: [docs/ragas_quality_system.md](docs/ragas_quality_system.md)
+- **GPU настройка (Linux)**: [ROCm](docs/gpu_setup.md)
+- **GPU настройка (Windows)**: [DirectML](docs/gpu_setup_windows.md)
+
+### Интерактивные инструменты
+- **API документация**: http://localhost:9000/apidocs
+- **Swagger UI**: http://localhost:9000/apidocs
+- **Prometheus метрики**: http://localhost:9090
+- **Grafana дашборды**: http://localhost:8080
+
+### Тестирование и разработка
+```bash
+# Быстрая проверка системы
+make test-fast
+
+# Полная диагностика
+python scripts/test_full_pipeline.py
+
+# Проверка сервисов
+make check-services
+```
+
+### Контакты
+- **Issues**: [GitHub Issues](https://github.com/your-repo/issues)
+- **Email**: support@example.com
 
 ## 🎯 Roadmap
 

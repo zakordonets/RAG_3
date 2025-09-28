@@ -24,9 +24,7 @@ _ort_tokenizer = None
 _st_lock: Lock | None = Lock()
 
 
-OLLAMA_URL = CONFIG.ollama_url
-SPARSE_SERVICE_URL = CONFIG.sparse_service_url
-EMBEDDING_MODEL_NAME = CONFIG.embedding_model_name
+# Legacy parameters removed - using BGE-M3 directly
 
 
 def _init_onnx_embedder() -> Tuple[object, object]:
@@ -169,40 +167,14 @@ def embed_dense_batch(texts: Iterable[str]) -> list[list[float]]:
     return [row.tolist() for row in mat]
 
 
-@cache_embedding(ttl=3600)  # Кэшируем на 1 час
 def embed_sparse(text: str) -> dict:
-    """Возвращает sparse-представление текста (BGE-M3 sparse) через локальный сервис.
-    Приводит ответ к формату Qdrant: {indices: [...], values: [...]}.
+    """DEPRECATED: Sparse embedding through external service.
+
+    This function is deprecated as sparse vectors are now handled by BGE-M3.
+    Use embed_batch_optimized from bge_embeddings.py instead.
     """
-    if not CONFIG.use_sparse:
-        return {"indices": [], "values": []}
-
-    if not CONFIG.cache_enabled:
-        # Если кэширование отключено, выполняем напрямую
-        try:
-            resp = requests.post(f"{SPARSE_SERVICE_URL}/embed", json={"text": text}, timeout=60)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.warning(f"Sparse embedding service failed: {e}")
-            return {"indices": [], "values": []}
-    else:
-        # Кэшированная версия
-        try:
-            resp = requests.post(f"{SPARSE_SERVICE_URL}/embed", json={"text": text}, timeout=60)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.warning(f"Sparse embedding service failed: {e}")
-            return {"indices": [], "values": []}
-
-    # Ожидаемый формат для Qdrant SparseVector: {indices: [...], values: [...]}
-    # Если сервис вернул словарь term->weight, конвертируем в списки
-    if isinstance(data, dict) and ("indices" not in data or "values" not in data):
-        indices = list(data.keys())
-        values = [float(data[k]) for k in indices]
-        return {"indices": indices, "values": values}
-    return data
+    logger.warning("embed_sparse is deprecated. Use BGE-M3 sparse vectors instead.")
+    return {"indices": [], "values": []}
 
 
 def embed_sparse_batch(texts: Iterable[str]) -> list[dict[str, float]]:

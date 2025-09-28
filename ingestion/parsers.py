@@ -45,6 +45,18 @@ def parse_api_documentation(content: str) -> dict:
 
 
 def parse_release_notes(content: str) -> dict:
+    # Проверяем, является ли контент от Jina Reader
+    if content.startswith("Title:") and "URL Source:" in content:
+        parsed = parse_jina_content(content)
+        return {
+            "title": parsed["title"],
+            "text": parsed["content"],
+            "version": None,
+            "features": [],
+            "fixes": [],
+            "breaking_changes": [],
+        }
+
     soup = BeautifulSoup(content, "lxml")
     return {
         "version": None,
@@ -88,13 +100,26 @@ def parse_jina_content(jina_content: str) -> dict:
     # Ищем начало контента после "Markdown Content:"
     content_started = False
     content_lines = []
+    skip_next_empty = False
 
     for line in lines:
         if line.startswith("Markdown Content:"):
             content_started = True
+            skip_next_empty = True
             continue
 
         if content_started:
+            # Пропускаем первую пустую строку после "Markdown Content:"
+            if skip_next_empty and not line.strip():
+                skip_next_empty = False
+                continue
+
+            # Останавливаемся на следующем заголовке или URL Source или Published Time
+            if (line.startswith("Title:") or
+                line.startswith("URL Source:") or
+                line.startswith("Published Time:")):
+                break
+
             content_lines.append(line)
 
     if content_lines:
@@ -110,6 +135,10 @@ def parse_jina_content(jina_content: str) -> dict:
             if line.startswith("Title:"):
                 title_found = True
                 continue
+
+            # Останавливаемся на URL Source или следующем заголовке
+            if line.startswith("URL Source:") or (title_found and line.startswith("Title:")):
+                break
 
             if title_found and line.strip():
                 content_lines.append(line)

@@ -12,7 +12,6 @@ def create_app() -> Flask:
     # Bind selected config values (optional, services import CONFIG directly)
     app.config["QDRANT_URL"] = CONFIG.qdrant_url
     app.config["QDRANT_API_KEY"] = CONFIG.qdrant_api_key
-    app.config["OLLAMA_URL"] = CONFIG.ollama_url
     app.config["DEFAULT_LLM"] = CONFIG.default_llm
 
     CORS(app)

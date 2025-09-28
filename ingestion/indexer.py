@@ -60,12 +60,16 @@ def upsert_chunks(chunks: list[dict]) -> int:
         if CONFIG.use_sparse:
             try:
                 if CONFIG.embeddings_backend in ["bge", "hybrid", "auto"]:
-                    # BGE-M3 format: lexical_weights dict
+                    # BGE-M3 format: lexical_weights dict - OPTIMIZED
                     lex_weights = sparse_results[i]
                     logger.debug(f"Chunk {i}: sparse_results type: {type(lex_weights)}, content: {lex_weights}")
                     if lex_weights and isinstance(lex_weights, dict):
-                        indices = [int(k) for k in lex_weights.keys()]  # Ensure int indices
-                        values = [float(lex_weights[k]) for k in lex_weights.keys()]
+                        # Оптимизированная конверсия - избегаем дублирования доступа к ключам
+                        items = list(lex_weights.items())
+                        # Сортировка по весу для лучшего сжатия и производительности
+                        sorted_items = sorted(items, key=lambda x: x[1], reverse=True)
+                        indices = [int(k) for k, v in sorted_items]
+                        values = [float(v) for k, v in sorted_items]
                         logger.debug(f"Chunk {i}: indices={len(indices)}, values={len(values)}")
                         if indices:  # Only add if non-empty
                             # Добавляем sparse вектор в тот же dict

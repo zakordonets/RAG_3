@@ -49,7 +49,7 @@ def to_hit(res) -> list[dict]:
 
 
 def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: dict[str, float] | None = None) -> list[dict]:
-    """Гибридный поиск в Qdrant с RRF и простым metadata-boost.
+    """Гибридный поиск в Qdrant с RRF и улучшенным ранжированием.
     - query_dense: плотный вектор BGE-M3
     - query_sparse: словарь с полями indices/values (BGE-M3 sparse)
     - boosts: словарь типа {page_type: factor}
@@ -108,12 +108,70 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
         # Fallback to dense only
         fused = to_hit(dense_res)
 
-    # Metadata boost
+    # Универсальная система бустинга документов
     def boost_score(item: dict) -> float:
         s = item.get("rrf_score", item.get("score", 0.0))
-        page_type = (item.get("payload", {}).get("page_type") or "").lower()
+        payload = item.get("payload", {})
+
+        # 1. Metadata boost (существующий)
+        page_type = (payload.get("page_type") or "").lower()
         if page_type and page_type in boosts:
             s *= float(boosts[page_type])
+
+        # 2. Тип документа на основе URL структуры
+        url = payload.get("url", "").lower()
+        title = payload.get("title", "").lower()
+
+        # Обзорная документация (высокий приоритет)
+        if any(path in url for path in ["/start/", "/overview", "/introduction", "/what-is", "/about"]):
+            s *= CONFIG.boost_overview_docs
+        # FAQ и справочники (средний приоритет)
+        elif any(path in url for path in ["/faq", "/guide", "/manual", "/help"]):
+            s *= CONFIG.boost_faq_guides
+        # Техническая документация (средний приоритет)
+        elif any(path in url for path in ["/admin/", "/api/", "/sdk/", "/integration"]):
+            s *= CONFIG.boost_technical_docs
+        # Release notes и блоги (низкий приоритет для общих вопросов)
+        elif any(path in url for path in ["/blog", "/release", "/version", "/changelog"]):
+            s *= CONFIG.boost_release_notes
+
+        # 3. Boost на основе заголовка
+        if any(keyword in title for keyword in ["что такое", "обзор", "введение", "начало работы", "возможности"]):
+            s *= CONFIG.boost_overview_docs
+        elif any(keyword in title for keyword in ["настройка", "конфигурация", "установка"]):
+            s *= CONFIG.boost_technical_docs
+
+        # 4. Boost на основе полноты информации
+        text = payload.get("text", "")
+        content_length = payload.get("content_length", 0)
+
+        # Документы средней длины (не слишком короткие, не слишком длинные)
+        if 1000 <= content_length <= 5000:
+            s *= CONFIG.boost_optimal_length
+        elif content_length > 5000:
+            s *= CONFIG.boost_technical_docs  # Длинные документы могут быть избыточными
+
+        # 5. Boost для документов с хорошей структурой
+        if text:
+            text_lower = text.lower()
+            # Документы с заголовками и списками (хорошо структурированные)
+            if any(marker in text_lower for marker in ["##", "###", "•", "1.", "2.", "3."]):
+                s *= CONFIG.boost_well_structured
+            # Документы с примерами (практические)
+            if any(marker in text_lower for marker in ["пример", "например", "как", "шаг"]):
+                s *= CONFIG.boost_technical_docs
+
+        # 6. Boost для документов из надежных источников
+        source = payload.get("source", "").lower()
+        if source in ["docs-site", "official-docs", "main-docs"]:
+            s *= CONFIG.boost_reliable_source
+
+        # 7. Понижение для дублирующихся документов (по URL паттерну)
+        # Это поможет избежать повторения похожих документов
+        url_parts = url.split("/")
+        if len(url_parts) > 4:  # Глубоко вложенные документы
+            s *= 0.95
+
         return s
 
     # Apply boosts and sort

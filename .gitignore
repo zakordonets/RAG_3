@@ -323,3 +323,10 @@ performance_logs/
 # Quality system backups
 quality_backups/
 ragas_backups/
+
+# Autotests and CI/CD
+test_results.log
+test_output/
+.mypy_cache/
+bandit-report.json
+safety-report.json
