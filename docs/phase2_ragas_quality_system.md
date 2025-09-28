@@ -13,24 +13,24 @@ graph TB
     C --> D[RAGAS Evaluator]
     C --> E[Quality Database]
     C --> F[Metrics Collector]
-    
+
     D --> G[Yandex LLM]
     D --> H[BGE Embeddings]
     D --> I[Fallback Scores]
-    
+
     E --> J[SQLite/PostgreSQL]
     F --> K[Prometheus]
     K --> L[Grafana Dashboard]
-    
+
     M[Admin API] --> C
     N[User Feedback] --> C
-    
+
     subgraph "RAGAS Metrics"
         O[Faithfulness]
         P[Context Precision]
         Q[Answer Relevancy]
     end
-    
+
     D --> O
     D --> P
     D --> Q
@@ -62,9 +62,9 @@ def _calculate_fallback_scores(self, query: str, response: str, contexts: List[s
     """Эвристические оценки при недоступности RAGAS"""
     # Простые эвристики на основе длины и релевантности
     faithfulness = min(0.8, len(response) / 100.0)  # 0.8 max
-    context_precision = min(0.7, len(contexts) * 0.2)  # 0.7 max  
+    context_precision = min(0.7, len(contexts) * 0.2)  # 0.7 max
     answer_relevancy = min(0.9, len(query.split()) / 10.0)  # 0.9 max
-    
+
     return {
         'faithfulness': faithfulness,
         'context_precision': context_precision,
@@ -86,9 +86,9 @@ def _calculate_fallback_scores(self, query: str, response: str, contexts: List[s
 **API методы**:
 ```python
 class UnifiedQualityManager:
-    async def evaluate_interaction(self, query: str, response: str, 
+    async def evaluate_interaction(self, query: str, response: str,
                                  contexts: List[str], sources: List[str]) -> str
-    async def add_user_feedback(self, interaction_id: str, 
+    async def add_user_feedback(self, interaction_id: str,
                               feedback_type: str, feedback_text: str) -> bool
     async def get_quality_statistics(self, days: int = 7) -> Dict[str, Any]
     async def get_recent_interactions(self, limit: int = 10) -> List[Dict]
@@ -173,21 +173,21 @@ async def handle_callback_query(callback_query):
     try:
         data = callback_query.data
         interaction_id = data.split('_', 2)[1]  # feedback_<id>_<type>
-        
+
         feedback_type = "positive" if "positive" in data else "negative"
-        
+
         # Сохранение фидбека
         success = await quality_manager.add_user_feedback(
             interaction_id=interaction_id,
             feedback_type=feedback_type,
             feedback_text=""
         )
-        
+
         # Обновление кнопок
         await callback_query.answer(
             "✅ Спасибо за оценку!" if success else "❌ Ошибка сохранения"
         )
-        
+
     except Exception as e:
         logger.error(f"Error handling callback query: {e}")
 ```
@@ -249,16 +249,16 @@ ENABLE_QUALITY_METRICS=true
 **Качество RAGAS**:
 ```python
 # Метрики качества
-rag_ragas_score = Gauge('rag_ragas_score', 'RAGAS quality score', 
+rag_ragas_score = Gauge('rag_ragas_score', 'RAGAS quality score',
                        ['metric_type'])  # faithfulness, context_precision, answer_relevancy
-rag_combined_quality_score = Gauge('rag_combined_quality_score', 
+rag_combined_quality_score = Gauge('rag_combined_quality_score',
                                   'Combined quality score')
 rag_quality_interactions_total = Counter('rag_quality_interactions_total',
                                         'Total quality interactions')
-rag_user_feedback_total = Counter('rag_user_feedback_total', 
+rag_user_feedback_total = Counter('rag_user_feedback_total',
                                  'User feedback count', ['feedback_type'])
 rag_quality_evaluation_duration_seconds = Histogram(
-    'rag_quality_evaluation_duration_seconds', 
+    'rag_quality_evaluation_duration_seconds',
     'Quality evaluation duration'
 )
 ```
@@ -272,11 +272,11 @@ avg(rag_ragas_score)
 rate(rag_quality_interactions_total[1h])
 
 # Соотношение положительного/отрицательного фидбека
-rate(rag_user_feedback_total{feedback_type="positive"}[1h]) / 
+rate(rag_user_feedback_total{feedback_type="positive"}[1h]) /
 rate(rag_user_feedback_total[1h])
 
 # Среднее время RAGAS оценки
-rate(rag_quality_evaluation_duration_seconds_sum[5m]) / 
+rate(rag_quality_evaluation_duration_seconds_sum[5m]) /
 rate(rag_quality_evaluation_duration_seconds_count[5m])
 ```
 
@@ -664,7 +664,7 @@ DATABASE_URL=sqlite+aiosqlite:///data/quality_interactions.db
 
 ---
 
-**Версия документации**: 2.0  
-**Дата обновления**: 2025-09-23  
-**Статус**: Production Ready ✅  
+**Версия документации**: 2.0
+**Дата обновления**: 2025-09-23
+**Статус**: Production Ready ✅
 **Автор**: RAG System Team

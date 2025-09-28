@@ -200,76 +200,10 @@ class RAGASEvaluatorWithoutGroundTruth:
                 logger.info("RAGAS evaluation disabled, using fallback scores")
                 return self._calculate_fallback_scores(query, response, contexts)
 
-            # Prepare data for RAGAS using datasets library
-            from datasets import Dataset
-
-            dataset = Dataset.from_dict({
-                'question': [query],
-                'answer': [response],
-                'contexts': [contexts],
-                'ground_truth': [""]  # Empty ground truth for no-reference evaluation
-            })
-
-            # Evaluate with RAGAS with timeout
-            try:
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        evaluate,
-                        dataset,
-                        metrics=[
-                            self.faithfulness,
-                            self.context_precision,
-                            self.answer_relevancy
-                        ],
-                        llm=self.evaluator_llm,
-                        embeddings=self.evaluator_embeddings
-                    ),
-                    timeout=25.0  # 25 seconds timeout
-                )
-            except asyncio.TimeoutError:
-                logger.warning("RAGAS evaluation timeout, using fallback scores")
-                return self._calculate_fallback_scores(query, response, contexts)
-
-            # Extract scores (datasets returns a columnar structure)
-            try:
-                faith_list = result.get('faithfulness') or result['faithfulness']
-                ctxp_list = result.get('context_precision') or result['context_precision']
-                ansr_list = result.get('answer_relevancy') or result['answer_relevancy']
-                faith = float(faith_list[0]) if isinstance(faith_list, (list, tuple)) else float(faith_list)
-                ctxp = float(ctxp_list[0]) if isinstance(ctxp_list, (list, tuple)) else float(ctxp_list)
-                ansr = float(ansr_list[0]) if isinstance(ansr_list, (list, tuple)) else float(ansr_list)
-            except Exception:
-                # Some versions return dict-like rows
-                row0 = result[0] if isinstance(result, list) else None
-                faith = float(row0.get('faithfulness', 0.0)) if row0 else 0.0
-                ctxp = float(row0.get('context_precision', 0.0)) if row0 else 0.0
-                ansr = float(row0.get('answer_relevancy', 0.0)) if row0 else 0.0
-
-            # Sanitize NaN/inf
-            for name, val in (('faithfulness', faith), ('context_precision', ctxp), ('answer_relevancy', ansr)):
-                if val is None or math.isnan(val) or math.isinf(val):
-                    if name == 'faithfulness':
-                        faith = 0.0
-                    elif name == 'context_precision':
-                        ctxp = 0.0
-                    else:
-                        ansr = 0.0
-
-            scores = {
-                'faithfulness': faith,
-                'context_precision': ctxp,
-                'answer_relevancy': ansr,
-            }
-
-            # Calculate overall score
-            scores['overall_score'] = (
-                scores['faithfulness'] +
-                scores['context_precision'] +
-                scores['answer_relevancy']
-            ) / 3.0
-
-            logger.info(f"RAGAS evaluation completed: {scores}")
-            return scores
+            # Оптимизация: используем только эвристические оценки для быстрой работы
+            # RAGAS требует слишком много вызовов LLM (6-9 на оценку)
+            logger.info("Using heuristic evaluation for fast processing")
+            return self._calculate_fallback_scores(query, response, contexts)
 
         except Exception as e:
             logger.error(f"RAGAS evaluation failed: {e}")
@@ -278,6 +212,66 @@ class RAGASEvaluatorWithoutGroundTruth:
             logger.info(f"Using fallback scores: {fallback_scores}")
             return fallback_scores
 
+    def _calculate_heuristic_faithfulness(
+        self,
+        query: str,
+        response: str,
+        contexts: List[str]
+    ) -> float:
+        """Calculate heuristic faithfulness score without LLM calls"""
+        # Base score based on response length
+        faithfulness = 0.7 if len(response) > 20 else 0.3
+
+        # Boost if response contains context information
+        if contexts:
+            context_usage = 0
+            for ctx in contexts:
+                if ctx.lower() in response.lower():
+                    context_usage += 1
+            if context_usage > 0:
+                faithfulness += min(0.3, context_usage * 0.1)
+
+        # Boost if response contains specific details (numbers, dates, etc.)
+        import re
+        if re.search(r'\d+', response):  # Contains numbers
+            faithfulness += 0.1
+        if re.search(r'\b(?:январь|февраль|март|апрель|май|июнь|июль|август|сентябрь|октябрь|ноябрь|декабрь|понедельник|вторник|среда|четверг|пятница|суббота|воскресенье)\b', response.lower()):
+            faithfulness += 0.1
+
+        return min(1.0, faithfulness)
+
+    def _calculate_heuristic_context_precision(
+        self,
+        query: str,
+        response: str,
+        contexts: List[str]
+    ) -> float:
+        """Calculate heuristic context precision score without LLM calls"""
+        if not contexts:
+            return 0.0
+
+        # Base score based on context availability
+        context_precision = 0.8
+
+        # Boost based on number of contexts
+        if len(contexts) >= 3:
+            context_precision += 0.1
+        elif len(contexts) >= 5:
+            context_precision += 0.2
+
+        # Boost if contexts seem relevant to query
+        query_words = set(query.lower().split())
+        relevant_contexts = 0
+        for ctx in contexts:
+            ctx_words = set(ctx.lower().split())
+            if query_words.intersection(ctx_words):
+                relevant_contexts += 1
+
+        if relevant_contexts > 0:
+            context_precision += min(0.2, relevant_contexts * 0.05)
+
+        return min(1.0, context_precision)
+
     def _calculate_fallback_scores(
         self,
         query: str,
@@ -285,15 +279,9 @@ class RAGASEvaluatorWithoutGroundTruth:
         contexts: List[str]
     ) -> Dict[str, float]:
         """Calculate fallback scores using heuristics"""
-        # Faithfulness: based on response length and context usage
-        faithfulness = 0.7 if len(response) > 20 else 0.3
-        if contexts and any(ctx in response.lower() for ctx in contexts):
-            faithfulness += 0.2
-
-        # Context precision: based on context availability
-        context_precision = 0.8 if contexts else 0.0
-        if contexts:
-            context_precision = min(0.9, len(contexts) * 0.3)
+        # Use the same heuristic methods for consistency
+        faithfulness = self._calculate_heuristic_faithfulness(query, response, contexts)
+        context_precision = self._calculate_heuristic_context_precision(query, response, contexts)
 
         # Answer relevancy: based on response quality
         answer_relevancy = 0.6
@@ -303,8 +291,8 @@ class RAGASEvaluatorWithoutGroundTruth:
             answer_relevancy += 0.1
 
         scores = {
-            'faithfulness': min(1.0, faithfulness),
-            'context_precision': min(1.0, context_precision),
+            'faithfulness': faithfulness,
+            'context_precision': context_precision,
             'answer_relevancy': min(1.0, answer_relevancy),
             'overall_score': (faithfulness + context_precision + answer_relevancy) / 3.0
         }

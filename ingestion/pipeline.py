@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 from loguru import logger
 from tqdm import tqdm
@@ -62,7 +63,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
         logger.info(f"Загружено {len(pages)} страниц из кеша")
     else:
-        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache)
+        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache, max_pages=max_pages)
 
     # 2) Фолбэки если основной метод не сработал
     if not pages:
@@ -114,7 +115,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 url_parts = url.split('/')
                 title = url_parts[-1].replace('-', ' ').replace('_', ' ').title()
 
-            for ct in chunks_text:
+            for i, ct in enumerate(chunks_text):
                 all_chunks.append({
                     "text": ct,
                     "payload": {
@@ -124,6 +125,10 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                         "language": "ru",
                         "title": title,
                         "text": ct,
+                        "indexed_via": strategy,
+                        "indexed_at": time.time(),
+                        "chunk_index": i,
+                        "content_length": len(text),
                     },
                 })
             pbar.update(1)

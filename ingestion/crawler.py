@@ -235,7 +235,7 @@ def crawl_seed(urls: list[str] | None = None) -> list[dict]:
 
 
 # --- Альтернативный парсер для MkDocs search_index.json ---
-def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina", use_cache: bool = True) -> list[dict]:
+def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina", use_cache: bool = True, max_pages: int = None) -> list[dict]:
     """
     Улучшенный crawling с правильным отображением прогресса и кешированием.
     Сначала получает все URL из sitemap, затем проверяет кеш и обрабатывает только измененные страницы.
@@ -283,6 +283,11 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                     })
                     logger.debug(f"Loaded from cache: {url}")
 
+                    # Ограничиваем количество страниц для тестирования
+                    if max_pages and len(pages) >= max_pages:
+                        logger.info(f"Достигнуто ограничение max_pages={max_pages}, останавливаем загрузку из кеша")
+                        break
+
         urls_to_process = list(urls_to_fetch)
     else:
         urls_to_process = urls
@@ -298,6 +303,11 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
 
     with tqdm(total=len(urls_to_process), desc="Crawling new pages", unit="page") as pbar:
         for i, url in enumerate(urls_to_process, 1):
+            # Ограничиваем количество страниц для тестирования
+            if max_pages and len(pages) >= max_pages:
+                logger.info(f"Достигнуто ограничение max_pages={max_pages}, останавливаем crawling")
+                break
+
             try:
                 url = _normalize_url(url)
                 timeout = CONFIG.crawl_timeout_s

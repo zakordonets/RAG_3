@@ -36,7 +36,7 @@ def _escape_markdown_v2(text: str) -> str:
     return re.sub(r"(?<!\\)([_*\[\]()~`>#+\-=|{}.!])", repl, text)
 
 
-def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | None = None, top_p: float | None = None) -> str:
+def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | None = None, top_p: float | None = None, system_prompt: str | None = None) -> str:
     url = f"{CONFIG.yandex_api_url}/completion"
     logger.debug(f"Yandex URL: {url}")
     headers = {
@@ -48,6 +48,22 @@ def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | No
     _temperature = 0.2 if temperature is None else float(temperature)
     _top_p = 1.0 if top_p is None else float(top_p)
 
+    # Формируем массив сообщений с поддержкой system-роли
+    messages = []
+
+    # Добавляем system-промпт, если он указан
+    if system_prompt:
+        messages.append({
+            "role": "system",
+            "text": system_prompt
+        })
+
+    # Добавляем пользовательский промпт
+    messages.append({
+        "role": "user",
+        "text": prompt
+    })
+
     payload = {
         "modelUri": f"gpt://{CONFIG.yandex_catalog_id}/{CONFIG.yandex_model}",
         "completionOptions": {
@@ -56,12 +72,7 @@ def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | No
             "topP": _top_p,
             "maxTokens": str(min(max_tokens, CONFIG.yandex_max_tokens))
         },
-        "messages": [
-            {
-                "role": "user",
-                "text": prompt
-            }
-        ]
+        "messages": messages
     }
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=60)
@@ -88,11 +99,28 @@ def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | No
     return text
 
 
-def _gpt5_complete(prompt: str, max_tokens: int = 800) -> str:
+def _gpt5_complete(prompt: str, max_tokens: int = 800, system_prompt: str | None = None) -> str:
     if not CONFIG.gpt5_api_url or not CONFIG.gpt5_api_key:
         raise RuntimeError("GPT-5 creds are not set")
     headers = {"Authorization": f"Bearer {CONFIG.gpt5_api_key}", "Content-Type": "application/json"}
-    payload = {"model": CONFIG.gpt5_model or "gpt5", "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens}
+
+    # Формируем массив сообщений с поддержкой system-роли
+    messages = []
+
+    # Добавляем system-промпт, если он указан
+    if system_prompt:
+        messages.append({
+            "role": "system",
+            "content": system_prompt
+        })
+
+    # Добавляем пользовательский промпт
+    messages.append({
+        "role": "user",
+        "content": prompt
+    })
+
+    payload = {"model": CONFIG.gpt5_model or "gpt5", "messages": messages, "max_tokens": max_tokens}
     resp = requests.post(CONFIG.gpt5_api_url, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
@@ -104,9 +132,26 @@ def _gpt5_complete(prompt: str, max_tokens: int = 800) -> str:
     return text
 
 
-def _deepseek_complete(prompt: str, max_tokens: int = 800) -> str:
+def _deepseek_complete(prompt: str, max_tokens: int = 800, system_prompt: str | None = None) -> str:
     headers = {"Authorization": f"Bearer {CONFIG.deepseek_api_key}", "Content-Type": "application/json"}
-    payload = {"model": CONFIG.deepseek_model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens}
+
+    # Формируем массив сообщений с поддержкой system-роли
+    messages = []
+
+    # Добавляем system-промпт, если он указан
+    if system_prompt:
+        messages.append({
+            "role": "system",
+            "content": system_prompt
+        })
+
+    # Добавляем пользовательский промпт
+    messages.append({
+        "role": "user",
+        "content": prompt
+    })
+
+    payload = {"model": CONFIG.deepseek_model, "messages": messages, "max_tokens": max_tokens}
     resp = requests.post(CONFIG.deepseek_api_url, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     data = resp.json()
@@ -164,26 +209,29 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
 
     sources_block = "\n".join(urls)
     context_block = "\n\n".join(content_blocks)
+
+    # System-промпт для профессионального ассистента
+    system_prompt = (
+        "Ты профессиональный ассистент edna Chat Center, специализирующийся на мультидокументном анализе. "
+        "Твоя задача — объединять информацию из разных источников, сохраняя логическую связность и структурированность ответа. "
+        "Обращай внимание на заголовки документов (📄) для лучшего понимания контекста. "
+        "Стремись к краткости и информативности, но не упусти важные детали. "
+        "При недостатке информации предоставляй безопасные общие рекомендации и предлагай релевантные ссылки для дальнейшего изучения темы."
+    )
+
+    # Пользовательский промпт с контекстом
     prompt = (
-        "Вы — ассистент edna Chat Center. Отвечайте по-русски, кратко и по делу.\n\n"
-        "Используйте ТОЛЬКО информацию из переданного контекста документов ниже. \n"
-        "Обратите внимание на заголовки документов (📄) - они помогут понять, о чем каждый документ.\n"
-        "Если фактов из контекста недостаточно, честно напишите: «В контексте нет данных», \n"
-        "и дайте безопасные общие рекомендации (без домыслов), затем предложите посмотреть по ссылкам.\n\n"
-        "Формат ответа — обычный Markdown:\n"
-        "- используйте **жирный**, *курсив*, списки с «- » или нумерованные «1.»;\n"
-        "- ссылки только в формате [текст](URL); не выдумывайте URL;\n"
-        "- код/команды — в тройных кавычках ``` (без языка);\n"
-        "- избегайте лишних символов, которые могут вызвать проблемы при форматировании.\n\n"
-        # "Структура (соблюдайте порядок и названия разделов):\n"
-        # "**Кратко** — 1–3 предложения сути.\n"
-        # "**Шаги** — подробная пошаговая инструкция (маркированный список).\n"
-        # "**Важно** — риски/заметки/ограничения (по необходимости).\n"
-        # "**Ссылки** — перечень только из переданных URL (если они были).\n"
-        # "**Ссылки** — перечень только из переданных URL (если они были).\n"
         f"Вопрос: {query}\n\n"
         f"Контекст документов:\n{context_block}\n\n"
-        f"Ссылки на источники:\n{sources_block}"
+        f"Ссылки на источники:\n{sources_block}\n\n"
+        "Отвечай по-русски, кратко и по делу. Используй ТОЛЬКО информацию из переданного контекста документов. "
+        "Если фактов из контекста недостаточно, честно напиши: «В контексте нет данных», "
+        "и дай безопасные общие рекомендации (без домыслов), затем предложи посмотреть по ссылкам.\n\n"
+        "Формат ответа — обычный Markdown:\n"
+        "- используй **жирный**, *курсив*, списки с «- » или нумерованные «1.»;\n"
+        "- ссылки только в формате [текст](URL); не выдумывай URL;\n"
+        "- код/команды — в тройных кавычках ``` (без языка);\n"
+        "- избегай лишних символов, которые могут вызвать проблемы при форматировании."
     )
 
     order = [DEFAULT_LLM, "GPT5", "DEEPSEEK"]
@@ -191,17 +239,17 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
         try:
             logger.debug(f"LLM provider attempt: {provider}")
             if provider == "YANDEX":
-                answer = _yandex_complete(prompt)
+                answer = _yandex_complete(prompt, system_prompt=system_prompt)
                 logger.debug(f"Before format [YANDEX] preview={answer[:200]!r}")
                 write_debug_event("llm.answer", {"provider": "YANDEX", "len": len(answer), "preview": answer[:500]})
                 return _format_for_telegram(answer)
             if provider == "GPT5":
-                answer = _gpt5_complete(prompt)
+                answer = _gpt5_complete(prompt, system_prompt=system_prompt)
                 logger.debug(f"Before format [GPT5] preview={answer[:200]!r}")
                 write_debug_event("llm.answer", {"provider": "GPT5", "len": len(answer), "preview": answer[:500]})
                 return _format_for_telegram(answer)
             if provider == "DEEPSEEK":
-                answer = _deepseek_complete(prompt)
+                answer = _deepseek_complete(prompt, system_prompt=system_prompt)
                 logger.debug(f"Before format [DEEPSEEK] preview={answer[:200]!r}")
                 write_debug_event("llm.answer", {"provider": "DEEPSEEK", "len": len(answer), "preview": answer[:500]})
                 return _format_for_telegram(answer)

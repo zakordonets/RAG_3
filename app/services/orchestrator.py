@@ -222,7 +222,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         get_metrics_collector().record_query_duration("total", total_time)
         get_metrics_collector().record_search_results("hybrid", len(candidates))
 
-        # Создаем quality interaction асинхронно
+        # Создаем quality interaction асинхронно в фоне (неблокирующе)
         interaction_id = None
         if CONFIG.enable_ragas_evaluation:
             try:
@@ -230,16 +230,39 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 contexts = [doc.get("text", "") for doc in top_docs]
                 source_urls = [source.get("url", "") for source in sources]
 
-                # Создаем quality interaction
-                interaction_id = asyncio.run(quality_manager.evaluate_interaction(
-                    query=normalized,
-                    response=answer,
-                    contexts=contexts,
-                    sources=source_urls
-                ))
-                logger.info(f"Created quality interaction: {interaction_id}")
+                # Запускаем RAGAS оценку в фоне через ThreadPoolExecutor
+                import concurrent.futures
+                import threading
+
+                def run_ragas_evaluation():
+                    """Запускает RAGAS оценку в отдельном event loop"""
+                    try:
+                        # Создаем новый event loop для этого потока
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+
+                        # Запускаем оценку
+                        result = loop.run_until_complete(quality_manager.evaluate_interaction(
+                            query=normalized,
+                            response=answer,
+                            contexts=contexts,
+                            sources=source_urls
+                        ))
+                        return result
+                    except Exception as e:
+                        logger.error(f"RAGAS evaluation failed in background: {e}")
+                        return None
+                    finally:
+                        loop.close()
+
+                # Запускаем в фоне
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(run_ragas_evaluation)
+                    # Не ждем результат - это должно быть неблокирующим
+                    logger.info("RAGAS evaluation started in background")
+
             except Exception as e:
-                logger.warning(f"Failed to create quality interaction: {e}")
+                logger.warning(f"Failed to start quality interaction: {e}")
 
         return {
             "answer": answer,

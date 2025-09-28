@@ -192,9 +192,9 @@ message = """
 # Создание inline клавиатуры
 keyboard = InlineKeyboardMarkup([
     [
-        InlineKeyboardButton("👍 Подходит", 
+        InlineKeyboardButton("👍 Подходит",
                            callback_data=f"feedback_{interaction_id}_positive"),
-        InlineKeyboardButton("👎 Не подходит", 
+        InlineKeyboardButton("👎 Не подходит",
                            callback_data=f"feedback_{interaction_id}_negative")
     ]
 ])
@@ -218,37 +218,37 @@ async def handle_feedback_callback(callback_query):
         # Парсинг callback данных
         data = callback_query.data
         parts = data.split('_', 2)  # feedback_<id>_<type>
-        
+
         if len(parts) != 3:
             await callback_query.answer("❌ Ошибка обработки фидбека")
             return
-            
+
         interaction_id = parts[1]
         feedback_type = "positive" if parts[2] == "positive" else "negative"
-        
+
         # Сохранение фидбека
         success = await quality_manager.add_user_feedback(
             interaction_id=interaction_id,
             feedback_type=feedback_type,
             feedback_text=""
         )
-        
+
         if success:
             # Обновление кнопок
             new_keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton(
-                    "✅ Спасибо за оценку!", 
+                    "✅ Спасибо за оценку!",
                     callback_data="feedback_received"
                 )]
             ])
-            
+
             await callback_query.edit_message_reply_markup(
                 reply_markup=new_keyboard
             )
             await callback_query.answer("✅ Оценка сохранена!")
         else:
             await callback_query.answer("❌ Ошибка сохранения оценки")
-            
+
     except Exception as e:
         logger.error(f"Error handling feedback callback: {e}")
         await callback_query.answer("❌ Произошла ошибка")
@@ -267,7 +267,7 @@ from app.services.quality_manager import quality_manager
 @pytest.mark.asyncio
 async def test_quality_flow():
     """Тест полного flow оценки качества"""
-    
+
     # 1. Создание взаимодействия
     interaction_id = await quality_manager.evaluate_interaction(
         query="Как настроить маршрутизацию?",
@@ -275,23 +275,23 @@ async def test_quality_flow():
         contexts=["Контекст 1", "Контекст 2"],
         sources=["https://docs.edna.ru/routing"]
     )
-    
+
     assert interaction_id is not None
     print(f"✅ Interaction created: {interaction_id}")
-    
+
     # 2. Добавление пользовательского фидбека
     feedback_success = await quality_manager.add_user_feedback(
         interaction_id=interaction_id,
         feedback_type="positive",
         feedback_text="Отличный ответ!"
     )
-    
+
     assert feedback_success is True
     print("✅ User feedback added")
-    
+
     # 3. Получение статистики
     stats = await quality_manager.get_quality_statistics(days=1)
-    
+
     assert stats['total_interactions'] > 0
     assert stats['avg_ragas_score'] > 0
     print(f"✅ Statistics retrieved: {stats}")
@@ -311,9 +311,9 @@ from app.services.ragas_evaluator import RAGASEvaluatorWithoutGroundTruth
 @pytest.mark.asyncio
 async def test_ragas_evaluation():
     """Тест RAGAS оценки"""
-    
+
     evaluator = RAGASEvaluatorWithoutGroundTruth()
-    
+
     # Тест с реальными данными
     scores = await evaluator.evaluate_interaction(
         query="Как настроить маршрутизацию?",
@@ -324,41 +324,41 @@ async def test_ragas_evaluation():
         ],
         sources=["https://docs.edna.ru/routing"]
     )
-    
+
     # Проверка структуры ответа
     assert 'faithfulness' in scores
     assert 'context_precision' in scores
     assert 'answer_relevancy' in scores
     assert 'overall_score' in scores
-    
+
     # Проверка диапазонов значений
     for metric, score in scores.items():
         assert 0.0 <= score <= 1.0, f"{metric} score out of range: {score}"
-    
+
     print(f"✅ RAGAS scores: {scores}")
 
 @pytest.mark.asyncio
 async def test_fallback_scores():
     """Тест fallback оценок при недоступности RAGAS"""
-    
+
     # Отключить RAGAS для теста fallback
     import os
     os.environ["RAGAS_EVALUATION_SAMPLE_RATE"] = "0"
-    
+
     evaluator = RAGASEvaluatorWithoutGroundTruth()
-    
+
     scores = await evaluator.evaluate_interaction(
         query="Тестовый вопрос",
         response="Тестовый ответ",
         contexts=["Контекст"],
         sources=["https://example.com"]
     )
-    
+
     # Проверка fallback логики
     assert scores['faithfulness'] <= 0.8
     assert scores['context_precision'] <= 0.7
     assert scores['answer_relevancy'] <= 0.9
-    
+
     print(f"✅ Fallback scores: {scores}")
 ```
 
@@ -371,40 +371,40 @@ import pytest
 
 def test_quality_stats_api():
     """Тест API статистики качества"""
-    
+
     response = requests.get("http://localhost:9000/v1/admin/quality/stats?days=7")
-    
+
     assert response.status_code == 200
-    
+
     data = response.json()
     assert 'total_interactions' in data
     assert 'avg_ragas_score' in data
     assert 'satisfaction_rate' in data
-    
+
     print(f"✅ Stats API: {data}")
 
 def test_quality_interactions_api():
     """Тест API списка взаимодействий"""
-    
+
     response = requests.get("http://localhost:9000/v1/admin/quality/interactions?limit=5")
-    
+
     assert response.status_code == 200
-    
+
     data = response.json()
     assert 'interactions' in data
     assert isinstance(data['interactions'], list)
-    
+
     if data['interactions']:
         interaction = data['interactions'][0]
         assert 'interaction_id' in interaction
         assert 'query' in interaction
         assert 'response' in interaction
-    
+
     print(f"✅ Interactions API: {len(data['interactions'])} interactions")
 
 def test_feedback_api():
     """Тест API добавления фидбека"""
-    
+
     # Сначала создаем взаимодействие через Chat API
     chat_response = requests.post(
         "http://localhost:9000/v1/chat/query",
@@ -414,13 +414,13 @@ def test_feedback_api():
             "chat_id": "test_user"
         }
     )
-    
+
     assert chat_response.status_code == 200
     chat_data = chat_response.json()
     interaction_id = chat_data.get("interaction_id")
-    
+
     assert interaction_id is not None
-    
+
     # Добавляем фидбек
     feedback_response = requests.post(
         "http://localhost:9000/v1/admin/quality/feedback",
@@ -430,12 +430,12 @@ def test_feedback_api():
             "feedback_text": "Отличный ответ!"
         }
     )
-    
+
     assert feedback_response.status_code == 200
-    
+
     feedback_data = feedback_response.json()
     assert feedback_data['success'] is True
-    
+
     print(f"✅ Feedback API: {feedback_data}")
 ```
 
@@ -691,6 +691,6 @@ spec:
 
 ---
 
-**Версия документации**: 2.0  
-**Дата обновления**: 2025-09-23  
+**Версия документации**: 2.0
+**Дата обновления**: 2025-09-23
 **Статус**: Production Ready ✅
