@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Optional
 from loguru import logger
 from tqdm import tqdm
 from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap, crawl_with_sitemap_progress
-from ingestion.parsers import extract_url_metadata
+from ingestion.parsers_migration import extract_url_metadata
 from ingestion.universal_loader import load_content_universal
 from ingestion.chunker import chunk_text, text_hash
 from ingestion.indexer import upsert_chunks
