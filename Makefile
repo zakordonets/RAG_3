@@ -49,6 +49,18 @@ test-quality: ## Запустить тесты системы качества
 	@echo "$(GREEN)Запуск тестов системы качества...$(NC)"
 	python -m pytest scripts/test_phase2_integration.py -v
 
+test-loading: ## Запустить тесты загрузки данных
+	@echo "$(GREEN)Запуск тестов загрузки данных...$(NC)"
+	python -m pytest tests/test_universal_loader.py -v
+
+test-metadata: ## Запустить тесты метаданных
+	@echo "$(GREEN)Запуск тестов метаданных...$(NC)"
+	python -m pytest tests/test_data_loading_validation.py -v
+
+test-all-loading: ## Запустить все тесты загрузки и метаданных
+	@echo "$(GREEN)Запуск всех тестов загрузки...$(NC)"
+	python -m pytest tests/test_universal_loader.py tests/test_data_loading_validation.py -v
+
 test-coverage: ## Запустить тесты с покрытием кода
 	@echo "$(GREEN)Запуск тестов с покрытием...$(NC)"
 	python -m pytest tests/ --cov=app --cov-report=html --cov-report=term

@@ -13,6 +13,7 @@ from tqdm import tqdm
 from app.abstractions.data_source import DataSourceBase, Page, CrawlResult, plugin_manager
 from app.services.metadata_aware_indexer import MetadataAwareIndexer
 from ingestion.chunker import chunk_text
+from ingestion.parsers import extract_url_metadata
 from app.config import CONFIG
 
 
@@ -143,6 +144,9 @@ class OptimizedPipeline:
         # Chunk the text
         chunks_text = chunk_text(page.content, max_tokens=optimal_size)
 
+        # Extract URL metadata
+        url_metadata = extract_url_metadata(page.url)
+        
         # Create chunk objects with enhanced metadata
         chunks = []
         for i, chunk_text_content in enumerate(chunks_text):
@@ -158,7 +162,8 @@ class OptimizedPipeline:
                     "content_length": len(chunk_text_content),
                     "last_modified": page.last_modified,
                     "size_bytes": page.size_bytes,
-                    **page.metadata
+                    **page.metadata,
+                    **url_metadata  # Добавляем URL метаданные
                 }
             }
             chunks.append(chunk)
@@ -170,6 +175,9 @@ class OptimizedPipeline:
 
         chunks_text = chunk_text(page.content)
 
+        # Extract URL metadata
+        url_metadata = extract_url_metadata(page.url)
+        
         chunks = []
         for i, chunk_text_content in enumerate(chunks_text):
             chunk = {
@@ -182,7 +190,8 @@ class OptimizedPipeline:
                     "language": page.language,
                     "chunk_index": i,
                     "content_length": len(chunk_text_content),
-                    **page.metadata
+                    **page.metadata,
+                    **url_metadata  # Добавляем URL метаданные
                 }
             }
             chunks.append(chunk)
