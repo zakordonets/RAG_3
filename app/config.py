@@ -86,8 +86,21 @@ class AppConfig:
     crawl_delay_ms: int = int(os.getenv("CRAWL_DELAY_MS", "800"))
     crawl_jitter_ms: int = int(os.getenv("CRAWL_JITTER_MS", "400"))
     crawl_deny_prefixes: list[str] = field(default_factory=lambda: [p.strip() for p in os.getenv("CRAWL_DENY_PREFIXES", "/docs/api/").split(",") if p.strip()])
-    chunk_min_tokens: int = int(os.getenv("CHUNK_MIN_TOKENS", "200"))
-    chunk_max_tokens: int = int(os.getenv("CHUNK_MAX_TOKENS", "800"))
+    chunk_min_tokens: int = int(os.getenv("CHUNK_MIN_TOKENS", "410"))  # 512 - 20% для BGE-M3
+    chunk_max_tokens: int = int(os.getenv("CHUNK_MAX_TOKENS", "614"))  # 512 + 20% для BGE-M3
+
+    # Chunking strategy selection
+    chunk_strategy: str = os.getenv("CHUNK_STRATEGY", "adaptive").lower()  # adaptive|simple
+
+    # Adaptive chunker parameters
+    adaptive_short_threshold: int = int(os.getenv("ADAPTIVE_SHORT_THRESHOLD", "300"))
+    adaptive_long_threshold: int = int(os.getenv("ADAPTIVE_LONG_THRESHOLD", "1000"))
+    adaptive_medium_size: int = int(os.getenv("ADAPTIVE_MEDIUM_SIZE", "512"))
+    adaptive_medium_overlap: int = int(os.getenv("ADAPTIVE_MEDIUM_OVERLAP", "100"))
+    adaptive_long_size: int = int(os.getenv("ADAPTIVE_LONG_SIZE", "800"))
+    adaptive_long_overlap: int = int(os.getenv("ADAPTIVE_LONG_OVERLAP", "160"))
+    adaptive_merge_short_paragraph_tokens: int = int(os.getenv("ADAPTIVE_MERGE_SHORT_PARAGRAPH_TOKENS", "50"))
+    adaptive_chunk_min_merge_tokens: int = int(os.getenv("ADAPTIVE_CHUNK_MIN_MERGE_TOKENS", "50"))
 
     # RAGAS Quality Evaluation
     enable_ragas_evaluation: bool = os.getenv("ENABLE_RAGAS_EVALUATION", "false").lower() in ("1", "true", "yes")
@@ -184,6 +197,22 @@ class AppConfig:
 
         if self.boost_release_notes <= 0:
             errors.append("boost_release_notes must be positive")
+
+        # Validate chunk strategy
+        if self.chunk_strategy not in ["adaptive", "simple"]:
+            errors.append("chunk_strategy must be one of: adaptive, simple")
+
+        # Validate adaptive thresholds
+        if self.adaptive_short_threshold <= 0 or self.adaptive_long_threshold <= 0:
+            errors.append("adaptive thresholds must be positive")
+        if self.adaptive_short_threshold >= self.adaptive_long_threshold:
+            errors.append("ADAPTIVE_SHORT_THRESHOLD must be less than ADAPTIVE_LONG_THRESHOLD")
+        if self.adaptive_medium_size <= 0 or self.adaptive_long_size <= 0:
+            errors.append("adaptive chunk sizes must be positive")
+        if self.adaptive_medium_overlap < 0 or self.adaptive_long_overlap < 0:
+            errors.append("adaptive overlaps must be non-negative")
+        if self.adaptive_merge_short_paragraph_tokens < 0:
+            errors.append("ADAPTIVE_MERGE_SHORT_PARAGRAPH_TOKENS must be non-negative")
 
         # Raise validation errors
         if errors:

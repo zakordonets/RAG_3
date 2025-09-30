@@ -1,4 +1,4 @@
-"""
+﻿"""
 Simple RAGAS Test
 """
 import asyncio

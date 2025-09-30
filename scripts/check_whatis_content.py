@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Проверка полного содержимого документа "Что такое edna Chat Center"
 """

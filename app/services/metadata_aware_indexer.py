@@ -112,6 +112,12 @@ class MetadataAwareIndexer:
                 chunk_index=payload.get("chunk_index", i),
                 section=payload.get("section")
             )
+
+            # Add adaptive chunking metadata
+            metadata.adaptive_chunking = payload.get("adaptive_chunking", False)
+            metadata.chunk_type = payload.get("chunk_type")
+            metadata.total_chunks = payload.get("total_chunks", 1)
+
             enhanced_metadata_list.append(metadata)
 
         # Determine optimal batch size
@@ -158,6 +164,12 @@ class MetadataAwareIndexer:
             # Add original payload fields that might be needed
             original_payload = chunk.get("payload", {})
             for key in ["indexed_via", "indexed_at", "url_hash"]:
+                if key in original_payload:
+                    search_payload[key] = original_payload[key]
+
+            # Add adaptive chunking fields
+            adaptive_fields = ["adaptive_chunking", "chunk_type", "total_chunks", "section_title", "section_index"]
+            for key in adaptive_fields:
                 if key in original_payload:
                     search_payload[key] = original_payload[key]
 

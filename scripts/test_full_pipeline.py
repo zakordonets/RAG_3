@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Полный end-to-end тест: от извлечения документа до записи в Qdrant
 """

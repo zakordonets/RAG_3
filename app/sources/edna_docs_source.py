@@ -13,7 +13,7 @@ from app.abstractions.data_source import (
     DataSourceBase, Page, PageType, CrawlResult, register_data_source
 )
 from ingestion.crawler import crawl_with_sitemap_progress
-from ingestion.parsers import parse_api_documentation, parse_release_notes, parse_faq_content, parse_guides
+from ingestion.processors.content_processor import ContentProcessor
 
 
 @register_data_source("edna_docs")
@@ -25,6 +25,7 @@ class EdnaDocsDataSource(DataSourceBase):
         self.strategy = config.get("strategy", "jina")
         self.use_cache = config.get("use_cache", True)
         self.max_pages = config.get("max_pages")
+        self.processor = ContentProcessor()  # Новый процессор контента
         super().__init__(config)
 
     def get_source_name(self) -> str:
@@ -128,20 +129,20 @@ class EdnaDocsDataSource(DataSourceBase):
         )
 
     def _parse_content(self, url: str, html: str) -> Dict[str, str]:
-        """Parse HTML content using appropriate parser"""
-        url_lower = url.lower()
-
+        """Parse HTML content using new ContentProcessor"""
         try:
-            if "faq" in url_lower:
-                return parse_faq_content(html)
-            elif "api" in url_lower:
-                return parse_api_documentation(html)
-            elif any(keyword in url_lower for keyword in ["release", "changelog", "blog"]):
-                return parse_release_notes(html)
-            else:
-                return parse_guides(html)
+            # Используем новый ContentProcessor
+            processed_page = self.processor.process(html, url, self.strategy)
+
+            # Адаптируем ProcessedPage к ожидаемому формату
+            return {
+                "text": processed_page.content,
+                "title": processed_page.title,
+                "page_type": processed_page.page_type,
+                **processed_page.metadata
+            }
         except Exception as e:
-            logger.warning(f"Parser failed for {url}, using fallback: {e}")
+            logger.warning(f"ContentProcessor failed for {url}, using fallback: {e}")
             # Fallback to basic parsing
             return {"text": html, "title": ""}
 

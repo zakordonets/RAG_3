@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 from loguru import logger
 from tqdm import tqdm
 from app.config import CONFIG
-from ingestion.browser_fetcher import fetch_html_sync
 import random
 import json as _json
 
@@ -130,6 +129,8 @@ def _jina_reader_fetch(url: str, timeout: int) -> str:
     session = _build_session()
     resp = session.get(reader_url, timeout=timeout)
     resp.raise_for_status()
+    # Принудительно устанавливаем UTF-8 кодировку для правильного отображения русского текста
+    resp.encoding = 'utf-8'
     return resp.text
 
 
@@ -139,7 +140,7 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
     pages: list[dict] = []
     session = _build_session()
 
-    pbar = tqdm(total=0, desc="Crawling")
+    pbar = tqdm(total=0, desc="Crawling", disable=True)
     while queue:
         url = queue.pop(0)
         if url in seen:
@@ -149,14 +150,11 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
             url = _normalize_url(url)
             timeout = CONFIG.crawl_timeout_s
             logger.info(f"GET {url} timeout={timeout}s queue={len(queue)} seen={len(seen)} strategy={strategy}")
-            if strategy == "browser":
-                html = fetch_html_sync(url, timeout_s=timeout, headless=False)
-                pages.append({"url": url, "html": html})
-            elif strategy == "jina":
+            if strategy == "jina":
                 text = _jina_reader_fetch(url, timeout=timeout)
                 pages.append({"url": url, "html": text, "text": text})
             else:
-                # HTTP (https) c фолбэками: Playwright → Jina
+                # HTTP (https) c фолбэком на Jina
                 try:
                     resp = session.get(url, timeout=timeout, allow_redirects=True)
                     resp.raise_for_status()
@@ -169,18 +167,13 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
                     logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)}")
                     pages.append({"url": url, "html": html})
                 except Exception as e_http:
-                    logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying browser…")
+                    logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying Jina…")
                     try:
-                        html = fetch_html_sync(url, timeout_s=timeout, headless=False)
-                        pages.append({"url": url, "html": html})
-                    except Exception as e_browser:
-                        logger.warning(f"Browser fetch failed for {url}: {type(e_browser).__name__}: {e_browser}. Trying Jina…")
-                        try:
-                            text = _jina_reader_fetch(url, timeout=timeout)
-                            pages.append({"url": url, "html": text, "text": text})
-                        except Exception as e_jina:
-                            logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
-                            raise
+                        text = _jina_reader_fetch(url, timeout=timeout)
+                        pages.append({"url": url, "html": text, "text": text})
+                    except Exception as e_jina:
+                        logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
+                        raise
             links = iter_links(pages[-1]["html"], url)
             logger.debug(f"EXTRACTED {len(links)} links from {url}")
             for l in links:
@@ -198,40 +191,7 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
     return pages
 
 
-SEED_URLS = [
-    "https://docs-chatcenter.edna.ru/",
-    "https://docs-chatcenter.edna.ru/docs/start/",
-    "https://docs-chatcenter.edna.ru/docs/agent/",
-    "https://docs-chatcenter.edna.ru/docs/supervisor/",
-    "https://docs-chatcenter.edna.ru/docs/admin/",
-    "https://docs-chatcenter.edna.ru/docs/chat-bot/",
-    "https://docs-chatcenter.edna.ru/docs/api/index/",
-    "https://docs-chatcenter.edna.ru/docs/faq/",
-    "https://docs-chatcenter.edna.ru/blog/",
-]
-
-
-def crawl_seed(urls: list[str] | None = None) -> list[dict]:
-    urls = urls or SEED_URLS
-    session = _build_session()
-    pages: list[dict] = []
-    pbar = tqdm(total=len(urls), desc="Crawling (seed)")
-    for url in urls:
-        try:
-            url = _normalize_url(url)
-            timeout = CONFIG.crawl_timeout_s
-            logger.info(f"GET {url} timeout={timeout}s [seed]")
-            resp = session.get(url, timeout=timeout, allow_redirects=True)
-            resp.raise_for_status()
-            html = resp.text
-            content_type = resp.headers.get("Content-Type", "")
-            logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)} [seed]")
-            pages.append({"url": url, "html": html})
-        except Exception as e:
-            logger.warning(f"Failed {url}: {type(e).__name__}: {e}")
-        pbar.update(1)
-    pbar.close()
-    return pages
+    # Упразднено: SEED_URLS и crawl_seed() — используйте crawl_sitemap/crawl_with_sitemap_progress
 
 
 # --- Альтернативный парсер для MkDocs search_index.json ---
@@ -301,7 +261,7 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
     logger.info(f"Начинаем crawling {len(urls_to_process)} страниц...")
     session = _build_session()
 
-    with tqdm(total=len(urls_to_process), desc="Crawling new pages", unit="page") as pbar:
+    with tqdm(total=len(urls_to_process), desc="Crawling new pages", unit="page", disable=True) as pbar:
         for i, url in enumerate(urls_to_process, 1):
             # Ограничиваем количество страниц для тестирования
             if max_pages and len(pages) >= max_pages:
@@ -318,13 +278,11 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                 text = ""
                 title = None
 
-                if strategy == "browser":
-                    html = fetch_html_sync(url, timeout_s=timeout, headless=False)
-                elif strategy == "jina":
+                if strategy == "jina":
                     text = _jina_reader_fetch(url, timeout=timeout)
                     html = text  # Для совместимости
                 else:
-                    # HTTP (https) с фолбэками: HTTP → Playwright → Jina
+                    # HTTP (https) с фолбэком на Jina
                     try:
                         resp = session.get(url, timeout=timeout, allow_redirects=True)
                         resp.raise_for_status()
@@ -336,18 +294,14 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                         content_type = resp.headers.get("Content-Type", "")
                         logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)}")
                     except Exception as e_http:
-                        logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying browser…")
+                        logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying Jina…")
                         try:
-                            html = fetch_html_sync(url, timeout_s=timeout, headless=False)
-                        except Exception as e_browser:
-                            logger.warning(f"Browser fetch failed for {url}: {type(e_browser).__name__}: {e_browser}. Trying Jina…")
-                            try:
-                                text = _jina_reader_fetch(url, timeout=timeout)
-                                html = text  # Для совместимости
-                            except Exception as e_jina:
-                                logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
-                                # Не поднимаем исключение, просто пропускаем эту страницу
-                                continue
+                            text = _jina_reader_fetch(url, timeout=timeout)
+                            html = text  # Для совместимости
+                        except Exception as e_jina:
+                            logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
+                            # Не поднимаем исключение, просто пропускаем эту страницу
+                            continue
 
                 # Определяем тип страницы для кеширования
                 page_type = "unknown"

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Скрипт очистки коллекции Qdrant и её пересоздания с актуальной схемой.
 
@@ -54,5 +54,4 @@ if __name__ == "__main__":
     _ = backup_points(limit=1000)
     clear_collection()
     print(f"Collection '{CONFIG.qdrant_collection}' cleared and recreated at {CONFIG.qdrant_url}")
-
 

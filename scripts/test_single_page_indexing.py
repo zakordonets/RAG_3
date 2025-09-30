@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Тестирует индексацию одной страницы для проверки качества
 """
@@ -11,8 +11,8 @@ from loguru import logger
 # Добавляем путь к модулю app
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.crawler import crawl_seed
-from ingestion.parsers import extract_main_text
+from ingestion.crawler import crawl_with_sitemap_progress
+from ingestion.parsers_migration import extract_main_text
 from ingestion.chunker import chunk_text_with_overlap
 from ingestion.indexer import upsert_chunks
 from bs4 import BeautifulSoup
@@ -29,7 +29,7 @@ async def test_single_page_indexing():
     try:
         # 1. Получаем HTML страницы
         print("\n1️⃣ Получаем HTML страницы...")
-        pages = crawl_seed([test_url])
+        pages = crawl_with_sitemap_progress(base_url=test_url, strategy="http", use_cache=False, max_pages=1)
 
         if not pages:
             print("❌ Не удалось получить страницу")

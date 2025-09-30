@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Полная замена коллекции с поддержкой sparse векторов
 """

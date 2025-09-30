@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Тест улучшенных метаданных для системы индексации.
 Проверяет извлечение метаданных из Jina Reader и URL паттернов.
@@ -10,7 +10,7 @@ from pathlib import Path
 # Добавляем корневую директорию проекта в путь
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers import parse_jina_content, extract_url_metadata
+from ingestion.parsers_migration import parse_jina_content, extract_url_metadata
 
 
 def test_jina_reader_metadata():

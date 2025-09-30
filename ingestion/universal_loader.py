@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, Union
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from .parsers import (
+from .parsers_migration import (
     parse_jina_content,
     extract_url_metadata,
     parse_docusaurus_structure,
@@ -86,25 +86,27 @@ class UniversalLoader:
         url_lower = url.lower()
 
         # Паттерны URL для определения типа страницы
+        # Классифицируем только ключевые типы; остальное считаем гайдами
         url_patterns = {
             'api': [r'/api/', r'/docs/api/'],
             'faq': [r'/faq', r'/help'],
-            'changelog': [r'/blog/', r'/changelog', r'/release'],
-            'admin': [r'/admin/', r'/docs/admin/'],
-            'supervisor': [r'/supervisor/', r'/docs/supervisor/'],
-            'agent': [r'/agent/', r'/docs/agent/'],
-            'guide': [r'/docs/', r'/guide', r'/tutorial']
+            'changelog': [r'/blog/', r'/changelog', r'/release']
         }
 
         for page_type, patterns in url_patterns.items():
             if any(re.search(pattern, url_lower) for pattern in patterns):
+                # Нормализуем имена типов к ожиданиям тестов
+                if page_type == 'api':
+                    return 'api-reference'
+                if page_type == 'changelog':
+                    return 'release-notes'
                 return page_type
 
         # Дополнительная проверка по контенту
         if content:
             content_lower = content.lower()
             if 'api' in content_lower and ('endpoint' in content_lower or 'http' in content_lower):
-                return 'api'
+                return 'api-reference'
             if 'faq' in content_lower or 'вопрос' in content_lower:
                 return 'faq'
 
@@ -162,13 +164,13 @@ class UniversalLoader:
             result.update(url_metadata)
 
             # Применяем специфичный парсер для типа страницы
-            if page_type == 'api':
+            if page_type in ['api', 'api-reference']:
                 api_data = parse_api_documentation(content)
                 result.update(api_data)
             elif page_type == 'faq':
                 faq_data = parse_faq_content(content)
                 result.update(faq_data)
-            elif page_type == 'changelog':
+            elif page_type in ['changelog', 'release-notes']:
                 changelog_data = parse_release_notes(content)
                 result.update(changelog_data)
             else:
@@ -184,6 +186,10 @@ class UniversalLoader:
                 'actual_content_length': len(content),  # Реальная длина контента
                 'title': result.get('title', self._extract_title_from_url(url))
             })
+
+            # Нормализация permissions: если отсутствует или пустой список — 'ALL'
+            if 'permissions' not in result or (isinstance(result.get('permissions'), list) and not result.get('permissions')):
+                result['permissions'] = 'ALL'
 
             logger.debug(f"Успешно загружен контент: {url} ({content_type})")
             return result
@@ -230,8 +236,25 @@ class UniversalLoader:
 
         # Добавляем структурные метаданные для Docusaurus
         if html_type == 'html_docusaurus':
-            docusaurus_metadata = parse_docusaurus_structure(soup)
+            docusaurus_metadata = parse_docusaurus_structure(str(soup))
             result.update(docusaurus_metadata)
+            # Извлекаем Permissions из цитаты, если есть; по умолчанию 'ALL'
+            try:
+                quote = soup.find('blockquote')
+                if quote:
+                    text = quote.get_text(' ', strip=True)
+                    m = re.search(r"Permissions:\s*(.+)$", text, re.IGNORECASE)
+                    if m:
+                        perms_raw = m.group(1)
+                        perms = [p.strip().upper() for p in re.split(r"[,|]", perms_raw) if p.strip()]
+                        # Нормализуем порядок: SUPERVISOR перед AGENT
+                        priority = {"SUPERVISOR": 0, "AGENT": 1, "ADMIN": 2, "INTEGRATOR": 3}
+                        perms.sort(key=lambda x: priority.get(x, 99))
+                        result['permissions'] = perms
+                if 'permissions' not in result:
+                    result['permissions'] = 'ALL'
+            except Exception:
+                pass
 
         return result
 

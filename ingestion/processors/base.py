@@ -54,4 +54,3 @@ class BaseParser(ABC):
         """Парсит контент и возвращает ProcessedPage."""
         raise NotImplementedError
 
-

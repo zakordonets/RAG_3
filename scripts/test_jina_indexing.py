@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Тестирует индексацию через Jina Reader для обхода блокировки ботов
 """
@@ -9,8 +9,8 @@ from pathlib import Path
 # Добавляем путь к модулю app
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.crawler import crawl_seed
-from ingestion.parsers import extract_main_text
+from ingestion.crawler import crawl_with_sitemap_progress
+from ingestion.parsers_migration import extract_main_text
 from ingestion.chunker import chunk_text_with_overlap
 from ingestion.indexer import upsert_chunks
 from bs4 import BeautifulSoup

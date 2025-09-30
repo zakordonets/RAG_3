@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Тест парсинга Jina Reader с реальными данными
 """
@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers import parse_jina_content
+from ingestion.parsers_migration import parse_jina_content
 from ingestion.crawler import _jina_reader_fetch
 
 def test_jina_parsing():

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Production модуль для индексации и переиндексации документации edna Chat Center
 

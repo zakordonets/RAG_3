@@ -4,6 +4,7 @@ import hashlib
 from typing import Iterable
 from loguru import logger
 from app.config import CONFIG
+from app.tokenizer import count_tokens
 
 # Импортируем семантический chunker
 try:
@@ -112,9 +113,9 @@ def _chunk_text_simple(text: str, min_tokens: int, max_tokens: int) -> list[str]
     if not paragraphs:
         return []
 
-    # Оптимальные размеры чанков - более агрессивное разбиение
-    optimal_min = max(min_tokens, int(max_tokens * 0.5))  # 50% от максимума
-    optimal_max = int(max_tokens * 0.8)  # 80% от максимума
+    # Оптимальные размеры чанков для BGE-M3 (512 токенов ±20%)
+    optimal_min = max(min_tokens, int(max_tokens * 0.8))  # 80% от максимума = 491 токенов
+    optimal_max = int(max_tokens * 1.0)  # 100% от максимума = 614 токенов
 
     chunks = []
     current_chunk_paragraphs = []
@@ -123,7 +124,7 @@ def _chunk_text_simple(text: str, min_tokens: int, max_tokens: int) -> list[str]
     logger.debug(f"Chunking {len(paragraphs)} paragraphs with optimal range {optimal_min}-{optimal_max} tokens")
 
     for i, paragraph in enumerate(paragraphs):
-        paragraph_tokens = len(paragraph.split())
+        paragraph_tokens = count_tokens(paragraph)
 
         # Случай 1: Параграф слишком большой - разбиваем его
         if paragraph_tokens > max_tokens:
@@ -150,9 +151,9 @@ def _chunk_text_simple(text: str, min_tokens: int, max_tokens: int) -> list[str]
                 # Смотрим вперед - если следующий параграф не поместится, завершаем чанк
                 next_paragraph_tokens = 0
                 if i + 1 < len(paragraphs):
-                    next_paragraph_tokens = len(paragraphs[i + 1].split())
+                    next_paragraph_tokens = count_tokens(paragraphs[i + 1])
 
-                # Более агрессивное завершение чанков
+                # Оптимальное завершение чанков для BGE-M3
                 should_finish = (
                     current_chunk_tokens + next_paragraph_tokens > optimal_max or  # Следующий не поместится
                     current_chunk_tokens >= optimal_max * 0.9 or  # Достигли 90% от оптимального максимума
@@ -226,7 +227,7 @@ def _split_large_paragraph(paragraph: str, min_tokens: int, max_tokens: int,
     current_tokens = 0
 
     for sentence in sentences:
-        sentence_tokens = len(sentence.split())
+        sentence_tokens = count_tokens(sentence)
 
         # Если предложение само по себе слишком большое
         if sentence_tokens > max_tokens:

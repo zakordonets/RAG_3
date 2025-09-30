@@ -1,0 +1,231 @@
+{
+    "id": null,
+    "uid": "rag-chunking",
+    "title": "RAG Chunking & Indexing",
+    "tags": [
+        "rag",
+        "chunking",
+        "indexing"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "templating": {
+        "list": [
+            {
+                "type": "query",
+                "name": "strategy",
+                "label": "Chunk Strategy",
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                },
+                "query": "label_values(rag_chunks_created_total, strategy)",
+                "current": {
+                    "selected": true,
+                    "text": "adaptive",
+                    "value": "adaptive"
+                },
+                "refresh": 2,
+                "includeAll": true
+            },
+            {
+                "type": "query",
+                "name": "model",
+                "label": "Embedding Model",
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                },
+                "query": "label_values(rag_chunk_optimal_ratio, model)",
+                "current": {
+                    "selected": true,
+                    "text": "bge-m3",
+                    "value": "bge-m3"
+                },
+                "refresh": 2,
+                "includeAll": true
+            }
+        ]
+    },
+    "panels": [
+        {
+            "type": "stat",
+            "title": "Last Pages Processed",
+            "gridPos": {
+                "x": 0,
+                "y": 0,
+                "w": 6,
+                "h": 4
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "rag_indexing_last_pages"
+                }
+            ],
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                },
+                "colorMode": "value",
+                "graphMode": "none"
+            }
+        },
+        {
+            "type": "stat",
+            "title": "Last Chunks Indexed",
+            "gridPos": {
+                "x": 6,
+                "y": 0,
+                "w": 6,
+                "h": 4
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "rag_indexing_last_chunks"
+                }
+            ],
+            "options": {
+                "reduceOptions": {
+                    "calcs": [
+                        "lastNotNull"
+                    ]
+                },
+                "colorMode": "value",
+                "graphMode": "none"
+            }
+        },
+        {
+            "type": "gauge",
+            "title": "Optimal Chunk Ratio (${model})",
+            "gridPos": {
+                "x": 12,
+                "y": 0,
+                "w": 12,
+                "h": 4
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "rag_chunk_optimal_ratio{model=~\"$model\"}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "min": 0,
+                    "max": 1,
+                    "unit": "percentunit"
+                }
+            }
+        },
+        {
+            "type": "bargauge",
+            "title": "Chunks by Type (${strategy})",
+            "gridPos": {
+                "x": 0,
+                "y": 4,
+                "w": 12,
+                "h": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "sum by (chunk_type) (max_over_time(rag_chunks_created_total{strategy=~\"$strategy\"}[$__range]))"
+                }
+            ]
+        },
+        {
+            "type": "timeseries",
+            "title": "Chunks Created Over Time by Page Type (${strategy})",
+            "gridPos": {
+                "x": 12,
+                "y": 4,
+                "w": 12,
+                "h": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "sum by (page_type) (max_over_time(rag_chunks_created_total{strategy=~\"$strategy\"}[$__interval]))"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "ops"
+                }
+            }
+        },
+        {
+            "type": "heatmap",
+            "title": "Chunk Size Distribution (tokens)",
+            "gridPos": {
+                "x": 0,
+                "y": 12,
+                "w": 12,
+                "h": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "targets": [
+                {
+                    "expr": "sum by (le) (rate(rag_chunk_size_tokens_bucket[$__range]))"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "short"
+                }
+            }
+        },
+        {
+            "type": "table",
+            "title": "Chunks by Strategy/Type/PageType (last 15m)",
+            "gridPos": {
+                "x": 12,
+                "y": 12,
+                "w": 12,
+                "h": 8
+            },
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "transformations": [
+                {
+                    "id": "labelsToFields"
+                }
+            ],
+            "targets": [
+                {
+                    "expr": "sum by (strategy,chunk_type,page_type) (max_over_time(rag_chunks_created_total[$__range]))"
+                }
+            ]
+        }
+    ]
+}

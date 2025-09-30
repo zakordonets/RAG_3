@@ -15,6 +15,115 @@
 
 ## 📋 План тестирования по этапам
 
+## 🔄 Адаптивный чанкинг - тестирование
+
+### Новые компоненты для тестирования
+
+#### 1. **AdaptiveChunker** (`ingestion/adaptive_chunker.py`)
+- **Unit тесты**: `tests/test_adaptive_chunker.py`
+- **Покрытие**: Классификация документов, стратегии чанкинга, метаданные
+- **Критерии**: 100% покрытие для всех типов документов (short/medium/long)
+
+#### 2. **UnifiedTokenizer** (`app/tokenizer.py`)
+- **Unit тесты**: `tests/test_unified_tokenizer.py`
+- **Покрытие**: Подсчет токенов, кэширование, производительность
+- **Критерии**: Точность подсчета, скорость работы, стабильность кэша
+
+#### 3. **ContentProcessor** (`ingestion/processors/content_processor.py`)
+- **Unit тесты**: `tests/test_new_parsers.py`
+- **Покрытие**: Диспетчеризация парсеров, обработка разных типов контента
+- **Критерии**: Корректная работа с Jina, HTML, Markdown
+
+#### 4. **Payload структура** (`tests/test_payload_structure.py`)
+- **Integration тесты**: Проверка структуры payload в Qdrant
+- **Покрытие**: Метаданные, типы чанков, совместимость
+- **Критерии**: Все обязательные поля присутствуют
+
+### Метрики качества чанкинга
+
+#### 1. **Оптимальное соотношение BGE-M3**
+```python
+def test_optimal_chunk_ratio():
+    """80%+ чанков в диапазоне 410-614 токенов"""
+    chunks = adaptive_chunker.chunk_text(text, metadata)
+    optimal_count = sum(1 for chunk in chunks
+                       if 410 <= chunk['metadata']['token_count'] <= 614)
+    ratio = optimal_count / len(chunks)
+    assert ratio >= 0.8, f"Optimal ratio {ratio:.2%} < 80%"
+```
+
+#### 2. **Производительность**
+```python
+def test_chunking_performance():
+    """<100ms на страницу для коротких документов"""
+    start_time = time.time()
+    chunks = adaptive_chunker.chunk_text(short_text, metadata)
+    duration = time.time() - start_time
+    assert duration < 0.1, f"Chunking too slow: {duration:.3f}s"
+```
+
+#### 3. **Семантическая целостность**
+```python
+def test_semantic_integrity():
+    """Сохранение логических блоков контента"""
+    chunks = adaptive_chunker.chunk_text(html_with_headers, metadata)
+    # Проверяем, что заголовки не разрываются
+    for chunk in chunks:
+        if 'section_title' in chunk['metadata']:
+            assert chunk['content'].startswith(chunk['metadata']['section_title'])
+```
+
+### Тестовые данные
+
+#### 1. **Короткие документы** (< 300 токенов)
+- FAQ ответы
+- Краткие инструкции
+- Описания API endpoints
+
+#### 2. **Средние документы** (300-800 токенов)
+- Руководства пользователя
+- API документация
+- Release notes
+
+#### 3. **Длинные документы** (> 800 токенов)
+- Полные руководства
+- Техническая документация
+- Блог-посты
+
+### Автоматизация тестирования
+
+#### 1. **Pre-commit hooks**
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: test-adaptive-chunking
+        name: Test adaptive chunking
+        entry: python -m pytest tests/test_adaptive_chunker.py -v
+        language: system
+        pass_filenames: false
+```
+
+#### 2. **CI/CD pipeline**
+```yaml
+# .github/workflows/test-adaptive-chunking.yml
+name: Test Adaptive Chunking
+on: [push, pull_request]
+jobs:
+  test-adaptive-chunking:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Test adaptive chunking
+        run: |
+          python -m pytest tests/test_adaptive_chunker.py -v
+          python -m pytest tests/test_unified_tokenizer.py -v
+          python -m pytest tests/test_payload_structure.py -v
+```
+
+## 📋 План тестирования по этапам
+
 ### Этап 1: Подготовка тестовой инфраструктуры
 
 #### 1.1 Создание тестовых утилит
@@ -85,7 +194,7 @@ def sample_html_content():
 # tests/test_data.py
 class TestDataProvider:
     """Провайдер тестовых данных"""
-    
+
     @staticmethod
     def get_jina_test_cases() -> List[Dict[str, Any]]:
         """Тестовые случаи для Jina Reader"""
@@ -141,7 +250,7 @@ API для создания нового агента в системе.
                 }
             }
         ]
-    
+
     @staticmethod
     def get_html_test_cases() -> List[Dict[str, Any]]:
         """Тестовые случаи для HTML"""
@@ -179,7 +288,7 @@ API для создания нового агента в системе.
                 }
             }
         ]
-    
+
     @staticmethod
     def get_error_test_cases() -> List[Dict[str, Any]]:
         """Тестовые случаи для обработки ошибок"""
@@ -214,7 +323,7 @@ from ingestion.processors.base import ProcessedPage
 
 class TestProcessedPage:
     """Тесты для ProcessedPage"""
-    
+
     def test_valid_processed_page_creation(self):
         """Тест создания валидной ProcessedPage"""
         page = ProcessedPage(
@@ -224,13 +333,13 @@ class TestProcessedPage:
             page_type="guide",
             metadata={"test": "value"}
         )
-        
+
         assert page.url == "https://example.com"
         assert page.title == "Test Page"
         assert page.content == "This is test content with sufficient length"
         assert page.page_type == "guide"
         assert page.metadata == {"test": "value"}
-    
+
     def test_processed_page_validation(self):
         """Тест валидации ProcessedPage"""
         # Тест с коротким контентом - должен вызвать исключение
@@ -242,7 +351,7 @@ class TestProcessedPage:
                 page_type="guide",
                 metadata={}
             )
-    
+
     def test_title_extraction_from_url(self):
         """Тест извлечения заголовка из URL"""
         page = ProcessedPage(
@@ -252,10 +361,10 @@ class TestProcessedPage:
             page_type="guide",
             metadata={}
         )
-        
+
         # Должен автоматически извлечь заголовок из URL
         assert page.title == "Quick Start Guide"
-    
+
     def test_metadata_validation(self):
         """Тест валидации метаданных"""
         page = ProcessedPage(
@@ -265,7 +374,7 @@ class TestProcessedPage:
             page_type="guide",
             metadata={"key1": "value1", "key2": 123}
         )
-        
+
         assert isinstance(page.metadata, dict)
         assert page.metadata["key1"] == "value1"
         assert page.metadata["key2"] == 123
@@ -280,61 +389,61 @@ from tests.test_data import TestDataProvider
 
 class TestJinaParser:
     """Тесты для JinaParser"""
-    
+
     def setup_method(self):
         """Настройка для каждого теста"""
         self.parser = JinaParser()
         self.test_cases = TestDataProvider.get_jina_test_cases()
-    
+
     def test_parse_valid_jina_content(self):
         """Тест парсинга валидного Jina контента"""
         test_case = self.test_cases[0]  # FAQ страница
-        
+
         result = self.parser.parse(test_case["url"], test_case["content"])
-        
+
         # Проверяем тип результата
         assert isinstance(result, ProcessedPage)
-        
+
         # Проверяем базовые поля
         assert result.url == test_case["url"]
         assert result.title == test_case["expected"]["title"]
         assert result.page_type == test_case["expected"]["page_type"]
-        
+
         # Проверяем контент
         for keyword in test_case["expected"]["content_contains"]:
             assert keyword in result.content
-        
+
         # Проверяем метаданные
         for field in test_case["expected"]["metadata_fields"]:
             assert field in result.metadata
-    
+
     def test_parse_api_documentation(self):
         """Тест парсинга API документации"""
         test_case = self.test_cases[1]  # API документация
-        
+
         result = self.parser.parse(test_case["url"], test_case["content"])
-        
+
         assert isinstance(result, ProcessedPage)
         assert result.page_type == "api"
         assert "API" in result.title
         assert "агента" in result.content
-    
+
     def test_parse_empty_content(self):
         """Тест парсинга пустого контента"""
         with pytest.raises(ValueError, match="Empty content"):
             self.parser.parse("https://example.com", "")
-    
+
     def test_parse_malformed_content(self):
         """Тест парсинга некорректного контента"""
         malformed_content = "Title: Test\nInvalid content without proper structure"
-        
+
         # Должен обработать, но с предупреждениями
         result = self.parser.parse("https://example.com", malformed_content)
-        
+
         assert isinstance(result, ProcessedPage)
         assert result.title == "Test"
         assert len(result.content) > 0
-    
+
     def test_extract_metadata(self):
         """Тест извлечения метаданных"""
         content = """Title: Test Page
@@ -349,9 +458,9 @@ Markdown Content:
 # Test Page
 
 Content here."""
-        
+
         result = self.parser.parse("https://example.com", content)
-        
+
         # Проверяем извлеченные метаданные
         assert result.metadata["content_length"] == 1500
         assert result.metadata["language_detected"] == "Russian"
@@ -368,47 +477,47 @@ from tests.test_data import TestDataProvider
 
 class TestHTMLParser:
     """Тесты для HTMLParser"""
-    
+
     def setup_method(self):
         """Настройка для каждого теста"""
         self.parser = HTMLParser()
         self.test_cases = TestDataProvider.get_html_test_cases()
-    
+
     def test_parse_docusaurus_html(self):
         """Тест парсинга Docusaurus HTML"""
         test_case = self.test_cases[0]  # Docusaurus страница
-        
+
         result = self.parser.parse(test_case["url"], test_case["content"])
-        
+
         assert isinstance(result, ProcessedPage)
         assert result.title == test_case["expected"]["title"]
         assert result.page_type == test_case["expected"]["page_type"]
-        
+
         # Проверяем контент
         for keyword in test_case["expected"]["content_contains"]:
             assert keyword in result.content
-        
+
         # Проверяем метаданные Docusaurus
         for field in test_case["expected"]["metadata_fields"]:
             assert field in result.metadata
-    
+
     def test_soup_caching(self):
         """Тест кеширования BeautifulSoup"""
         html_content = '<html><head><title>Test</title></head><body><h1>Test</h1></body></html>'
-        
+
         # Первый вызов
         result1 = self.parser.parse("https://example.com", html_content)
-        
+
         # Второй вызов с тем же контентом
         result2 = self.parser.parse("https://example.com", html_content)
-        
+
         # Проверяем что результаты одинаковые
         assert result1.title == result2.title
         assert result1.content == result2.content
-        
+
         # Проверяем что кеш используется
         assert len(self.parser._soup_cache) == 1
-    
+
     def test_extract_title_priority(self):
         """Тест приоритета извлечения заголовка"""
         html_content = """<!DOCTYPE html>
@@ -421,12 +530,12 @@ class TestHTMLParser:
     <p>Content</p>
 </body>
 </html>"""
-        
+
         result = self.parser.parse("https://example.com", html_content)
-        
+
         # Должен предпочесть h1 заголовку title
         assert result.title == "Main Heading"
-    
+
     def test_extract_content_structure(self):
         """Тест извлечения структурированного контента"""
         html_content = """<!DOCTYPE html>
@@ -442,9 +551,9 @@ class TestHTMLParser:
     <p>Another paragraph with more details.</p>
 </body>
 </html>"""
-        
+
         result = self.parser.parse("https://example.com", html_content)
-        
+
         # Проверяем что контент извлечен корректно
         assert "Main Title" in result.content
         assert "important information" in result.content
@@ -464,79 +573,79 @@ from tests.test_data import TestDataProvider
 
 class TestContentProcessor:
     """Тесты для ContentProcessor"""
-    
+
     def setup_method(self):
         """Настройка для каждого теста"""
         self.processor = ContentProcessor()
         self.jina_cases = TestDataProvider.get_jina_test_cases()
         self.html_cases = TestDataProvider.get_html_test_cases()
         self.error_cases = TestDataProvider.get_error_test_cases()
-    
+
     def test_process_jina_content(self):
         """Тест обработки Jina контента"""
         test_case = self.jina_cases[0]
-        
+
         result = self.processor.process(
-            test_case["url"], 
-            test_case["content"], 
+            test_case["url"],
+            test_case["content"],
             "jina"
         )
-        
+
         assert isinstance(result, ProcessedPage)
         assert result.page_type == test_case["expected"]["page_type"]
         assert result.title == test_case["expected"]["title"]
-    
+
     def test_process_html_content(self):
         """Тест обработки HTML контента"""
         test_case = self.html_cases[0]
-        
+
         result = self.processor.process(
-            test_case["url"], 
-            test_case["content"], 
+            test_case["url"],
+            test_case["content"],
             "html"
         )
-        
+
         assert isinstance(result, ProcessedPage)
         assert result.page_type == test_case["expected"]["page_type"]
         assert result.title == test_case["expected"]["title"]
-    
+
     def test_auto_detection(self):
         """Тест автоматического определения типа контента"""
         # Jina контент
         jina_result = self.processor.process(
-            "https://example.com", 
-            self.jina_cases[0]["content"], 
+            "https://example.com",
+            self.jina_cases[0]["content"],
             "auto"
         )
         assert jina_result.page_type == "faq"
-        
+
         # HTML контент
         html_result = self.processor.process(
-            "https://example.com", 
-            self.html_cases[0]["content"], 
+            "https://example.com",
+            self.html_cases[0]["content"],
             "auto"
         )
         assert html_result.page_type == "guide"
-    
+
     def test_error_handling(self):
         """Тест обработки ошибок"""
         test_case = self.error_cases[0]  # Пустой контент
-        
+
         result = self.processor.process(
-            test_case["url"], 
-            test_case["content"], 
+            test_case["url"],
+            test_case["content"],
             "auto"
         )
-        
+
         # Должен вернуть страницу с ошибкой
         assert isinstance(result, ProcessedPage)
         assert result.page_type == "error"
         assert "Error processing page" in result.content
-    
+
     def test_performance_with_caching(self):
         """Тест производительности с кешированием"""
         import time
-        
+
         # Тестовые данные
         test_pages = [
             {
@@ -545,7 +654,7 @@ class TestContentProcessor:
             }
             for i in range(50)
         ]
-        
+
         # Измеряем время обработки
         start_time = time.time()
         results = []
@@ -553,13 +662,13 @@ class TestContentProcessor:
             result = self.processor.process(page["url"], page["content"], "html")
             results.append(result)
         duration = time.time() - start_time
-        
+
         # Проверяем что все страницы обработаны
         assert len(results) == 50
-        
+
         # Проверяем что обработка завершилась за разумное время
         assert duration < 5.0  # 5 секунд максимум для 50 страниц
-        
+
         # Проверяем что все результаты валидны
         for result in results:
             assert isinstance(result, ProcessedPage)
@@ -578,22 +687,22 @@ from app.sources.edna_docs_source import EdnaDocsDataSource
 
 class TestPipelineCompatibility:
     """Тесты совместимости с существующим pipeline"""
-    
+
     def test_legacy_pipeline_compatibility(self):
         """Тест совместимости с legacy pipeline"""
         processor = ContentProcessor()
-        
+
         # Тестовые данные
         test_html = '<html><head><title>Test Guide</title></head><body><h1>Test Guide</h1><p>Guide content</p></body></html>'
-        
+
         # Обрабатываем через новый процессор
         result = processor.process("https://docs-chatcenter.edna.ru/guide", test_html, "html")
-        
+
         # Проверяем что есть поле content (ожидает legacy pipeline)
         assert hasattr(result, 'content')
         assert result.content
         assert len(result.content.strip()) > 0
-    
+
     def test_edna_docs_source_compatibility(self):
         """Тест совместимости с EdnaDocsDataSource"""
         # Создаем EdnaDocsDataSource
@@ -601,22 +710,22 @@ class TestPipelineCompatibility:
             'base_url': 'https://docs-chatcenter.edna.ru/',
             'strategy': 'html'
         })
-        
+
         # Тестовые данные
         test_html = '<html><head><title>Test Guide</title></head><body><h1>Test Guide</h1><p>Guide content</p></body></html>'
-        
+
         # Парсим контент
         parsed_content = source._parse_content('https://docs-chatcenter.edna.ru/guide', test_html)
-        
+
         # Проверяем что есть поле text (ожидает EdnaDocsDataSource)
         assert 'text' in parsed_content
         assert parsed_content['text']
         assert len(parsed_content['text'].strip()) > 0
-    
+
     def test_faq_parser_fix(self):
         """Тест исправления FAQ парсера"""
         processor = ContentProcessor()
-        
+
         # Тестовые данные для FAQ
         faq_content = """Title: FAQ - Часто задаваемые вопросы
 URL Source: https://docs-chatcenter.edna.ru/faq
@@ -631,9 +740,9 @@ A: Следуйте инструкции в разделе "Настройка".
 
 **Q: Как добавить агента?**
 A: Перейдите в раздел "Агенты" и нажмите "Добавить"."""
-        
+
         result = processor.process("https://docs-chatcenter.edna.ru/faq", faq_content, "jina")
-        
+
         # Проверяем что результат - ProcessedPage (не список!)
         assert isinstance(result, ProcessedPage)
         assert result.page_type == 'faq'
@@ -654,11 +763,11 @@ from tests.test_data import TestDataProvider
 
 class TestPerformanceBenchmark:
     """Тесты производительности"""
-    
+
     def test_processing_speed_improvement(self):
         """Тест улучшения скорости обработки"""
         processor = ContentProcessor()
-        
+
         # Создаем тестовые данные
         test_pages = []
         for i in range(100):
@@ -666,7 +775,7 @@ class TestPerformanceBenchmark:
                 "url": f"https://example.com/page{i}",
                 "content": f'<html><head><title>Page {i}</title></head><body><h1>Page {i}</h1><p>Content {i} with sufficient length for testing</p></body></html>'
             })
-        
+
         # Измеряем время обработки
         start_time = time.time()
         results = []
@@ -674,32 +783,32 @@ class TestPerformanceBenchmark:
             result = processor.process(page["url"], page["content"], "html")
             results.append(result)
         duration = time.time() - start_time
-        
+
         # Проверяем что все страницы обработаны
         assert len(results) == 100
-        
+
         # Проверяем что обработка завершилась за разумное время
         # Ожидаем минимум 30% улучшение по сравнению с старой системой
         expected_duration = 10.0  # 10 секунд максимум для 100 страниц
         assert duration < expected_duration, f"Performance regression: {duration}s > {expected_duration}s"
-        
+
         # Проверяем что все результаты валидны
         for result in results:
             assert isinstance(result, ProcessedPage)
             assert result.title
             assert result.content
-    
+
     def test_memory_usage_optimization(self):
         """Тест оптимизации использования памяти"""
         import psutil
         import os
-        
+
         processor = ContentProcessor()
-        
+
         # Измеряем использование памяти до обработки
         process = psutil.Process(os.getpid())
         memory_before = process.memory_info().rss / 1024 / 1024  # MB
-        
+
         # Обрабатываем много страниц
         test_pages = []
         for i in range(200):
@@ -707,38 +816,38 @@ class TestPerformanceBenchmark:
                 "url": f"https://example.com/page{i}",
                 "content": f'<html><head><title>Page {i}</title></head><body><h1>Page {i}</h1><p>Content {i} with sufficient length for testing memory usage</p></body></html>'
             })
-        
+
         results = []
         for page in test_pages:
             result = processor.process(page["url"], page["content"], "html")
             results.append(result)
-        
+
         # Измеряем использование памяти после обработки
         memory_after = process.memory_info().rss / 1024 / 1024  # MB
         memory_increase = memory_after - memory_before
-        
+
         # Проверяем что увеличение памяти разумное
         # Ожидаем не более 50MB для 200 страниц
         assert memory_increase < 50, f"Memory usage too high: {memory_increase}MB"
-        
+
         # Проверяем что кеш работает эффективно
         # Должно быть меньше уникальных объектов в кеше, чем страниц
         assert len(processor.parsers['html']._soup_cache) < len(test_pages)
-    
+
     def test_caching_effectiveness(self):
         """Тест эффективности кеширования"""
         processor = ContentProcessor()
-        
+
         # Одинаковый контент для нескольких страниц
         html_content = '<html><head><title>Test</title></head><body><h1>Test</h1><p>Content</p></body></html>'
-        
+
         # Обрабатываем одну и ту же страницу несколько раз
         start_time = time.time()
         for i in range(50):
             result = processor.process(f"https://example.com/page{i}", html_content, "html")
             assert isinstance(result, ProcessedPage)
         duration = time.time() - start_time
-        
+
         # Проверяем что кеширование ускоряет обработку
         # Второй проход должен быть быстрее
         start_time = time.time()
@@ -746,7 +855,7 @@ class TestPerformanceBenchmark:
             result = processor.process(f"https://example.com/page{i}", html_content, "html")
             assert isinstance(result, ProcessedPage)
         duration_cached = time.time() - start_time
-        
+
         # Кешированная версия должна быть быстрее
         assert duration_cached < duration, "Caching is not effective"
 ```
@@ -793,35 +902,35 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v2
-    
+
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: 3.9
-    
+
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
-    
+
     - name: Run unit tests
       run: pytest tests/test_processed_page.py tests/test_jina_parser.py tests/test_html_parser.py -v
-    
+
     - name: Run integration tests
       run: pytest tests/test_content_processor.py -v
-    
+
     - name: Run E2E tests
       run: pytest tests/test_pipeline_compatibility.py -v
-    
+
     - name: Run performance tests
       run: pytest tests/test_performance_benchmark.py -v
-    
+
     - name: Generate coverage report
       run: pytest tests/ --cov=ingestion.processors --cov-report=xml
-    
+
     - name: Upload coverage
       uses: codecov/codecov-action@v1
       with:
@@ -844,7 +953,7 @@ jobs:
 # tests/quality_monitor.py
 class QualityMonitor:
     """Мониторинг качества тестов"""
-    
+
     def __init__(self):
         self.metrics = {
             "test_coverage": 0,
@@ -852,23 +961,23 @@ class QualityMonitor:
             "memory_usage": 0,
             "error_rate": 0
         }
-    
+
     def check_quality_gates(self):
         """Проверка критериев качества"""
         issues = []
-        
+
         if self.metrics["test_coverage"] < 90:
             issues.append(f"Test coverage too low: {self.metrics['test_coverage']}%")
-        
+
         if self.metrics["performance_improvement"] < 30:
             issues.append(f"Performance improvement too low: {self.metrics['performance_improvement']}%")
-        
+
         if self.metrics["memory_usage"] > 20:
             issues.append(f"Memory usage too high: {self.metrics['memory_usage']}%")
-        
+
         if self.metrics["error_rate"] > 5:
             issues.append(f"Error rate too high: {self.metrics['error_rate']}%")
-        
+
         return issues
 ```
 

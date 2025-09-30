@@ -120,6 +120,92 @@ error_counter = Counter(
     ['error_type', 'component']
 )
 
+# === Chunking / Ingestion metrics ===
+chunk_created_total = Counter(
+    'rag_chunks_created_total',
+    'Total chunks created by strategy/type',
+    ['strategy', 'chunk_type', 'page_type']
+)
+
+chunk_size_words_hist = Histogram(
+    'rag_chunk_size_words',
+    'Chunk size in words',
+    buckets=(100, 200, 300, 410, 512, 614, 800, 1000, 1500, 2000, 4000)
+)
+
+# Размер чанка в токенах модели BGE-M3 (ориентировочные корзины вокруг 512)
+chunk_size_tokens_hist = Histogram(
+    'rag_chunk_size_tokens',
+    'Chunk size in tokens (BGE-M3 tokenizer)',
+    buckets=(128, 256, 384, 410, 512, 614, 768, 896, 1024, 1280)
+)
+
+chunk_optimal_ratio_gauge = Gauge(
+    'rag_chunk_optimal_ratio',
+    'Share of chunks in optimal range for embeddings (e.g., BGE-M3)',
+    ['model']
+)
+
+indexing_last_pages = Gauge(
+    'rag_indexing_last_pages',
+    'Pages processed in last indexing run'
+)
+
+indexing_last_chunks = Gauge(
+    'rag_indexing_last_chunks',
+    'Chunks indexed in last indexing run'
+)
+
+# === Last Run Summary Metrics ===
+last_run_duration_seconds = Gauge(
+    'rag_last_run_duration_seconds',
+    'Duration of the last indexing run in seconds',
+    ['run_type']  # full, incremental, adaptive
+)
+
+last_run_success_rate = Gauge(
+    'rag_last_run_success_rate',
+    'Success rate of the last indexing run (0-1)',
+    ['run_type']
+)
+
+last_run_error_count = Gauge(
+    'rag_last_run_error_count',
+    'Number of errors in the last indexing run',
+    ['run_type']
+)
+
+last_run_optimal_chunk_ratio = Gauge(
+    'rag_last_run_optimal_chunk_ratio',
+    'Optimal chunk ratio in the last indexing run',
+    ['run_type', 'model']
+)
+
+# === Alerting Metrics ===
+system_health_score = Gauge(
+    'rag_system_health_score',
+    'Overall system health score (0-1)',
+    ['component']  # overall, indexing, retrieval, generation
+)
+
+alert_threshold_exceeded = Gauge(
+    'rag_alert_threshold_exceeded',
+    'Whether alert threshold is exceeded (0=no, 1=yes)',
+    ['alert_type', 'severity']  # error_rate, performance, quality
+)
+
+memory_usage_percent = Gauge(
+    'rag_memory_usage_percent',
+    'Memory usage percentage',
+    ['component']
+)
+
+cpu_usage_percent = Gauge(
+    'rag_cpu_usage_percent',
+    'CPU usage percentage',
+    ['component']
+)
+
 # Информационные метрики
 app_info = Info(
     'rag_app_info',
@@ -269,6 +355,58 @@ class MetricsCollector:
 
         except Exception as e:
             logger.error(f"Failed to update satisfaction rates: {e}")
+
+    # === Last Run Summary Methods ===
+    def record_last_run_duration(self, run_type: str, duration_seconds: float):
+        """Записать длительность последнего запуска."""
+        last_run_duration_seconds.labels(run_type=run_type).set(duration_seconds)
+
+    def record_last_run_success_rate(self, run_type: str, success_rate: float):
+        """Записать успешность последнего запуска."""
+        last_run_success_rate.labels(run_type=run_type).set(success_rate)
+
+    def record_last_run_error_count(self, run_type: str, error_count: int):
+        """Записать количество ошибок в последнем запуске."""
+        last_run_error_count.labels(run_type=run_type).set(error_count)
+
+    def record_last_run_optimal_chunk_ratio(self, run_type: str, model: str, ratio: float):
+        """Записать оптимальное соотношение чанков в последнем запуске."""
+        last_run_optimal_chunk_ratio.labels(run_type=run_type, model=model).set(ratio)
+
+    # === Alerting Methods ===
+    def record_system_health_score(self, component: str, score: float):
+        """Записать оценку здоровья системы."""
+        system_health_score.labels(component=component).set(score)
+
+    def record_alert_threshold_exceeded(self, alert_type: str, severity: str, exceeded: bool):
+        """Записать превышение порога алёрта."""
+        alert_threshold_exceeded.labels(
+            alert_type=alert_type,
+            severity=severity
+        ).set(1 if exceeded else 0)
+
+    def record_memory_usage(self, component: str, usage_percent: float):
+        """Записать использование памяти."""
+        memory_usage_percent.labels(component=component).set(usage_percent)
+
+    def record_cpu_usage(self, component: str, usage_percent: float):
+        """Записать использование CPU."""
+        cpu_usage_percent.labels(component=component).set(usage_percent)
+
+    def calculate_system_health(self) -> float:
+        """Вычислить общую оценку здоровья системы."""
+        try:
+            # Простая эвристика: 1.0 - (error_rate + memory_usage + cpu_usage) / 3
+            error_rate = 0.0  # TODO: вычислить из error_counter
+            memory_usage = 0.0  # TODO: получить из system metrics
+            cpu_usage = 0.0  # TODO: получить из system metrics
+
+            health_score = max(0.0, 1.0 - (error_rate + memory_usage + cpu_usage) / 3)
+            self.record_system_health_score("overall", health_score)
+            return health_score
+        except Exception as e:
+            logger.error(f"Failed to calculate system health: {e}")
+            return 0.5  # Default neutral score
 
 
 # Глобальная переменная для singleton

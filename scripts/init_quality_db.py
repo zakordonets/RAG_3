@@ -1,4 +1,4 @@
-"""
+﻿"""
 Initialize Quality Database for RAGAS evaluation
 """
 import asyncio

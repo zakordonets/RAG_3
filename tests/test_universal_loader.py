@@ -5,7 +5,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from ingestion.universal_loader import UniversalLoader, load_content_universal
-from ingestion.parsers import extract_url_metadata
+from ingestion.parsers_migration import extract_url_metadata
 
 
 class TestUniversalLoader:

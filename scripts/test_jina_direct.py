@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Прямой тест Jina Reader
 """
@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.crawler import _jina_reader_fetch
-from ingestion.parsers import parse_api_documentation, parse_release_notes, parse_faq_content, parse_guides
+from ingestion.parsers_migration import parse_api_documentation, parse_release_notes, parse_faq_content, parse_guides
 from ingestion.chunker import chunk_text
 
 

@@ -4,6 +4,7 @@ import os
 from flask import Flask
 from flask_cors import CORS
 from .config import CONFIG
+from .logging_config import configure_logging  # Включаем простое логирование
 
 
 def create_app() -> Flask:

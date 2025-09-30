@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Тест всех улучшений метаданных.
 Проверяет комбинированное извлечение метаданных из всех источников.
@@ -10,17 +10,17 @@ from pathlib import Path
 # Добавляем корневую директорию проекта в путь
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers import parse_jina_content, extract_url_metadata, parse_docusaurus_structure
+from ingestion.parsers_migration import parse_jina_content, extract_url_metadata, parse_docusaurus_structure
 from bs4 import BeautifulSoup
 
 
 def test_complete_metadata_pipeline():
     """Тест полного pipeline извлечения метаданных."""
     print("🧪 Тестирование полного pipeline метаданных...")
-    
+
     # Пример URL
     url = "https://docs-chatcenter.edna.ru/docs/agent/routing"
-    
+
     # Пример Jina Reader ответа
     jina_response = """Title: Настройка маршрутизации в edna Chat Center
 URL Source: https://docs-chatcenter.edna.ru/docs/agent/routing
@@ -54,7 +54,7 @@ Markdown Content:
 POST /api/routing/rules
 ```
 """
-    
+
     # Пример HTML для Docusaurus
     html_content = """
     <!DOCTYPE html>
@@ -69,17 +69,17 @@ POST /api/routing/rules
             <a href="/docs/agent">Агент</a>
             <a href="/docs/agent/routing">Маршрутизация</a>
         </nav>
-        
+
         <div class="theme-doc-sidebar-item-category-level-1 menu__list-item--collapsed">
             Настройка агента
         </div>
-        
+
         <article class="theme-doc-markdown">
             <h1>Настройка маршрутизации</h1>
             <h2>Типы маршрутизации</h2>
             <h3>По каналам</h3>
             <p>Система поддерживает Telegram и WhatsApp каналы.</p>
-            
+
             <blockquote>
                 <strong>Permissions:</strong> AGENT, SUPERVISOR
             </blockquote>
@@ -87,29 +87,29 @@ POST /api/routing/rules
     </body>
     </html>
     """
-    
+
     print(f"📄 Тестируем URL: {url}")
-    
+
     # 1. Извлекаем Jina Reader метаданные
     print("\n1️⃣ Jina Reader метаданные:")
     jina_metadata = parse_jina_content(jina_response)
     for key, value in jina_metadata.items():
         if key != 'content':  # Не показываем весь контент
             print(f"   {key}: {value}")
-    
+
     # 2. Извлекаем URL метаданные
     print("\n2️⃣ URL метаданные:")
     url_metadata = extract_url_metadata(url)
     for key, value in url_metadata.items():
         print(f"   {key}: {value}")
-    
+
     # 3. Извлекаем HTML структурные метаданные
     print("\n3️⃣ HTML структурные метаданные:")
     soup = BeautifulSoup(html_content, "lxml")
     html_metadata = parse_docusaurus_structure(soup)
     for key, value in html_metadata.items():
         print(f"   {key}: {value}")
-    
+
     # 4. Объединяем все метаданные
     print("\n4️⃣ Объединенные метаданные:")
     combined_metadata = {
@@ -117,21 +117,21 @@ POST /api/routing/rules
         **url_metadata,
         **html_metadata
     }
-    
+
     # Показываем ключевые поля
     key_fields = [
         'title', 'section', 'user_role', 'page_type', 'permissions',
         'breadcrumb_path', 'sidebar_category', 'channels', 'features',
         'content_length', 'language_detected'
     ]
-    
+
     for field in key_fields:
         if field in combined_metadata:
             print(f"   {field}: {combined_metadata[field]}")
-    
+
     # 5. Проверяем качество метаданных
     print("\n5️⃣ Проверка качества метаданных:")
-    
+
     quality_checks = {
         'Есть заголовок': 'title' in combined_metadata and combined_metadata['title'],
         'Определена секция': 'section' in combined_metadata,
@@ -142,24 +142,24 @@ POST /api/routing/rules
         'Есть каналы': 'channels' in combined_metadata,
         'Есть функции': 'features' in combined_metadata,
     }
-    
+
     passed_checks = 0
     for check, passed in quality_checks.items():
         status = "✅" if passed else "❌"
         print(f"   {status} {check}")
         if passed:
             passed_checks += 1
-    
+
     quality_score = (passed_checks / len(quality_checks)) * 100
     print(f"\n📊 Качество метаданных: {quality_score:.1f}% ({passed_checks}/{len(quality_checks)})")
-    
+
     return quality_score >= 80
 
 
 def test_search_metadata():
     """Тест поисковых метаданных."""
     print("\n🔍 Тестирование поисковых метаданных...")
-    
+
     # Тестируем разные типы URL
     test_cases = [
         {
@@ -183,25 +183,25 @@ def test_search_metadata():
             'expected_permissions': 'ADMIN'
         }
     ]
-    
+
     for i, case in enumerate(test_cases, 1):
         print(f"\n📄 Тест {i}: {case['url']}")
-        
+
         metadata = extract_url_metadata(case['url'])
-        
+
         # Проверяем ожидаемые значения
         checks = {
             'section': case['expected_section'],
             'user_role': case['expected_role'],
             'page_type': case['expected_type']
         }
-        
+
         if 'expected_method' in case:
             checks['api_method'] = case['expected_method']
-        
+
         if 'expected_permissions' in case:
             checks['permissions'] = case['expected_permissions']
-        
+
         for field, expected in checks.items():
             actual = metadata.get(field)
             if actual == expected:
@@ -209,7 +209,7 @@ def test_search_metadata():
             else:
                 print(f"   ❌ {field}: ожидалось '{expected}', получено '{actual}'")
                 return False
-    
+
     print("\n✅ Все поисковые метаданные корректны")
     return True
 
@@ -217,15 +217,15 @@ def test_search_metadata():
 def main():
     """Основная функция тестирования."""
     print("🚀 Тестирование улучшений метаданных\n")
-    
+
     tests = [
         test_complete_metadata_pipeline,
         test_search_metadata,
     ]
-    
+
     passed = 0
     total = len(tests)
-    
+
     for test in tests:
         try:
             if test():
@@ -235,9 +235,9 @@ def main():
                 print(f"❌ Тест {test.__name__} не пройден")
         except Exception as e:
             print(f"❌ Ошибка в тесте {test.__name__}: {e}")
-    
+
     print(f"\n📊 Результаты тестирования: {passed}/{total} тестов пройдено")
-    
+
     if passed == total:
         print("🎉 Все тесты пройдены успешно!")
         print("\n📈 Ожидаемые улучшения:")
@@ -255,4 +255,3 @@ def main():
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
-

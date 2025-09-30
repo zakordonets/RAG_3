@@ -34,11 +34,11 @@ class SourceConfig:
 
 class SourcesRegistry:
     """Реестр источников данных"""
-    
+
     def __init__(self):
         self._sources: Dict[str, SourceConfig] = {}
         self._load_default_sources()
-    
+
     def _load_default_sources(self):
         """Загружает источники по умолчанию"""
         # Edna Docs - основной источник
@@ -75,28 +75,28 @@ class SourcesRegistry:
                 r'/faq': {'section': 'faq', 'user_role': 'all', 'page_type': 'faq'},
             }
         ))
-        
+
         # Дополнительные источники можно добавить здесь
         # self.register(SourceConfig(...))
-    
+
     def register(self, source: SourceConfig):
         """Регистрирует новый источник"""
         self._sources[source.name] = source
-    
+
     def get(self, name: str) -> SourceConfig:
         """Получает конфигурацию источника по имени"""
         if name not in self._sources:
             raise ValueError(f"Source '{name}' not found. Available: {list(self._sources.keys())}")
         return self._sources[name]
-    
+
     def list_all(self) -> List[str]:
         """Возвращает список всех зарегистрированных источников"""
         return list(self._sources.keys())
-    
+
     def get_by_type(self, source_type: SourceType) -> List[SourceConfig]:
         """Возвращает источники определенного типа"""
         return [source for source in self._sources.values() if source.source_type == source_type]
-    
+
     def get_all_urls(self) -> List[str]:
         """Возвращает все URL всех источников"""
         urls = []
@@ -104,10 +104,10 @@ class SourcesRegistry:
             if source.seed_urls:
                 urls.extend(source.seed_urls)
         return urls
-    
+
     def get_sitemap_urls(self) -> List[str]:
         """Возвращает URL sitemap всех источников"""
-        return [f"{source.base_url.rstrip('/')}{source.sitemap_path}" 
+        return [f"{source.base_url.rstrip('/')}{source.sitemap_path}"
                 for source in self._sources.values()]
 
 

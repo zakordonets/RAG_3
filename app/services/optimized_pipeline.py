@@ -13,8 +13,23 @@ from tqdm import tqdm
 from app.abstractions.data_source import DataSourceBase, Page, CrawlResult, plugin_manager
 from app.services.metadata_aware_indexer import MetadataAwareIndexer
 from ingestion.chunker import chunk_text
-from ingestion.parsers import extract_url_metadata
+from ingestion.adaptive_chunker import adaptive_chunk_text
+from ingestion.parsers_migration import extract_url_metadata
+from ingestion.processors.content_processor import ContentProcessor
 from app.config import CONFIG
+from app.tokenizer import count_tokens
+from app.metrics import (
+    chunk_created_total,
+    chunk_size_words_hist,
+    chunk_size_tokens_hist,
+    chunk_optimal_ratio_gauge,
+    indexing_last_pages,
+    indexing_last_chunks,
+    get_metrics_collector,
+)
+
+# Import data sources to register them with plugin_manager
+import app.sources.edna_docs_source
 
 
 class OptimizedPipeline:
@@ -22,15 +37,17 @@ class OptimizedPipeline:
 
     def __init__(self):
         self.indexer = MetadataAwareIndexer()
+        self.processor = ContentProcessor()  # Новый процессор контента
         self.processed_chunks = 0
         self.errors = []
+        self.metrics_collector = get_metrics_collector()  # Initialize metrics collector
 
     def index_from_source(
         self,
         source_name: str,
         source_config: Dict[str, Any],
         max_pages: Optional[int] = None,
-        chunk_strategy: str = "adaptive"
+        chunk_strategy: str = None
     ) -> Dict[str, Any]:
         """Index documents from a specific data source"""
 
@@ -38,8 +55,21 @@ class OptimizedPipeline:
         start_time = time.time()
 
         try:
-            # Get data source
-            source = plugin_manager.get_source(source_name, source_config)
+            # Get data source - поддержка как объекта, так и dict
+            if isinstance(source_config, dict):
+                source_config_dict = source_config
+            else:
+                source_config_dict = {
+                    'base_url': getattr(source_config, 'base_url', None),
+                    'strategy': getattr(source_config, 'strategy', None),
+                    'use_cache': getattr(source_config, 'use_cache', True),
+                    'max_pages': getattr(source_config, 'max_pages', None),
+                    'crawl_deny_prefixes': getattr(source_config, 'crawl_deny_prefixes', None),
+                    'sitemap_path': getattr(source_config, 'sitemap_path', None),
+                    'seed_urls': getattr(source_config, 'seed_urls', None),
+                    'metadata_patterns': getattr(source_config, 'metadata_patterns', None)
+                }
+            source = plugin_manager.get_source(source_name, source_config_dict)
 
             # Fetch pages
             logger.info("Fetching pages from data source...")
@@ -57,9 +87,12 @@ class OptimizedPipeline:
 
             logger.info(f"Fetched {crawl_result.successful_pages} pages in {crawl_result.duration_seconds:.2f}s")
 
+            # Resolve chunk strategy (config default if not provided)
+            strategy = (chunk_strategy or CONFIG.chunk_strategy).lower()
+
             # Process pages into chunks
             logger.info("Processing pages into chunks...")
-            chunks = self._process_pages_to_chunks(crawl_result.pages, chunk_strategy)
+            chunks = self._process_pages_to_chunks(crawl_result.pages, strategy)
 
             if not chunks:
                 logger.warning("No chunks generated from pages")
@@ -70,6 +103,13 @@ class OptimizedPipeline:
                     "chunks": 0,
                     "duration": time.time() - start_time
                 }
+
+            # Record metrics (pre-indexing)
+            try:
+                indexing_last_pages.set(crawl_result.successful_pages)
+                indexing_last_chunks.set(len(chunks))
+            except Exception:
+                pass
 
             # Index chunks with enhanced metadata
             logger.info(f"Indexing {len(chunks)} chunks...")
@@ -113,7 +153,7 @@ class OptimizedPipeline:
         chunks = []
         total_chunks = 0
 
-        with tqdm(total=len(pages), desc="Processing pages", unit="page") as pbar:
+        with tqdm(total=len(pages), desc="Processing pages", unit="page", disable=True) as pbar:
             for page in pages:
                 try:
                     # Use adaptive chunking based on strategy
@@ -121,6 +161,31 @@ class OptimizedPipeline:
                         page_chunks = self._adaptive_chunk_page(page)
                     else:
                         page_chunks = self._standard_chunk_page(page)
+
+                    # Metrics per-chunk
+                    # Используем унифицированный токенайзер
+
+                    try:
+                        for ch in page_chunks:
+                            payload = ch.get("payload", {})
+                            ctype = payload.get("chunk_type", "unknown")
+                            ptype = payload.get("page_type", "unknown")
+                            strategy_label = "adaptive" if chunk_strategy == "adaptive" else "simple"
+                            chunk_created_total.labels(strategy=strategy_label, chunk_type=ctype, page_type=str(ptype)).inc()
+
+                            text = ch.get("text", "")
+                            words = len(text.split())
+                            if words > 0:
+                                chunk_size_words_hist.observe(words)
+
+                            if text:
+                                try:
+                                    tokens = count_tokens(text)
+                                    chunk_size_tokens_hist.observe(tokens)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
 
                     chunks.extend(page_chunks)
                     total_chunks += len(page_chunks)
@@ -133,42 +198,107 @@ class OptimizedPipeline:
                 pbar.update(1)
 
         logger.info(f"Generated {total_chunks} chunks from {len(pages)} pages")
+
+        # Compute optimal ratio for BGE-M3 по токенам (512±20% -> 410–614 tokens)
+        try:
+            token_counts = []
+            for ch in chunks:
+                text = ch.get("text", "")
+                if text:
+                    token_counts.append(count_tokens(text))
+
+            if token_counts:
+                optimal = sum(1 for t in token_counts if 410 <= t <= 614)
+                ratio = optimal / max(1, len(token_counts))
+                chunk_optimal_ratio_gauge.labels(model="bge-m3").set(ratio)
+
+                # Record last run metrics
+                self.metrics_collector.record_last_run_optimal_chunk_ratio(
+                    run_type=chunk_strategy,
+                    model="bge-m3",
+                    ratio=ratio
+                )
+        except Exception:
+            pass
+
+        # Record last run summary metrics
+        self.metrics_collector.record_last_run_duration(
+            run_type=chunk_strategy,
+            duration_seconds=0.0  # TODO: calculate actual duration
+        )
+
+        success_rate = 1.0 - (len(self.errors) / max(1, len(pages)))
+        self.metrics_collector.record_last_run_success_rate(
+            run_type=chunk_strategy,
+            success_rate=success_rate
+        )
+
+        self.metrics_collector.record_last_run_error_count(
+            run_type=chunk_strategy,
+            error_count=len(self.errors)
+        )
+
         return chunks
 
     def _adaptive_chunk_page(self, page: Page) -> List[Dict[str, Any]]:
-        """Adaptive chunking based on page type and content"""
+        """Adaptive chunking based on page type and content using ContentProcessor and AdaptiveChunker"""
 
-        # Determine optimal chunk size based on page type and content
-        optimal_size = self._get_optimal_chunk_size(page)
+        # Process page content with new processor
+        try:
+            processed_page = self.processor.process(page.content, page.url, "auto")
 
-        # Chunk the text
-        chunks_text = chunk_text(page.content, max_tokens=optimal_size)
+            # Extract URL metadata
+            url_metadata = extract_url_metadata(page.url)
 
-        # Extract URL metadata
-        url_metadata = extract_url_metadata(page.url)
-        
-        # Create chunk objects with enhanced metadata
-        chunks = []
-        for i, chunk_text_content in enumerate(chunks_text):
-            chunk = {
-                "text": chunk_text_content,
-                "payload": {
-                    "url": page.url,
-                    "title": page.title,
-                    "page_type": page.page_type.value,
-                    "source": page.source,
-                    "language": page.language,
-                    "chunk_index": i,
-                    "content_length": len(chunk_text_content),
-                    "last_modified": page.last_modified,
-                    "size_bytes": page.size_bytes,
-                    **page.metadata,
-                    **url_metadata  # Добавляем URL метаданные
-                }
+            # Prepare metadata for adaptive chunker
+            chunker_metadata = {
+                **processed_page.metadata,
+                **url_metadata,
+                "page_type": processed_page.page_type,
+                "source": page.source,
+                "language": page.language,
+                "last_modified": page.last_modified,
+                "size_bytes": page.size_bytes,
+                **page.metadata,
             }
-            chunks.append(chunk)
 
-        return chunks
+            # Use adaptive chunker for intelligent chunking
+            adaptive_chunks = adaptive_chunk_text(processed_page.content, chunker_metadata)
+
+            # Convert to our format
+            chunks = []
+            for adaptive_chunk in adaptive_chunks:
+                chunk_content = adaptive_chunk['content']
+                chunk_metadata = adaptive_chunk['metadata']
+                
+                # Calculate token count using unified tokenizer
+                token_count = count_tokens(chunk_content)
+
+                chunk = {
+                    "text": chunk_content,
+                    "payload": {
+                        "url": processed_page.url,
+                        "title": processed_page.title,
+                        "page_type": processed_page.page_type,
+                        "source": page.source,
+                        "language": page.language,
+                        "content_length": len(chunk_content),
+                        "token_count": token_count,
+                        "last_modified": page.last_modified,
+                        "size_bytes": page.size_bytes,
+                        **chunk_metadata,
+                        "adaptive_chunking": True
+                    }
+                }
+                chunks.append(chunk)
+
+            logger.debug(f"Adaptive chunking for {page.url}: {len(chunks)} chunks, types: {[c['payload'].get('chunk_type', 'unknown') for c in chunks]}")
+            return chunks
+
+        except Exception as e:
+            logger.warning(f"ContentProcessor failed for {page.url}, using fallback: {e}")
+            # Fallback to original method
+            return self._standard_chunk_page(page)
 
     def _standard_chunk_page(self, page: Page) -> List[Dict[str, Any]]:
         """Standard chunking using configuration defaults"""
@@ -177,9 +307,12 @@ class OptimizedPipeline:
 
         # Extract URL metadata
         url_metadata = extract_url_metadata(page.url)
-        
+
         chunks = []
         for i, chunk_text_content in enumerate(chunks_text):
+            # Calculate token count using unified tokenizer
+            token_count = count_tokens(chunk_text_content)
+            
             chunk = {
                 "text": chunk_text_content,
                 "payload": {
@@ -190,6 +323,9 @@ class OptimizedPipeline:
                     "language": page.language,
                     "chunk_index": i,
                     "content_length": len(chunk_text_content),
+                    "token_count": token_count,
+                    "chunk_type": "simple_chunk",
+                    "adaptive_chunking": False,
                     **page.metadata,
                     **url_metadata  # Добавляем URL метаданные
                 }

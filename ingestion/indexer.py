@@ -46,12 +46,25 @@ def upsert_chunks(chunks: list[dict]) -> int:
         dense_vecs = embed_dense_batch(texts)
         sparse_results = embed_sparse_batch(texts) if CONFIG.use_sparse else [{"indices": [], "values": []}] * len(texts)
 
+    def _sanitize_payload(payload: dict) -> dict:
+        """Remove heavy or redundant fields from payload before indexing."""
+        if not isinstance(payload, dict):
+            return {}
+        cleaned = dict(payload)
+        # Drop potentially large or duplicate fields
+        for k in ["content", "html", "text", "raw", "raw_content"]:
+            if k in cleaned:
+                cleaned.pop(k, None)
+        # Remove None values
+        cleaned = {k: v for k, v in cleaned.items() if v is not None}
+        return cleaned
+
     for i, ch in enumerate(chunks):
         # deterministic id → UUID из sha256-хэша
         raw_hash = ch.get("id") or text_hash(ch["text"])  # 64-символьный hex
         hex32 = raw_hash.replace("-", "")[:32]
         pid = str(uuid.UUID(hex=hex32))
-        payload = ch.get("payload", {})
+        payload = _sanitize_payload(ch.get("payload", {}))
         payload.update({"hash": pid})
         # Начинаем с dense вектора
         vector_dict = {"dense": dense_vecs[i]}

@@ -6,7 +6,8 @@ from loguru import logger
 from tqdm import tqdm
 from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap, crawl_with_sitemap_progress
 from ingestion.parsers_migration import extract_url_metadata
-from ingestion.universal_loader import load_content_universal
+from ingestion.processors.content_processor import ContentProcessor
+from app.sources_registry import get_source_config
 from ingestion.chunker import chunk_text, text_hash
 from ingestion.indexer import upsert_chunks
 from app.services.metadata_aware_indexer import MetadataAwareIndexer
@@ -24,12 +25,12 @@ def classify_page(url: str) -> str:
     return "guide"
 
 
-def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto", max_pages: int = None) -> dict[str, Any]:
+def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto", max_pages: int = None, source_name: Optional[str] = None) -> dict[str, Any]:
     """Полный цикл: краулинг → чанкинг → эмбеддинги → upsert в Qdrant.
 
     Args:
         incremental: если True — использует инкрементальное обновление
-        strategy: стратегия crawling (jina, http, browser)
+        strategy: стратегия crawling (jina, http)
         use_cache: использовать кеширование результатов crawling
         reindex_mode: режим переиндексации:
             - "auto": только новые/измененные страницы (по умолчанию)
@@ -41,6 +42,18 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
     """
     logger.info(f"Начинаем {'инкрементальную ' if incremental else ''}индексацию")
     logger.info(f"Параметры: strategy={strategy}, use_cache={use_cache}, reindex_mode={reindex_mode}")
+
+    # Если указан источник, применяем централизованную конфигурацию
+    if source_name:
+        try:
+            cfg = get_source_config(source_name)
+            strategy = cfg.strategy or strategy
+            use_cache = cfg.use_cache if cfg.use_cache is not None else use_cache
+            if max_pages is None and cfg.max_pages:
+                max_pages = cfg.max_pages
+            logger.info(f"Источник: {source_name} | strategy={strategy} use_cache={use_cache} max_pages={max_pages}")
+        except Exception as e:
+            logger.warning(f"Не удалось загрузить конфиг источника '{source_name}': {e}. Использую параметры функции.")
 
     # 1) Используем улучшенный crawling с кешированием
     if reindex_mode == "cache_only":
@@ -73,54 +86,53 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
         logger.warning("Sitemap crawling не дал результатов, пробуем MkDocs index...")
         pages = crawl_mkdocs_index()
     if not pages:
-        logger.warning("MkDocs index недоступен, пробуем браузерный обход...")
-        pages = crawl(strategy="browser")
+        logger.warning("MkDocs index недоступен, пробуем HTTP обход...")
+        pages = crawl(strategy="http")
     # Собираем все чанки для батчевой обработки
     all_chunks = []
     logger.info("Обрабатываем страницы и собираем чанки...")
+
+    # НОВОЕ: единый процессор контента (рефакторинг вместо universal_loader)
+    processor = ContentProcessor()
 
     with tqdm(total=len(pages), desc="Processing pages") as pbar:
         for p in pages:
             url = p["url"]
             raw_content = p.get("text") or p.get("html") or ""
-            
+
             if not raw_content:
                 logger.warning(f"Пустой контент для {url}, пропускаем")
                 pbar.update(1)
                 continue
-            
-            # Используем универсальный загрузчик
-            loaded_data = load_content_universal(url, raw_content, strategy)
-            
-            # Проверяем на ошибки
-            if 'error' in loaded_data:
-                logger.error(f"Ошибка загрузки {url}: {loaded_data['error']}")
-                pbar.update(1)
-                continue
-            
-            # Извлекаем данные
-            text = loaded_data.get('content', '')
-            title = loaded_data.get('title', 'Untitled')
-            page_type = loaded_data.get('page_type', classify_page(url))
-            
+
+            # Используем новый ContentProcessor (вместо universal_loader)
+            # ВНИМАНИЕ: сигнатура process(raw_content, url, strategy)
+            processed = processor.process(raw_content, url, strategy)
+
+            # Извлекаем унифицированные данные
+            text = processed.content or ''
+            title = processed.title or 'Untitled'
+            page_type = processed.page_type or classify_page(url)
+
             if not text:
                 logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
                 pbar.update(1)
                 continue
-            
+
             # Генерируем чанки
             chunks_text = chunk_text(text)
-            
+
             if not chunks_text:
                 logger.warning(f"Не удалось создать чанки для {url}, пропускаем")
                 pbar.update(1)
                 continue
-            
+
             # Создаем чанки с обогащенными метаданными
             for i, ct in enumerate(chunks_text):
                 # Базовый payload
                 payload = {
                     "url": url,
+                    "content_type": strategy if strategy in ["jina", "html"] else "auto",
                     "page_type": page_type,
                     "source": "docs-site",
                     "language": "ru",
@@ -130,15 +142,13 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                     "indexed_at": time.time(),
                     "chunk_index": i,
                     "content_length": len(text),
-                    "content_type": loaded_data.get('content_type', 'unknown'),
-                    "loaded_at": loaded_data.get('loaded_at', time.time()),
                 }
-                
-                # Добавляем все дополнительные метаданные из загрузчика
-                for key, value in loaded_data.items():
+
+                # Добавляем все дополнительные метаданные из нового процессора
+                for key, value in (processed.metadata or {}).items():
                     if key not in ['url', 'title', 'content', 'page_type'] and value is not None:
                         payload[key] = value
-                
+
                 all_chunks.append({
                     "text": ct,
                     "payload": payload,
