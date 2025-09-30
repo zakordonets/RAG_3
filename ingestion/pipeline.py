@@ -14,15 +14,7 @@ from app.services.metadata_aware_indexer import MetadataAwareIndexer
 from app.services.optimized_pipeline import run_optimized_indexing
 
 
-def classify_page(url: str) -> str:
-    low = url.lower()
-    if "faq" in low:
-        return "faq"
-    if "api" in low:
-        return "api"
-    if "release" in low or "changelog" in low:
-        return "release_notes"
-    return "guide"
+# Функция classify_page удалена - теперь используется ContentProcessor для определения типа страницы
 
 
 def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto", max_pages: int = None, source_name: Optional[str] = None) -> dict[str, Any]:
@@ -109,17 +101,17 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             # ВНИМАНИЕ: сигнатура process(raw_content, url, strategy)
             try:
                 processed = processor.process(raw_content, url, strategy)
-                
+
                 # Извлекаем унифицированные данные
                 text = processed.content or ''
                 title = processed.title or 'Untitled'
-                page_type = processed.page_type or classify_page(url)
+                page_type = processed.page_type  # ContentProcessor уже определил тип страницы
 
                 if not text:
                     logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
                     pbar.update(1)
                     continue
-                    
+
             except Exception as e:
                 logger.warning(f"Ошибка парсинга для {url}: {e}, пропускаем страницу")
                 pbar.update(1)

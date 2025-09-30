@@ -18,7 +18,7 @@ class ProcessedPage:
         # Нормализуем контент
         if not self.content:
             self.content = ""
-        
+
         # Обрезаем контент до разумного минимума, но не выбрасываем ошибку
         content_stripped = self.content.strip()
         if len(content_stripped) < 10:
@@ -26,7 +26,7 @@ class ProcessedPage:
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Short content for {self.url}: {len(content_stripped)} chars, keeping as is")
-        
+
         if not self.title:
             self.title = self._extract_title_from_url()
 
@@ -40,27 +40,24 @@ class BaseParser(ABC):
     """Базовый класс для всех парсеров с интеграцией page_type через DataSourceBase."""
 
     def __init__(self) -> None:
-        self._page_type_classifier = None
-
-    def _get_page_type_classifier(self):
-        if self._page_type_classifier is None:
-            from app.abstractions.data_source import DataSourceBase  # lazy import
-            # Временный класс, чтобы использовать classify_page_by_url
-            self._page_type_classifier = type('TempSource', (DataSourceBase,), {
-                '__abstractmethods__': frozenset(),
-                'fetch_pages': lambda self, max_pages=None: None,
-                'classify_page': lambda self, page: None,
-                'get_source_name': lambda self: 'temp'
-            })({})
-        return self._page_type_classifier
+        pass
 
     def _detect_page_type(self, url: str, content: str | None = None) -> str:
-        classifier = self._get_page_type_classifier()
-        page_type = classifier.classify_page_by_url(url)
-        return page_type.value
+        """Определяет тип страницы по URL используя стандартную логику классификации."""
+        from app.abstractions.data_source import PageType
+        
+        url_lower = url.lower()
+        
+        if "faq" in url_lower:
+            return PageType.FAQ.value
+        elif "api" in url_lower:
+            return PageType.API.value
+        elif any(keyword in url_lower for keyword in ["release", "changelog", "blog"]):
+            return PageType.RELEASE_NOTES.value
+        else:
+            return PageType.GUIDE.value
 
     @abstractmethod
     def parse(self, url: str, content: str) -> ProcessedPage:
         """Парсит контент и возвращает ProcessedPage."""
         raise NotImplementedError
-

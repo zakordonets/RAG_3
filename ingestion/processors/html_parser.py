@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Dict, Any
+from typing import Dict, Any, OrderedDict
+from collections import OrderedDict
 
 from bs4 import BeautifulSoup
 
@@ -11,9 +12,10 @@ from ingestion.processors.base import BaseParser, ProcessedPage
 class HTMLParser(BaseParser):
     """HTML парсер c кешированием BeautifulSoup."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_cache_size: int = 100) -> None:
         super().__init__()
-        self._soup_cache: Dict[str, BeautifulSoup] = {}
+        self._soup_cache: OrderedDict[str, BeautifulSoup] = OrderedDict()
+        self._max_cache_size = max_cache_size
 
     def parse(self, url: str, content: str) -> ProcessedPage:
         soup = self._get_soup(content)
@@ -38,11 +40,38 @@ class HTMLParser(BaseParser):
 
     def _get_soup(self, content: str) -> BeautifulSoup:
         key = hashlib.md5(content.encode('utf-8')).hexdigest()
-        soup = self._soup_cache.get(key)
-        if soup is None:
-            soup = BeautifulSoup(content, "lxml")
+        
+        # Проверяем кеш
+        if key in self._soup_cache:
+            # Перемещаем в конец (самый недавно использованный)
+            soup = self._soup_cache.pop(key)
             self._soup_cache[key] = soup
+            return soup
+        
+        # Создаем новый объект
+        soup = BeautifulSoup(content, "lxml")
+        
+        # Добавляем в кеш с проверкой размера
+        self._soup_cache[key] = soup
+        
+        # Очищаем кеш если превышен лимит
+        if len(self._soup_cache) > self._max_cache_size:
+            # Удаляем самый старый элемент (первый в OrderedDict)
+            self._soup_cache.popitem(last=False)
+        
         return soup
+
+    def clear_cache(self) -> None:
+        """Очищает кеш BeautifulSoup объектов."""
+        self._soup_cache.clear()
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Возвращает статистику кеша."""
+        return {
+            "cache_size": len(self._soup_cache),
+            "max_cache_size": self._max_cache_size,
+            "cache_usage_percent": (len(self._soup_cache) / self._max_cache_size) * 100
+        }
 
     def _extract_title(self, soup: BeautifulSoup) -> str:
         h1 = soup.select_one('.theme-doc-markdown h1')

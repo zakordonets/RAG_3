@@ -78,7 +78,55 @@ class SourcesRegistry:
         ))
 
     def register(self, source: SourceConfig):
+        """Регистрирует источник данных с валидацией конфигурации."""
+        self._validate_source_config(source)
         self._sources[source.name] = source
+
+    def _validate_source_config(self, source: SourceConfig) -> None:
+        """Валидирует конфигурацию источника данных."""
+        # Проверяем обязательные поля
+        if not source.name or not source.name.strip():
+            raise ValueError("Source name cannot be empty")
+        
+        if not source.base_url or not source.base_url.strip():
+            raise ValueError("Base URL cannot be empty")
+        
+        # Проверяем корректность URL
+        if not source.base_url.startswith(('http://', 'https://')):
+            raise ValueError(f"Base URL must start with http:// or https://: {source.base_url}")
+        
+        # Проверяем корректность стратегии
+        valid_strategies = ['auto', 'jina', 'html', 'markdown', 'http']
+        if source.strategy not in valid_strategies:
+            raise ValueError(f"Invalid strategy '{source.strategy}'. Valid options: {valid_strategies}")
+        
+        # Проверяем max_pages
+        if source.max_pages is not None and source.max_pages <= 0:
+            raise ValueError("max_pages must be positive or None")
+        
+        # Проверяем sitemap_path
+        if not source.sitemap_path.startswith('/'):
+            raise ValueError("sitemap_path must start with '/'")
+        
+        # Проверяем seed_urls
+        if source.seed_urls:
+            for url in source.seed_urls:
+                if not url.startswith(('http://', 'https://')):
+                    raise ValueError(f"Seed URL must start with http:// or https://: {url}")
+        
+        # Проверяем crawl_deny_prefixes
+        if source.crawl_deny_prefixes:
+            for prefix in source.crawl_deny_prefixes:
+                if not prefix.startswith(('http://', 'https://')):
+                    raise ValueError(f"Crawl deny prefix must start with http:// or https://: {prefix}")
+        
+        # Проверяем metadata_patterns
+        if source.metadata_patterns:
+            for pattern, metadata in source.metadata_patterns.items():
+                if not isinstance(pattern, str) or not pattern.strip():
+                    raise ValueError("Metadata pattern must be a non-empty string")
+                if not isinstance(metadata, dict):
+                    raise ValueError("Metadata must be a dictionary")
 
     def get(self, name: str) -> SourceConfig:
         if name not in self._sources:

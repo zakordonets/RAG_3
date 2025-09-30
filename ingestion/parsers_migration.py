@@ -161,13 +161,13 @@ def parse_jina_content(content: str) -> Dict[str, Any]:
             result['published_time'] = published_time
         # Всегда добавляем permissions (возможно пустой список)
         result['permissions'] = permissions or []
-        
+
         # Добавляем images_count и links_count из метаданных
         if 'images_count' in processed.metadata:
             result['images_count'] = processed.metadata['images_count']
         if 'links_count' in processed.metadata:
             result['links_count'] = processed.metadata['links_count']
-            
+
         return result
     except Exception as e:
         logger.warning(f"Migration fallback for parse_jina_content: {e}")
