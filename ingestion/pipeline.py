@@ -107,15 +107,21 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
             # Используем новый ContentProcessor (вместо universal_loader)
             # ВНИМАНИЕ: сигнатура process(raw_content, url, strategy)
-            processed = processor.process(raw_content, url, strategy)
+            try:
+                processed = processor.process(raw_content, url, strategy)
+                
+                # Извлекаем унифицированные данные
+                text = processed.content or ''
+                title = processed.title or 'Untitled'
+                page_type = processed.page_type or classify_page(url)
 
-            # Извлекаем унифицированные данные
-            text = processed.content or ''
-            title = processed.title or 'Untitled'
-            page_type = processed.page_type or classify_page(url)
-
-            if not text:
-                logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
+                if not text:
+                    logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
+                    pbar.update(1)
+                    continue
+                    
+            except Exception as e:
+                logger.warning(f"Ошибка парсинга для {url}: {e}, пропускаем страницу")
                 pbar.update(1)
                 continue
 

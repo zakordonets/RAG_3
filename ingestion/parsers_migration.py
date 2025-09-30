@@ -71,7 +71,7 @@ def extract_main_text(soup: BeautifulSoup) -> str:
         # Используем новый HTML парсер
         html_parser = HTMLParser()
         content = str(soup)
-        processed = html_parser.parse(content, "http://example.com")
+        processed = html_parser.parse("http://example.com", content)
         return processed.content
     except Exception as e:
         logger.warning(f"Migration fallback for extract_main_text: {e}")
@@ -95,7 +95,7 @@ def parse_jina_content(content: str) -> Dict[str, Any]:
     """МИГРАЦИОННАЯ функция: парсит контент от Jina Reader."""
     try:
         jina_parser = JinaParser()
-        processed = jina_parser.parse(content, "http://example.com")
+        processed = jina_parser.parse("http://example.com", content)
         # Попробуем извлечь дополнительные поля из исходного текста формата Jina
         url_source = None
         language_detected = None
@@ -149,6 +149,7 @@ def parse_jina_content(content: str) -> Dict[str, Any]:
             "title": processed.title,
             "content": processed.content,
             "metadata": processed.metadata,
+            "content_type": "jina_reader",
         }
         if url_source:
             result['url_source'] = url_source
@@ -160,6 +161,13 @@ def parse_jina_content(content: str) -> Dict[str, Any]:
             result['published_time'] = published_time
         # Всегда добавляем permissions (возможно пустой список)
         result['permissions'] = permissions or []
+        
+        # Добавляем images_count и links_count из метаданных
+        if 'images_count' in processed.metadata:
+            result['images_count'] = processed.metadata['images_count']
+        if 'links_count' in processed.metadata:
+            result['links_count'] = processed.metadata['links_count']
+            
         return result
     except Exception as e:
         logger.warning(f"Migration fallback for parse_jina_content: {e}")

@@ -14,12 +14,12 @@ class UnifiedTokenizer:
     Унифицированный токенайзер для быстрой оценки длины текста
     Использует кэширование и оптимизации для производительности
     """
-    
+
     def __init__(self):
         self._tokenizer = None
         self._cache = {}
         self._cache_size = 1000  # Максимальный размер кэша
-        
+
     def _get_tokenizer(self):
         """Ленивая инициализация токенайзера"""
         if self._tokenizer is None:
@@ -36,27 +36,27 @@ class UnifiedTokenizer:
                 logger.warning(f"Не удалось загрузить BGE-M3 токенайзер: {e}")
                 # Fallback на простой подсчет слов
                 self._tokenizer = None
-                
+
         return self._tokenizer
-    
+
     def count_tokens(self, text: str) -> int:
         """
         Быстрый подсчет токенов с кэшированием
-        
+
         Args:
             text: Текст для подсчета
-            
+
         Returns:
             Количество токенов
         """
         if not text or not isinstance(text, str):
             return 0
-            
+
         # Проверяем кэш
         text_hash = hash(text)
         if text_hash in self._cache:
             return self._cache[text_hash]
-        
+
         # Подсчитываем токены
         tokenizer = self._get_tokenizer()
         if tokenizer is not None:
@@ -69,10 +69,10 @@ class UnifiedTokenizer:
                 token_count = self._fallback_count(text)
         else:
             token_count = self._fallback_count(text)
-        
+
         # Кэшируем результат
         self._cache[text_hash] = token_count
-        
+
         # Очищаем кэш если он слишком большой
         if len(self._cache) > self._cache_size:
             # Удаляем 20% самых старых записей
@@ -80,9 +80,9 @@ class UnifiedTokenizer:
             keys_to_remove = list(self._cache.keys())[:items_to_remove]
             for key in keys_to_remove:
                 del self._cache[key]
-        
+
         return token_count
-    
+
     def _fallback_count(self, text: str) -> int:
         """
         Fallback метод подсчета токенов
@@ -90,20 +90,20 @@ class UnifiedTokenizer:
         """
         words = len(text.split())
         return int(words * 1.3)
-    
+
     def count_tokens_batch(self, texts: List[str]) -> List[int]:
         """
         Пакетный подсчет токенов для нескольких текстов
-        
+
         Args:
             texts: Список текстов
-            
+
         Returns:
             Список количества токенов для каждого текста
         """
         if not texts:
             return []
-        
+
         tokenizer = self._get_tokenizer()
         if tokenizer is not None:
             try:
@@ -115,41 +115,41 @@ class UnifiedTokenizer:
                 return [self._fallback_count(text) for text in texts]
         else:
             return [self._fallback_count(text) for text in texts]
-    
+
     def is_optimal_size(self, text: str, min_tokens: int = 410, max_tokens: int = 614) -> bool:
         """
         Проверяет, находится ли текст в оптимальном диапазоне токенов
-        
+
         Args:
             text: Текст для проверки
             min_tokens: Минимальное количество токенов
             max_tokens: Максимальное количество токенов
-            
+
         Returns:
             True если размер оптимальный
         """
         token_count = self.count_tokens(text)
         return min_tokens <= token_count <= max_tokens
-    
+
     def get_size_category(self, text: str) -> str:
         """
         Определяет категорию размера текста
-        
+
         Args:
             text: Текст для анализа
-            
+
         Returns:
             Категория: 'short', 'medium', 'long'
         """
         token_count = self.count_tokens(text)
-        
+
         if token_count < 300:
             return 'short'
         elif token_count < 800:
             return 'medium'
         else:
             return 'long'
-    
+
     def clear_cache(self):
         """Очищает кэш токенайзера"""
         self._cache.clear()
@@ -163,7 +163,7 @@ _tokenizer_instance: Optional[UnifiedTokenizer] = None
 def get_tokenizer() -> UnifiedTokenizer:
     """
     Возвращает глобальный экземпляр токенайзера
-    
+
     Returns:
         UnifiedTokenizer: Экземпляр токенайзера
     """
@@ -176,10 +176,10 @@ def get_tokenizer() -> UnifiedTokenizer:
 def count_tokens(text: str) -> int:
     """
     Быстрая функция для подсчета токенов
-    
+
     Args:
         text: Текст для подсчета
-        
+
     Returns:
         Количество токенов
     """
@@ -189,10 +189,10 @@ def count_tokens(text: str) -> int:
 def count_tokens_batch(texts: List[str]) -> List[int]:
     """
     Пакетная функция для подсчета токенов
-    
+
     Args:
         texts: Список текстов
-        
+
     Returns:
         Список количества токенов
     """
@@ -202,12 +202,12 @@ def count_tokens_batch(texts: List[str]) -> List[int]:
 def is_optimal_size(text: str, min_tokens: int = 410, max_tokens: int = 614) -> bool:
     """
     Проверяет оптимальность размера текста
-    
+
     Args:
         text: Текст для проверки
         min_tokens: Минимальное количество токенов
         max_tokens: Максимальное количество токенов
-        
+
     Returns:
         True если размер оптимальный
     """
@@ -217,10 +217,10 @@ def is_optimal_size(text: str, min_tokens: int = 410, max_tokens: int = 614) -> 
 def get_size_category(text: str) -> str:
     """
     Определяет категорию размера текста
-    
+
     Args:
         text: Текст для анализа
-        
+
     Returns:
         Категория размера
     """

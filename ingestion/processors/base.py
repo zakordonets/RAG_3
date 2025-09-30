@@ -15,8 +15,18 @@ class ProcessedPage:
     metadata: Dict[str, Any]
 
     def __post_init__(self) -> None:
-        if not self.content or len(self.content.strip()) < 10:
-            raise ValueError(f"Content too short for {self.url}")
+        # Нормализуем контент
+        if not self.content:
+            self.content = ""
+        
+        # Обрезаем контент до разумного минимума, но не выбрасываем ошибку
+        content_stripped = self.content.strip()
+        if len(content_stripped) < 10:
+            # Логируем предупреждение, но не останавливаем пайплайн
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Short content for {self.url}: {len(content_stripped)} chars, keeping as is")
+        
         if not self.title:
             self.title = self._extract_title_from_url()
 

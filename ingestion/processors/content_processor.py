@@ -27,10 +27,14 @@ class ContentProcessor:
     def _detect_content_type(self, content: str, strategy: str) -> str:
         if strategy in ('jina', 'jina_reader'):
             return 'jina'
-        if content.startswith("Title:") and "URL Source:" in content:
+        
+        # Нормализуем контент, убирая лидирующие пробелы, БОМ и переносы строк
+        normalized = content.lstrip('\ufeff \n\r\t')
+        
+        if normalized.startswith("Title:") and "URL Source:" in normalized:
             return 'jina'
-        if content.startswith("<!DOCTYPE html") or content.startswith("<html"):
+        if normalized.startswith("<!DOCTYPE html") or normalized.startswith("<html"):
             return 'html'
-        if content.startswith("#"):
+        if normalized.startswith("#"):
             return 'markdown'
         return 'html'

@@ -270,7 +270,7 @@ class OptimizedPipeline:
             for adaptive_chunk in adaptive_chunks:
                 chunk_content = adaptive_chunk['content']
                 chunk_metadata = adaptive_chunk['metadata']
-                
+
                 # Calculate token count using unified tokenizer
                 token_count = count_tokens(chunk_content)
 
@@ -312,7 +312,7 @@ class OptimizedPipeline:
         for i, chunk_text_content in enumerate(chunks_text):
             # Calculate token count using unified tokenizer
             token_count = count_tokens(chunk_text_content)
-            
+
             chunk = {
                 "text": chunk_text_content,
                 "payload": {

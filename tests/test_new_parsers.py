@@ -138,7 +138,7 @@ Content here."""
 
         # HTML контент, но принудительно Jina - ожидаем ошибку
         html_content = """<!DOCTYPE html><html><body><h1>Test</h1></body></html>"""
-        
+
         with pytest.raises(ValueError, match="Content too short"):
             processor.process("https://example.com", html_content, "jina")
 
