@@ -191,7 +191,10 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
     # Формируем промпт с цитатами и ссылками «Подробнее»
     urls: list[str] = []
     content_blocks: list[str] = []
-    for c in context:
+
+    logger.info(f"LLM Router: Processing {len(context)} context documents")
+
+    for i, c in enumerate(context):
         payload = c.get("payload", {}) or {}
         url = payload.get("url")
         if url:
@@ -200,12 +203,20 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
         # Добавляем контент документа
         text = payload.get("text", "")
         title = payload.get("title", "")
+
+        logger.info(f"LLM Router: Document {i+1}: title='{title}', text_len={len(text)}, url='{url}'")
+
         if text:
             # Формируем структурированный блок с заголовком и контентом
             content_block = f"📄 {title}\n" if title else f"📄 Документ\n"
             content_block += f"🔗 {url}\n"
-            content_block += f"📝 {text[:800]}..."  # Ограничиваем длину
+            content_block += f"📝 {text}"  # Используем полный текст без обрезки
             content_blocks.append(content_block)
+            logger.info(f"LLM Router: Added content block {len(content_blocks)} with {len(text)} chars")
+        else:
+            logger.warning(f"LLM Router: Document {i+1} has empty text!")
+
+    logger.info(f"LLM Router: Total content blocks: {len(content_blocks)}, total URLs: {len(urls)}")
 
     sources_block = "\n".join(urls)
     context_block = "\n\n".join(content_blocks)

@@ -8,8 +8,13 @@
 
 from __future__ import annotations
 
+import sys
+import os
 import time
 from typing import Optional
+
+# Добавляем путь к проекту
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from qdrant_client import QdrantClient
 from app.config import CONFIG
@@ -54,4 +59,3 @@ if __name__ == "__main__":
     _ = backup_points(limit=1000)
     clear_collection()
     print(f"Collection '{CONFIG.qdrant_collection}' cleared and recreated at {CONFIG.qdrant_url}")
-

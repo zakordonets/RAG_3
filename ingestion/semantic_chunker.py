@@ -259,19 +259,27 @@ class SemanticChunker:
         if duplicates_removed > 0:
             logger.debug(f"Quality gates: {len(unique_chunks)} unique chunks (removed {duplicates_removed} duplicates)")
 
-        # Проверяем минимальный размер
+        # Проверяем минимальный размер (более мягкая проверка)
         filtered_chunks = []
         too_small_count = 0
+        min_size_soft = max(self.min_chunk_size // 2, 20)  # Мягкий минимум
+
         for chunk in unique_chunks:
             tokens = self._estimate_tokens(chunk)
-            if tokens >= self.min_chunk_size:
+            if tokens >= min_size_soft:  # Используем мягкий минимум
                 filtered_chunks.append(chunk)
             else:
                 too_small_count += 1
-                logger.debug(f"Chunk too small ({tokens} < {self.min_chunk_size} tokens), skipping: '{chunk[:100]}...'")
+                logger.debug(f"Chunk too small ({tokens} < {min_size_soft} tokens), skipping: '{chunk[:100]}...'")
 
         if too_small_count > 0:
             logger.debug(f"Quality gates: {len(filtered_chunks)} chunks passed size filter (removed {too_small_count} too small)")
+
+        # Если все чанки слишком маленькие, возвращаем хотя бы один
+        if not filtered_chunks and unique_chunks:
+            logger.warning(f"All chunks too small, returning the largest one")
+            largest_chunk = max(unique_chunks, key=lambda x: self._estimate_tokens(x))
+            filtered_chunks = [largest_chunk]
 
         return filtered_chunks
 
@@ -320,9 +328,9 @@ def get_semantic_chunker() -> SemanticChunker:
     global _semantic_chunker
     if _semantic_chunker is None:
         _semantic_chunker = SemanticChunker(
-            min_chunk_size=max(CONFIG.chunk_min_tokens // 2, 60),  # Более мягкий минимум
+            min_chunk_size=max(CONFIG.chunk_min_tokens // 4, 30),  # Еще более мягкий минимум
             max_chunk_size=CONFIG.chunk_max_tokens,
-            similarity_threshold=0.6  # Менее строгий порог сходства
+            similarity_threshold=0.5  # Еще менее строгий порог сходства
         )
         logger.info(f"Semantic chunker initialized: min_size={_semantic_chunker.min_chunk_size}, "
                    f"max_size={_semantic_chunker.max_chunk_size}, threshold={_semantic_chunker.similarity_threshold}")

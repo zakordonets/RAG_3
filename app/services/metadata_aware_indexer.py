@@ -124,17 +124,52 @@ class MetadataAwareIndexer:
         batch_size = self.get_optimal_batch_size("unified")
         logger.info(f"Using batch size: {batch_size}")
 
-        # Generate embeddings in batches
-        embedding_results = embed_batch_optimized(
-            texts,
-            max_length=CONFIG.embedding_max_length_doc,
-            return_dense=True,
-            return_sparse=CONFIG.use_sparse,
-            context="document"
-        )
+        # Generate embeddings in small batches to avoid OOM
+        dense_vecs = []
+        sparse_results = []
 
-        dense_vecs = embedding_results.get('dense_vecs', [[0.0] * 1024] * len(texts))
-        sparse_results = embedding_results.get('lexical_weights', [{}] * len(texts))
+        # Process in ultra-small batches to prevent OOM
+        micro_batch_size = 1  # Process one text at a time!
+        total_batches = (len(texts) + micro_batch_size - 1) // micro_batch_size
+
+        logger.info(f"Processing {len(texts)} texts in {total_batches} micro-batches of {micro_batch_size}")
+
+        for i in range(0, len(texts), micro_batch_size):
+            batch_texts = texts[i:i + micro_batch_size]
+            batch_num = (i // micro_batch_size) + 1
+
+            logger.info(f"Processing micro-batch {batch_num}/{total_batches} ({len(batch_texts)} texts)")
+
+            try:
+                # Process single batch
+                embedding_results = embed_batch_optimized(
+                    batch_texts,
+                    max_length=CONFIG.embedding_max_length_doc,
+                    return_dense=True,
+                    return_sparse=CONFIG.use_sparse,
+                    context="document"
+                )
+
+                # Extract results immediately to free memory
+                batch_dense = embedding_results.get('dense_vecs', [[0.0] * 1024] * len(batch_texts))
+                batch_sparse = embedding_results.get('lexical_weights', [{}] * len(batch_texts))
+
+                dense_vecs.extend(batch_dense)
+                sparse_results.extend(batch_sparse)
+
+                # Force garbage collection after each batch
+                import gc
+                gc.collect()
+
+                logger.info(f"✅ Micro-batch {batch_num}/{total_batches} completed")
+
+            except Exception as e:
+                logger.error(f"❌ Error in micro-batch {batch_num}: {e}")
+                # Add fallback vectors
+                dense_vecs.extend([[0.0] * 1024] * len(batch_texts))
+                sparse_results.extend([{}] * len(batch_texts))
+
+        logger.info(f"✅ All {len(texts)} texts processed in {total_batches} micro-batches")
 
         # Create points with enhanced metadata
         for i, (chunk, metadata) in enumerate(zip(chunks, enhanced_metadata_list)):
@@ -156,10 +191,13 @@ class MetadataAwareIndexer:
                 except Exception as e:
                     logger.warning(f"Failed to process sparse vector for chunk {i}: {e}")
 
-            # Create optimized payload (no text duplication)
+            # Create optimized payload (including text for search)
             search_payload = metadata.to_search_payload()
             search_payload["hash"] = pid
             search_payload["search_strategy"] = self.get_search_strategy(metadata)
+
+            # Add the actual text content for search
+            search_payload["text"] = chunk["text"]
 
             # Add original payload fields that might be needed
             original_payload = chunk.get("payload", {})

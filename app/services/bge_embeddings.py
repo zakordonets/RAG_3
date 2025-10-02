@@ -479,8 +479,25 @@ def _embed_batch_onnx(texts: List[str], max_length: int, return_dense: bool, ret
         try:
             import numpy as np
 
+            # Безопасная обработка текстов с исправлением кодировок
+            safe_texts = []
+            for text in texts:
+                if not isinstance(text, str):
+                    text = str(text)
+                try:
+                    # Проверяем и исправляем кодировку
+                    text.encode('utf-8')
+                    safe_texts.append(text)
+                except UnicodeEncodeError:
+                    # Исправляем проблемные символы
+                    safe_text = text.encode('utf-8', errors='ignore').decode('utf-8')
+                    safe_texts.append(safe_text)
+                except Exception:
+                    # Последний fallback
+                    safe_texts.append(str(text).encode('utf-8', errors='ignore').decode('utf-8'))
+
             inputs = tokenizer(
-                texts,
+                safe_texts,
                 padding=True,
                 truncation=True,
                 max_length=max_length,
@@ -510,7 +527,12 @@ def _embed_batch_onnx(texts: List[str], max_length: int, return_dense: bool, ret
                 norm = np.linalg.norm(mean_embeddings, axis=1, keepdims=True)
                 mean_embeddings = mean_embeddings / norm
 
-            results['dense_vecs'] = mean_embeddings.tolist()
+            # Convert to list in smaller chunks to avoid OOM
+            dense_vecs = []
+            for i in range(len(mean_embeddings)):
+                dense_vecs.append(mean_embeddings[i].tolist())
+            results['dense_vecs'] = dense_vecs
+
             logger.info(f"ONNX batch dense encoding completed: {len(texts)} texts")
 
         except Exception as e:

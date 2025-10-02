@@ -12,6 +12,7 @@ from ingestion.chunker import chunk_text
 from app.services.metadata_aware_indexer import MetadataAwareIndexer
 from app.services.optimized_pipeline import run_optimized_indexing
 from app.config import CONFIG
+from app.text_utils import clean_text_for_processing, validate_text_quality, safe_batch_text_processing
 
 def _resolve_content_strategy(page: dict[str, Any], default_strategy: str | None) -> str:
     explicit = page.get("content_strategy")
@@ -164,12 +165,17 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 processed = processor.process(raw_content, url, page_strategy_for_page)
 
                 # Извлекаем унифицированные данные
-                text = processed.content or ''
+                raw_text = processed.content or ''
                 title = processed.title or 'Untitled'
                 page_type = processed.page_type  # ContentProcessor уже определил тип страницы
 
-                if not text:
-                    logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
+                # Безопасная обработка текста с исправлением кодировок
+                text = clean_text_for_processing(raw_text)
+
+                # Проверяем качество текста
+                is_valid, error_msg = validate_text_quality(text, min_length=20)
+                if not is_valid:
+                    logger.warning(f"Низкое качество текста для {url}: {error_msg}, пропускаем")
                     pbar.update(1)
                     continue
 

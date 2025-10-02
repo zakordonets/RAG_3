@@ -227,7 +227,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         if CONFIG.enable_ragas_evaluation:
             try:
                 # Подготавливаем данные для quality evaluation
-                contexts = [doc.get("text", "") for doc in top_docs]
+                contexts = [doc.get("payload", {}).get("text", "") for doc in top_docs]
                 source_urls = [source.get("url", "") for source in sources]
 
                 # Запускаем RAGAS оценку в фоне через ThreadPoolExecutor
