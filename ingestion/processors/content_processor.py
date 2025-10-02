@@ -32,12 +32,16 @@ class ContentProcessor:
         return parsed
 
     def _detect_content_type(self, content: str, strategy: str) -> str:
-        if strategy in ('jina', 'jina_reader'):
+        normalized_strategy = (strategy or '').strip().lower()
+
+        if normalized_strategy in ('jina', 'jina_reader'):
             return 'jina'
-        if strategy in ('html', 'markdown'):
-            return strategy
-        if strategy == 'auto':
-            strategy = ''
+        if normalized_strategy == 'markdown':
+            return 'markdown'
+        if normalized_strategy == 'html':
+            return 'html'
+        if normalized_strategy == 'auto':
+            normalized_strategy = ''
 
         # Нормализуем контент, убирая лидирующие пробелы, БОМ и переносы строк
         normalized = (content or '').lstrip('\ufeff \n\r\t')
