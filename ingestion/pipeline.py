@@ -48,6 +48,8 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             logger.warning(f"Не удалось загрузить конфиг источника '{source_name}': {e}. Использую параметры функции.")
 
     # 1) Используем улучшенный crawling с кешированием
+    page_strategy = strategy
+
     if reindex_mode == "cache_only":
         logger.info("Режим cache_only: используем только кешированные страницы")
         from ingestion.crawl_cache import get_crawl_cache
@@ -77,9 +79,11 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
     if not pages:
         logger.warning("Sitemap crawling не дал результатов, пробуем MkDocs index...")
         pages = crawl_mkdocs_index()
+        page_strategy = "html"
     if not pages:
         logger.warning("MkDocs index недоступен, пробуем HTTP обход...")
         pages = crawl(strategy="http")
+        page_strategy = "html"
     # Собираем все чанки для батчевой обработки
     all_chunks = []
     logger.info("Обрабатываем страницы и собираем чанки...")
@@ -100,7 +104,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             # Используем новый ContentProcessor (вместо universal_loader)
             # ВНИМАНИЕ: сигнатура process(raw_content, url, strategy)
             try:
-                processed = processor.process(raw_content, url, strategy)
+                processed = processor.process(raw_content, url, page_strategy)
 
                 # Извлекаем унифицированные данные
                 text = processed.content or ''
@@ -130,13 +134,13 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 # Базовый payload
                 payload = {
                     "url": url,
-                    "content_type": strategy if strategy in ["jina", "html"] else "auto",
+                    "content_type": page_strategy if page_strategy in ["jina", "html", "markdown"] else "auto",
                     "page_type": page_type,
                     "source": "docs-site",
                     "language": "ru",
                     "title": title,
                     "text": ct,
-                    "indexed_via": strategy,
+                    "indexed_via": page_strategy,
                     "indexed_at": time.time(),
                     "chunk_index": i,
                     "content_length": len(text),
