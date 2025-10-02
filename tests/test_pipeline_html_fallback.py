@@ -48,6 +48,34 @@ _register_stub("ingestion.chunker", chunker_module)
 content_processor_module = types.ModuleType("ingestion.processors.content_processor")
 
 
+def _detect_content_type(content: str, strategy: str) -> str:
+    normalized_strategy = (strategy or "").strip().lower()
+
+    if normalized_strategy in {"jina", "jina_reader"}:
+        return "jina"
+    if normalized_strategy == "markdown":
+        return "markdown"
+    if normalized_strategy == "html":
+        return "html"
+    if normalized_strategy == "auto":
+        normalized_strategy = ""
+
+    normalized = (content or "").lstrip("\ufeff \n\r\t")
+    normalized_lower = normalized.lower()
+
+    if normalized.startswith("Title:") and "URL Source:" in normalized:
+        return "jina"
+    if normalized_lower.startswith("<!doctype html") or normalized_lower.startswith("<html") or "<html" in normalized_lower:
+        return "html"
+    if normalized.startswith("#"):
+        return "markdown"
+    if normalized.startswith("---"):
+        return "markdown"
+    if "<" not in normalized[:500] and ">" not in normalized[:500] and "\n" in normalized:
+        return "markdown"
+    return "html"
+
+
 @dataclass
 class _ProcessedPage:
     url: str
@@ -59,13 +87,13 @@ class _ProcessedPage:
 
 class _StubContentProcessor:
     def process(self, raw_content: str, url: str, strategy: str) -> _ProcessedPage:
-        content = raw_content if strategy in {"html", "markdown"} else ""
+        detected = _detect_content_type(raw_content, strategy)
         return _ProcessedPage(
             url=url,
             title="Stub Title",
-            content=content,
+            content=raw_content if detected != "jina" else "",
             page_type="stub",
-            metadata={}
+            metadata={"content_type": detected}
         )
 
 
@@ -100,6 +128,48 @@ _register_stub("app.services.metadata_aware_indexer", metadata_indexer_module)
 optimized_pipeline_module = types.ModuleType("app.services.optimized_pipeline")
 optimized_pipeline_module.run_optimized_indexing = lambda *args, **kwargs: {"success": False}
 _register_stub("app.services.optimized_pipeline", optimized_pipeline_module)
+
+
+loguru_module = types.ModuleType("loguru")
+loguru_module.logger = types.SimpleNamespace(
+    info=lambda *args, **kwargs: None,
+    warning=lambda *args, **kwargs: None,
+    success=lambda *args, **kwargs: None,
+    error=lambda *args, **kwargs: None,
+)
+_register_stub("loguru", loguru_module)
+
+
+config_module = types.ModuleType("app.config")
+config_module.CONFIG = types.SimpleNamespace(
+    crawl_max_pages=0,
+    embeddings_backend="",
+    embedding_device="cpu",
+    use_sparse=False,
+    embedding_max_length_doc=0,
+    embedding_batch_size=0,
+    qdrant_url="",
+    qdrant_api_key="",
+    default_llm="",
+)
+_register_stub("app.config", config_module)
+
+
+flask_module = types.ModuleType("flask")
+
+
+class _DummyFlask:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+flask_module.Flask = _DummyFlask
+_register_stub("flask", flask_module)
+
+
+flask_cors_module = types.ModuleType("flask_cors")
+flask_cors_module.CORS = lambda *args, **kwargs: None
+_register_stub("flask_cors", flask_cors_module)
 
 from ingestion.pipeline import crawl_and_index
 
