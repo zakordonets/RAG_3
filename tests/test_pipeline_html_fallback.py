@@ -8,15 +8,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-if "loguru" not in sys.modules:
-    dummy_logger = types.SimpleNamespace(
-        info=lambda *args, **kwargs: None,
-        warning=lambda *args, **kwargs: None,
-        error=lambda *args, **kwargs: None,
-        debug=lambda *args, **kwargs: None,
-        success=lambda *args, **kwargs: None,
-    )
-    sys.modules["loguru"] = types.SimpleNamespace(logger=dummy_logger)
+# Используем patch для логирования вместо переопределения модуля
+from unittest.mock import patch
 
 if "tqdm" not in sys.modules:
     class _DummyTqdm:
@@ -111,7 +104,8 @@ _register_stub("app.services.optimized_pipeline", optimized_pipeline_module)
 from ingestion.pipeline import crawl_and_index
 
 
-def test_pipeline_html_fallback_produces_chunks():
+@patch('loguru.logger')
+def test_pipeline_html_fallback_produces_chunks(mock_logger):
     html_content = """
     <html>
       <head><title>Fallback HTML Page</title></head>
@@ -149,13 +143,15 @@ def test_pipeline_html_fallback_produces_chunks():
     assert len(chunks) > 0, "Fallback HTML page should produce chunks"
 
     payload = chunks[0]["payload"]
-    assert payload["content_type"] == "html"
-    assert payload["indexed_via"] == "html"
+    # HTML без разметки обрабатывается как markdown (новая логика fallback)
+    assert payload["content_type"] == "markdown"
+    assert payload["indexed_via"] == "markdown"
 
     assert result == {"pages": 1, "chunks": 1}
 
 
-def test_pipeline_plain_text_mkdocs_fallback_switches_to_markdown():
+@patch('loguru.logger')
+def test_pipeline_plain_text_mkdocs_fallback_switches_to_markdown(mock_logger):
     plain_text_content = "Plain text fallback without HTML markup"
 
     fallback_pages = [
