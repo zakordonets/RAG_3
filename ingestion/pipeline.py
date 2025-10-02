@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import time
+import re
 from typing import Any, Optional
 from loguru import logger
 from tqdm import tqdm
@@ -131,6 +132,8 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
     # НОВОЕ: единый процессор контента (рефакторинг вместо universal_loader)
     processor = ContentProcessor()
 
+    html_tag_re = re.compile(r"<[^>]+>")
+
     with tqdm(total=len(pages), desc="Processing pages") as pbar:
         for p in pages:
             url = p["url"]
@@ -141,17 +144,29 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 pbar.update(1)
                 continue
 
+            page_strategy_for_page = page_strategy
+
+            if page_strategy_for_page == "html":
+                html_content = p.get("html") or ""
+                text_content = p.get("text") or ""
+                html_stripped = html_content.strip()
+                text_stripped = text_content.strip()
+
+                lacks_html_markup = not html_tag_re.search(html_stripped)
+                html_equals_text = html_stripped == text_stripped and html_stripped != ""
+
+                if html_content and (lacks_html_markup or html_equals_text):
+                    page_strategy_for_page = "markdown"
+
             # Используем новый ContentProcessor (вместо universal_loader)
             # ВНИМАНИЕ: сигнатура process(raw_content, url, strategy)
             try:
-                content_strategy = _resolve_content_strategy(p, page_strategy)
-                processed = processor.process(raw_content, url, content_strategy)
+                processed = processor.process(raw_content, url, page_strategy_for_page)
 
                 # Извлекаем унифицированные данные
                 text = processed.content or ''
                 title = processed.title or 'Untitled'
                 page_type = processed.page_type  # ContentProcessor уже определил тип страницы
-                actual_content_type = (processed.metadata or {}).get('content_type', content_strategy)
 
                 if not text:
                     logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
@@ -171,21 +186,18 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 pbar.update(1)
                 continue
 
-            content_type_for_payload = actual_content_type if actual_content_type in ["jina", "html", "markdown"] else "auto"
-
             # Создаем чанки с обогащенными метаданными
             for i, ct in enumerate(chunks_text):
                 # Базовый payload
                 payload = {
                     "url": url,
-                    "content_type": content_type_for_payload,
+                    "content_type": page_strategy_for_page if page_strategy_for_page in ["jina", "html", "markdown"] else "auto",
                     "page_type": page_type,
                     "source": "docs-site",
                     "language": "ru",
                     "title": title,
                     "text": ct,
-                    "indexed_via": content_type_for_payload,
-                    "content_strategy": actual_content_type,
+                    "indexed_via": page_strategy_for_page,
                     "indexed_at": time.time(),
                     "chunk_index": i,
                     "content_length": len(text),
@@ -193,7 +205,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
                 # Добавляем все дополнительные метаданные из нового процессора
                 for key, value in (processed.metadata or {}).items():
-                    if key not in ['url', 'title', 'content', 'page_type', 'content_type'] and value is not None:
+                    if key not in ['url', 'title', 'content', 'page_type'] and value is not None:
                         payload[key] = value
 
                 all_chunks.append({
