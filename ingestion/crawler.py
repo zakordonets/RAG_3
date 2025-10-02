@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 from typing import Iterable
@@ -14,6 +14,15 @@ import json as _json
 
 
 START_URL = CONFIG.crawl_start_url
+
+def _resolve_page_limit(requested: int | None) -> int | None:
+    """Return effective max pages limit considering global configuration."""
+    if requested is not None and requested > 0:
+        return requested
+    config_limit = getattr(CONFIG, "crawl_max_pages", 0)
+    if config_limit and config_limit > 0:
+        return config_limit
+    return None
 
 
 def _to_https(url: str) -> str:
@@ -134,14 +143,17 @@ def _jina_reader_fetch(url: str, timeout: int) -> str:
     return resp.text
 
 
-def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "http") -> list[dict]:
+def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "http", max_pages: int | None = None) -> list[dict]:
     seen: set[str] = set()
     queue: list[str] = [start_url]
     pages: list[dict] = []
     session = _build_session()
+    page_limit = _resolve_page_limit(max_pages)
 
     pbar = tqdm(total=0, desc="Crawling", disable=True)
     while queue:
+        if page_limit and len(pages) >= page_limit:
+            break
         url = queue.pop(0)
         if url in seen:
             continue
@@ -152,7 +164,7 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
             logger.info(f"GET {url} timeout={timeout}s queue={len(queue)} seen={len(seen)} strategy={strategy}")
             if strategy == "jina":
                 text = _jina_reader_fetch(url, timeout=timeout)
-                pages.append({"url": url, "html": text, "text": text})
+                pages.append({"url": url, "html": text, "text": text, "content_strategy": "jina"})
             else:
                 # HTTP (https) c фолбэком на Jina
                 try:
@@ -165,12 +177,12 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
                     html = resp.text
                     content_type = resp.headers.get("Content-Type", "")
                     logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)}")
-                    pages.append({"url": url, "html": html})
+                    pages.append({"url": url, "html": html, "content_strategy": "html"})
                 except Exception as e_http:
                     logger.warning(f"HTTP fetch failed for {url}: {type(e_http).__name__}: {e_http}. Trying Jina…")
                     try:
                         text = _jina_reader_fetch(url, timeout=timeout)
-                        pages.append({"url": url, "html": text, "text": text})
+                        pages.append({"url": url, "html": text, "text": text, "content_strategy": "jina"})
                     except Exception as e_jina:
                         logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
                         raise
@@ -207,11 +219,15 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
     """
     from ingestion.crawl_cache import get_crawl_cache
 
+    page_limit = _resolve_page_limit(max_pages)
+
     # 1. Получаем список всех URL из sitemap
     urls = crawl_sitemap(base_url)
+    if page_limit:
+        urls = urls[:page_limit]
     if not urls:
         logger.warning("Sitemap пуст или недоступен, используем fallback к обычному crawling")
-        return crawl(start_url=base_url, strategy=strategy)
+        return crawl(start_url=base_url, strategy=strategy, max_pages=page_limit)
 
     logger.info(f"Найдено {len(urls)} URL в sitemap")
 
@@ -239,18 +255,22 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                         "html": cached_page.html,
                         "text": cached_page.text,
                         "title": cached_page.title,
-                        "cached": True
+                        "cached": True,
+                        "content_strategy": getattr(cached_page, "content_strategy", "auto")
                     })
                     logger.debug(f"Loaded from cache: {url}")
 
                     # Ограничиваем количество страниц для тестирования
-                    if max_pages and len(pages) >= max_pages:
-                        logger.info(f"Достигнуто ограничение max_pages={max_pages}, останавливаем загрузку из кеша")
+                    if page_limit and len(pages) >= page_limit:
+                        logger.info(f"Достигнут лимит страниц ({page_limit}), останавливаем загрузку из кеша")
                         break
 
-        urls_to_process = list(urls_to_fetch)
+        remaining = (page_limit - len(pages)) if page_limit else None
+        urls_to_process = [u for u in urls if u in urls_to_fetch]
+        if remaining is not None:
+            urls_to_process = urls_to_process[:max(remaining, 0)]
     else:
-        urls_to_process = urls
+        urls_to_process = urls[:page_limit] if page_limit else urls
         logger.info("Кеширование отключено, загружаем все страницы")
 
     if not urls_to_process:
@@ -264,8 +284,8 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
     with tqdm(total=len(urls_to_process), desc="Crawling new pages", unit="page", disable=True) as pbar:
         for i, url in enumerate(urls_to_process, 1):
             # Ограничиваем количество страниц для тестирования
-            if max_pages and len(pages) >= max_pages:
-                logger.info(f"Достигнуто ограничение max_pages={max_pages}, останавливаем crawling")
+            if page_limit and len(pages) >= page_limit:
+                logger.info(f"Достигнуто ограничение page_limit={page_limit}, останавливаем crawling")
                 break
 
             try:
@@ -277,10 +297,12 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                 html = ""
                 text = ""
                 title = None
+                content_strategy = "auto"
 
                 if strategy == "jina":
                     text = _jina_reader_fetch(url, timeout=timeout)
                     html = text  # Для совместимости
+                    content_strategy = "jina"
                 else:
                     # HTTP (https) с фолбэком на Jina
                     try:
@@ -291,6 +313,7 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                         if str(final_url).startswith("http://docs-chatcenter.edna.ru"):
                             raise requests.exceptions.ConnectTimeout("downgraded to http, fallback")
                         html = resp.text
+                        content_strategy = "html"
                         content_type = resp.headers.get("Content-Type", "")
                         logger.info(f"{resp.status_code} {url} content-type='{content_type}' bytes={len(html)}")
                     except Exception as e_http:
@@ -298,6 +321,7 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                         try:
                             text = _jina_reader_fetch(url, timeout=timeout)
                             html = text  # Для совместимости
+                            content_strategy = "jina"
                         except Exception as e_jina:
                             logger.warning(f"Jina fetch failed for {url}: {type(e_jina).__name__}: {e_jina}")
                             # Не поднимаем исключение, просто пропускаем эту страницу
@@ -317,13 +341,13 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
                 # Сохраняем в кеш если включено
                 if cache and html:
                     try:
-                        cache.save_page(url, html, text, title=title, page_type=page_type)
+                        cache.save_page(url, html, text, title=title, page_type=page_type, content_strategy=content_strategy)
                         logger.debug(f"Cached: {url}")
                     except Exception as e:
                         logger.warning(f"Failed to cache {url}: {e}")
 
                 # Добавляем в результат
-                page_data = {"url": url, "html": html}
+                page_data = {"url": url, "html": html, "content_strategy": content_strategy}
                 if text:
                     page_data["text"] = text
                 if title:
@@ -396,7 +420,7 @@ def crawl_mkdocs_index(base_url: str = "https://docs-chatcenter.edna.ru/") -> li
                     full = url + loc
                 full = _normalize_url(full)
                 # Сохраняем как текст, html заполним текстом (для совместимости)
-                pages.append({"url": full, "html": text, "text": text, "title": title})
+                pages.append({"url": full, "html": text, "text": text, "title": title, "content_strategy": "markdown"})
             # если получили один валидный индекс — достаточно
             break
         except Exception as e:
@@ -406,3 +430,7 @@ def crawl_mkdocs_index(base_url: str = "https://docs-chatcenter.edna.ru/") -> li
     for p in pages:
         uniq.setdefault(p["url"], p)
     return list(uniq.values())
+
+
+
+

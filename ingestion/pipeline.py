@@ -1,17 +1,53 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 from typing import Any, Optional
 from loguru import logger
 from tqdm import tqdm
-from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap, crawl_with_sitemap_progress
-from app.sources_registry import extract_url_metadata
+from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_with_sitemap_progress
 from ingestion.processors.content_processor import ContentProcessor
 from app.sources_registry import get_source_config
-from ingestion.chunker import chunk_text, text_hash
-from ingestion.indexer import upsert_chunks
+from ingestion.chunker import chunk_text
 from app.services.metadata_aware_indexer import MetadataAwareIndexer
 from app.services.optimized_pipeline import run_optimized_indexing
+from app.config import CONFIG
+
+def _resolve_content_strategy(page: dict[str, Any], default_strategy: str | None) -> str:
+    explicit = page.get("content_strategy")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+
+    raw = page.get("text") or page.get("html") or ""
+    normalized = (raw or '').lstrip('\ufeff \n\n\t')
+    normalized_lower = normalized.lower()
+    sample = normalized[:1000]
+    sample_lower = normalized_lower[:1000]
+
+    if sample.startswith("Title:") and "URL Source:" in sample:
+        return 'jina'
+    if sample_lower.startswith("<!doctype html") or sample_lower.startswith("<html") or '<html' in sample_lower:
+        return 'html'
+    if sample.startswith("#") or sample.startswith("---"):
+        return 'markdown'
+    if '<' not in sample_lower and '>' not in sample_lower and '\n' in sample:
+        return 'markdown'
+
+    fallback = (default_strategy or 'auto').strip()
+    if fallback in ('jina', 'jina_reader'):
+        return 'auto'
+    if fallback in ('html', 'markdown'):
+        return fallback
+    return 'auto'
+
+
+def _resolve_page_limit(requested: int | None) -> int | None:
+    """Определяет лимит страниц с учетом конфигурации."""
+    if requested is not None and requested > 0:
+        return requested
+    if CONFIG.crawl_max_pages > 0:
+        return CONFIG.crawl_max_pages
+    return None
+
 
 
 # Функция classify_page удалена - теперь используется ContentProcessor для определения типа страницы
@@ -49,6 +85,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
     # 1) Используем улучшенный crawling с кешированием
     page_strategy = strategy
+    page_limit = _resolve_page_limit(max_pages)
 
     if reindex_mode == "cache_only":
         logger.info("Режим cache_only: используем только кешированные страницы")
@@ -64,25 +101,28 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                     "html": cached_page.html,
                     "text": cached_page.text,
                     "title": cached_page.title,
-                    "cached": True
+                    "cached": True,
+                    "content_strategy": getattr(cached_page, "content_strategy", "auto")
                 })
 
                 # Ограничиваем количество страниц для тестирования
-                if max_pages and len(pages) >= max_pages:
+                if page_limit and len(pages) >= page_limit:
                     break
 
         logger.info(f"Загружено {len(pages)} страниц из кеша")
     else:
-        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache, max_pages=max_pages)
+        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache, max_pages=page_limit)
 
     # 2) Фолбэки если основной метод не сработал
     if not pages:
         logger.warning("Sitemap crawling не дал результатов, пробуем MkDocs index...")
         pages = crawl_mkdocs_index()
-        page_strategy = "html"
+        if page_limit:
+            pages = pages[:page_limit]
+        page_strategy = "markdown"
     if not pages:
         logger.warning("MkDocs index недоступен, пробуем HTTP обход...")
-        pages = crawl(strategy="http")
+        pages = crawl(strategy="http", max_pages=page_limit)
         page_strategy = "html"
     # Собираем все чанки для батчевой обработки
     all_chunks = []
@@ -104,12 +144,14 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             # Используем новый ContentProcessor (вместо universal_loader)
             # ВНИМАНИЕ: сигнатура process(raw_content, url, strategy)
             try:
-                processed = processor.process(raw_content, url, page_strategy)
+                content_strategy = _resolve_content_strategy(p, page_strategy)
+                processed = processor.process(raw_content, url, content_strategy)
 
                 # Извлекаем унифицированные данные
                 text = processed.content or ''
                 title = processed.title or 'Untitled'
                 page_type = processed.page_type  # ContentProcessor уже определил тип страницы
+                actual_content_type = (processed.metadata or {}).get('content_type', content_strategy)
 
                 if not text:
                     logger.warning(f"Пустой контент после парсинга для {url}, пропускаем")
@@ -129,18 +171,21 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
                 pbar.update(1)
                 continue
 
+            content_type_for_payload = actual_content_type if actual_content_type in ["jina", "html", "markdown"] else "auto"
+
             # Создаем чанки с обогащенными метаданными
             for i, ct in enumerate(chunks_text):
                 # Базовый payload
                 payload = {
                     "url": url,
-                    "content_type": page_strategy if page_strategy in ["jina", "html", "markdown"] else "auto",
+                    "content_type": content_type_for_payload,
                     "page_type": page_type,
                     "source": "docs-site",
                     "language": "ru",
                     "title": title,
                     "text": ct,
-                    "indexed_via": page_strategy,
+                    "indexed_via": content_type_for_payload,
+                    "content_strategy": actual_content_type,
                     "indexed_at": time.time(),
                     "chunk_index": i,
                     "content_length": len(text),
@@ -148,7 +193,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
                 # Добавляем все дополнительные метаданные из нового процессора
                 for key, value in (processed.metadata or {}).items():
-                    if key not in ['url', 'title', 'content', 'page_type'] and value is not None:
+                    if key not in ['url', 'title', 'content', 'page_type', 'content_type'] and value is not None:
                         payload[key] = value
 
                 all_chunks.append({
