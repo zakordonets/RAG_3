@@ -1724,8 +1724,8 @@ def extract_url_metadata(url: str) -> Dict[str, Any]:
 ```python
 # 1. Создать ingestion/parsers_migration.py
 # 2. Обновить импорты в существующих файлах:
-#    - ingestion/pipeline.py: from ingestion.parsers_migration import extract_url_metadata
-#    - app/sources/edna_docs_source.py: from ingestion.parsers_migration import extract_url_metadata
+#    - ingestion/pipeline.py: from app.sources_registry import extract_url_metadata
+#    - app/sources/edna_docs_source.py: from app.sources_registry import extract_url_metadata
 #    - scripts/*.py: обновить импорты
 
 # 3. Протестировать что все работает с миграционным слоем

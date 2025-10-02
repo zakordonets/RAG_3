@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers_migration import parse_jina_content
+from ingestion.processors.content_processor import ContentProcessor
 
 
 def test_parser():

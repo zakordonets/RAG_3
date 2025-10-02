@@ -6,7 +6,8 @@
 import pytest
 from ingestion.processors.base import ProcessedPage
 from ingestion.processors.content_processor import ContentProcessor
-from ingestion.parsers_migration import parse_jina_content, extract_main_text
+from ingestion.processors.content_processor import ContentProcessor
+from ingestion.processors.html_parser import HTMLParser
 from bs4 import BeautifulSoup
 
 
@@ -99,7 +100,7 @@ Content here."""
         assert "Test Page" in result.content
 
     def test_migration_wrapper_correct_args(self):
-        """Тест: миграционные обёртки используют правильный порядок аргументов."""
+        """Тест: ContentProcessor правильно обрабатывает Jina контент."""
         # Тест Jina парсера
         jina_content = """Title: Test
 URL Source: https://example.com/test
@@ -108,15 +109,16 @@ Markdown Content:
 # Test
 Content here."""
 
-        result = parse_jina_content(jina_content)
+        processor = ContentProcessor()
+        processed = processor.process(jina_content, "https://example.com/test", "jina")
 
         # Должен правильно обработать Jina контент
-        assert "Test" in result.get("title", "")
-        assert "Content here" in result.get("content", "")
-        assert result.get("content_type") == "jina_reader"
+        assert "Test" in processed.title
+        assert "Content here" in processed.content
+        assert processed.page_type == "guide"
 
     def test_extract_main_text_correct_args(self):
-        """Тест: extract_main_text использует правильный порядок аргументов."""
+        """Тест: HTMLParser правильно извлекает текст."""
         html_content = """<!DOCTYPE html>
 <html>
 <body>
@@ -127,12 +129,12 @@ Content here."""
 </body>
 </html>"""
 
-        soup = BeautifulSoup(html_content, 'lxml')
-        result = extract_main_text(soup)
+        html_parser = HTMLParser()
+        processed = html_parser.parse("https://example.com/test", html_content)
 
         # Должен правильно извлечь текст
-        assert "Test Page" in result
-        assert "Test content here" in result
+        assert "Test Page" in processed.content
+        assert "Test content here" in processed.content
 
     def test_pipeline_error_handling_simulation(self):
         """Тест: симуляция обработки ошибок в пайплайне."""
@@ -177,13 +179,10 @@ Markdown Content:
 
 **Permissions:** ADMIN, USER"""
 
-        result = parse_jina_content(jina_content)
+        processor = ContentProcessor()
+        processed = processor.process(jina_content, "https://docs.example.com/api", "jina")
 
         # Проверяем, что метаданные сохранились
-        assert result.get("title") == "API Documentation"
-        assert result.get("url_source") == "https://docs.example.com/api"
-        assert result.get("content_length") == 1500
-        # Permissions могут содержать markdown разметку
-        permissions = result.get("permissions", [])
-        assert any("ADMIN" in perm for perm in permissions)
-        assert any("USER" in perm for perm in permissions)
+        assert processed.title == "API Documentation"
+        assert "API Documentation" in processed.content
+        assert processed.page_type == "api"

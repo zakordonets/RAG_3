@@ -10,7 +10,8 @@ from pathlib import Path
 # Добавляем корневую директорию проекта в путь
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers_migration import parse_jina_content, extract_url_metadata
+from app.sources_registry import extract_url_metadata
+from ingestion.processors.content_processor import ContentProcessor
 
 
 def test_jina_reader_metadata():

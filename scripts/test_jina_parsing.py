@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.crawler import _jina_reader_fetch
-from ingestion.parsers_migration import parse_guides
+from ingestion.processors.content_processor import ContentProcessor
 
 
 def test_jina_parsing():
@@ -36,13 +36,15 @@ def test_jina_parsing():
                 print(f"   Первые 200 символов: {html[:200]}...")
 
                 # Парсим контент
-                parsed = parse_guides(html)
-                text = parsed.get("text", "")
-                title = parsed.get("title", "")
+                processor = ContentProcessor()
+                processed = processor.process(html, url, "html")
+                text = processed.content
+                title = processed.title
 
                 print(f"   📝 Парсинг:")
                 print(f"      Заголовок: {title}")
                 print(f"      Текст: {len(text)} символов")
+                print(f"      Тип страницы: {processed.page_type}")
 
                 if len(text) > 0:
                     print(f"      Первые 100 символов текста: {text[:100]}...")

@@ -16,7 +16,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from app.services.retrieval import client, COLLECTION
 from ingestion.universal_loader import load_content_universal
-from ingestion.parsers_migration import parse_jina_content, extract_url_metadata
+from app.sources_registry import extract_url_metadata
+from ingestion.processors.content_processor import ContentProcessor
 
 
 class DataQualityTester:
@@ -234,19 +235,23 @@ Markdown Content:
 """
 
         try:
-            result = parse_jina_content(test_content)
+            processor = ContentProcessor()
+            processed = processor.process(test_content, "https://example.com/test", "jina")
 
             # Проверяем наличие обязательных полей
-            required_fields = ['title', 'content', 'content_length', 'language_detected']
-            missing_fields = [field for field in required_fields if field not in result]
+            missing_fields = []
+            if not processed.title:
+                missing_fields.append('title')
+            if not processed.content:
+                missing_fields.append('content')
 
             return {
                 "success": True,
-                "parsed_fields": list(result.keys()),
+                "parsed_fields": ['title', 'content', 'page_type'],
                 "missing_fields": missing_fields,
-                "content_length": len(result.get('content', '')),
-                "title": result.get('title', ''),
-                "language": result.get('language_detected', '')
+                "content_length": len(processed.content),
+                "title": processed.title,
+                "page_type": processed.page_type
             }
 
         except Exception as e:

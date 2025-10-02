@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers_migration import parse_jina_content
+from ingestion.processors.content_processor import ContentProcessor
 from ingestion.crawler import _jina_reader_fetch
 
 def test_jina_parsing():
@@ -36,20 +36,22 @@ def test_jina_parsing():
                 continue
 
             # Парсим контент
-            parsed = parse_jina_content(jina_result)
+            processor = ContentProcessor()
+            processed = processor.process(jina_result, url, "jina")
 
             print(f"   Парсинг результат:")
-            print(f"     Заголовок: '{parsed['title']}'")
-            print(f"     Контент: {len(parsed['content'])} символов")
+            print(f"     Заголовок: '{processed.title}'")
+            print(f"     Контент: {len(processed.content)} символов")
+            print(f"     Тип страницы: {processed.page_type}")
 
-            if len(parsed['content']) == 0:
+            if len(processed.content) == 0:
                 print("   ❌ Парсер вернул пустой контент")
                 print(f"     Первые 500 символов Jina результата:")
                 print(f"     {jina_result[:500]}...")
             else:
                 print("   ✅ Парсинг работает!")
                 print(f"     Первые 200 символов контента:")
-                print(f"     {parsed['content'][:200]}...")
+                print(f"     {processed.content[:200]}...")
 
         except Exception as e:
             print(f"   ❌ Ошибка: {e}")

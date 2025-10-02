@@ -93,7 +93,7 @@ class AdaptiveChunker:
                 return self._chunk_medium_document(text, metadata, strategy)
             else:  # LONG
                 return self._chunk_long_document(text, metadata, strategy)
-                
+
         except Exception as e:
             logger.error(f"Critical error in chunk_text: {e}")
             # Fallback: создаем один чанк с исходным текстом
@@ -270,7 +270,7 @@ class AdaptiveChunker:
                             title = h.get_text(strip=True)
                             if not title:  # Пропускаем пустые заголовки
                                 continue
-                                
+
                             # Контент до следующего заголовка
                             content_parts = []
                             for sib in h.next_siblings:
@@ -322,11 +322,11 @@ class AdaptiveChunker:
             if not text or not text.strip():
                 logger.warning("Empty text provided to sliding window chunking")
                 return []
-            
+
             if chunk_size <= 0:
                 logger.warning(f"Invalid chunk_size: {chunk_size}, using default 512")
                 chunk_size = 512
-                
+
             if overlap < 0 or overlap >= chunk_size:
                 logger.warning(f"Invalid overlap: {overlap}, using default 100")
                 overlap = min(100, chunk_size // 4)
@@ -377,7 +377,7 @@ class AdaptiveChunker:
 
             logger.debug(f"Created {len(chunks)} chunks with sliding window")
             return chunks
-            
+
         except Exception as e:
             logger.error(f"Critical error in sliding window chunking: {e}")
             # Fallback: простое разбиение на равные части

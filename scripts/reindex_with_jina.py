@@ -11,7 +11,7 @@ from loguru import logger
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.crawler import _jina_reader_fetch, SEED_URLS
-from ingestion.parsers_migration import extract_main_text
+from ingestion.processors.html_parser import HTMLParser
 from ingestion.chunker import chunk_text_with_overlap
 from ingestion.indexer import upsert_chunks
 from app.services.retrieval import client, COLLECTION

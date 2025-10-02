@@ -10,7 +10,8 @@ from pathlib import Path
 # Добавляем корневую директорию проекта в путь
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ingestion.parsers_migration import parse_jina_content, extract_url_metadata, parse_docusaurus_structure
+from app.sources_registry import extract_url_metadata
+from ingestion.processors.content_processor import ContentProcessor
 from bs4 import BeautifulSoup
 
 
@@ -92,9 +93,13 @@ POST /api/routing/rules
 
     # 1. Извлекаем Jina Reader метаданные
     print("\n1️⃣ Jina Reader метаданные:")
-    jina_metadata = parse_jina_content(jina_response)
-    for key, value in jina_metadata.items():
-        if key != 'content':  # Не показываем весь контент
+    processor = ContentProcessor()
+    processed = processor.process(jina_response, url, "jina")
+    print(f"   title: {processed.title}")
+    print(f"   page_type: {processed.page_type}")
+    print(f"   content_length: {len(processed.content)}")
+    if processed.metadata:
+        for key, value in processed.metadata.items():
             print(f"   {key}: {value}")
 
     # 2. Извлекаем URL метаданные
@@ -105,17 +110,22 @@ POST /api/routing/rules
 
     # 3. Извлекаем HTML структурные метаданные
     print("\n3️⃣ HTML структурные метаданные:")
-    soup = BeautifulSoup(html_content, "lxml")
-    html_metadata = parse_docusaurus_structure(soup)
-    for key, value in html_metadata.items():
-        print(f"   {key}: {value}")
+    html_processed = processor.process(html_content, url, "html")
+    print(f"   title: {html_processed.title}")
+    print(f"   page_type: {html_processed.page_type}")
+    if html_processed.metadata:
+        for key, value in html_processed.metadata.items():
+            print(f"   {key}: {value}")
 
     # 4. Объединяем все метаданные
     print("\n4️⃣ Объединенные метаданные:")
     combined_metadata = {
-        **jina_metadata,
+        "jina_title": processed.title,
+        "jina_page_type": processed.page_type,
+        "jina_content_length": len(processed.content),
         **url_metadata,
-        **html_metadata
+        "html_title": html_processed.title,
+        "html_page_type": html_processed.page_type
     }
 
     # Показываем ключевые поля

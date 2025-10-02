@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.crawler import _jina_reader_fetch
-from ingestion.parsers_migration import parse_api_documentation, parse_release_notes, parse_faq_content, parse_guides
+from ingestion.processors.content_processor import ContentProcessor
 from ingestion.chunker import chunk_text
 
 
