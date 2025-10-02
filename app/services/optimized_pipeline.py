@@ -14,7 +14,7 @@ from app.abstractions.data_source import DataSourceBase, Page, CrawlResult, plug
 from app.services.metadata_aware_indexer import MetadataAwareIndexer
 from ingestion.chunker import chunk_text
 from ingestion.adaptive_chunker import adaptive_chunk_text
-from ingestion.parsers_migration import extract_url_metadata
+from app.sources_registry import extract_url_metadata
 from ingestion.processors.content_processor import ContentProcessor
 from app.config import CONFIG
 from app.tokenizer import count_tokens

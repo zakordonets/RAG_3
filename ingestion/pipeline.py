@@ -5,7 +5,7 @@ from typing import Any, Optional
 from loguru import logger
 from tqdm import tqdm
 from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_sitemap, crawl_with_sitemap_progress
-from ingestion.parsers_migration import extract_url_metadata
+from app.sources_registry import extract_url_metadata
 from ingestion.processors.content_processor import ContentProcessor
 from app.sources_registry import get_source_config
 from ingestion.chunker import chunk_text, text_hash

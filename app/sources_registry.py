@@ -8,6 +8,9 @@
 from typing import Dict, List, Any
 from dataclasses import dataclass
 from enum import Enum
+import time
+from urllib.parse import urlparse
+from loguru import logger
 
 
 class SourceType(Enum):
@@ -87,39 +90,39 @@ class SourcesRegistry:
         # Проверяем обязательные поля
         if not source.name or not source.name.strip():
             raise ValueError("Source name cannot be empty")
-        
+
         if not source.base_url or not source.base_url.strip():
             raise ValueError("Base URL cannot be empty")
-        
+
         # Проверяем корректность URL
         if not source.base_url.startswith(('http://', 'https://')):
             raise ValueError(f"Base URL must start with http:// or https://: {source.base_url}")
-        
+
         # Проверяем корректность стратегии
         valid_strategies = ['auto', 'jina', 'html', 'markdown', 'http']
         if source.strategy not in valid_strategies:
             raise ValueError(f"Invalid strategy '{source.strategy}'. Valid options: {valid_strategies}")
-        
+
         # Проверяем max_pages
         if source.max_pages is not None and source.max_pages <= 0:
             raise ValueError("max_pages must be positive or None")
-        
+
         # Проверяем sitemap_path
         if not source.sitemap_path.startswith('/'):
             raise ValueError("sitemap_path must start with '/'")
-        
+
         # Проверяем seed_urls
         if source.seed_urls:
             for url in source.seed_urls:
                 if not url.startswith(('http://', 'https://')):
                     raise ValueError(f"Seed URL must start with http:// or https://: {url}")
-        
+
         # Проверяем crawl_deny_prefixes
         if source.crawl_deny_prefixes:
             for prefix in source.crawl_deny_prefixes:
                 if not prefix.startswith(('http://', 'https://')):
                     raise ValueError(f"Crawl deny prefix must start with http:// or https://: {prefix}")
-        
+
         # Проверяем metadata_patterns
         if source.metadata_patterns:
             for pattern, metadata in source.metadata_patterns.items():
@@ -127,6 +130,52 @@ class SourcesRegistry:
                     raise ValueError("Metadata pattern must be a non-empty string")
                 if not isinstance(metadata, dict):
                     raise ValueError("Metadata must be a dictionary")
+
+
+def extract_url_metadata(url: str) -> Dict[str, Any]:
+    """Извлекает метаданные из URL для определения раздела и роли пользователя."""
+    try:
+        # Базовые поля
+        metadata: Dict[str, Any] = {
+            "url": url,
+            "source": "url_metadata",
+            "extracted_at": time.time(),
+        }
+
+        # Выделяем path для определения раздела/роли
+        # Пример: https://domain.tld/docs/agent/routing -> section=agent
+        try:
+            parsed = urlparse(url)
+            path_parts = [p for p in parsed.path.split('/') if p]
+            section = None
+            if path_parts:
+                # Docusaurus обычно начинается с 'docs' или 'blog'
+                if path_parts[0] == 'docs':
+                    if len(path_parts) > 1:
+                        section = path_parts[1]
+                elif path_parts[0] == 'blog':
+                    section = 'changelog'
+                else:
+                    section = path_parts[0]
+            if section:
+                metadata['section'] = section
+            # user_role по умолчанию выводим из section, если совпадает
+            role_candidates = {"agent", "admin", "supervisor", "integrator"}
+            if section in role_candidates:
+                metadata['user_role'] = section
+            elif section == 'api':
+                metadata['user_role'] = 'integrator'
+            elif section in {'changelog', 'blog', 'start'}:
+                metadata['user_role'] = 'all'
+            else:
+                metadata['user_role'] = 'unspecified'
+        except Exception:
+            metadata['user_role'] = 'unspecified'
+
+        return metadata
+    except Exception as e:
+        logger.warning(f"Error extracting URL metadata for {url}: {e}")
+        return {"url": url}
 
     def get(self, name: str) -> SourceConfig:
         if name not in self._sources:
@@ -158,5 +207,3 @@ def list_available_sources() -> List[str]:
 
 def get_all_crawl_urls() -> List[str]:
     return sources_registry.get_all_urls()
-
-

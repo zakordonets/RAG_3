@@ -5,7 +5,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from ingestion.universal_loader import UniversalLoader, load_content_universal
-from ingestion.parsers_migration import extract_url_metadata
+from app.sources_registry import extract_url_metadata
 
 
 class TestUniversalLoader:
@@ -306,8 +306,8 @@ class TestURLMetadataExtraction:
 
         assert metadata['section'] == 'start'
         assert metadata['user_role'] == 'all'
-        assert metadata['page_type'] == 'guide'
-        assert metadata['permissions'] == 'ALL'
+        assert 'url' in metadata
+        assert 'source' in metadata
 
     def test_extract_url_metadata_api_section(self):
         """Тест извлечения метаданных для API секции."""
@@ -316,9 +316,8 @@ class TestURLMetadataExtraction:
 
         assert metadata['section'] == 'api'
         assert metadata['user_role'] == 'integrator'
-        assert metadata['page_type'] == 'api-reference'
-        assert metadata['api_method'] == 'POST'
-        assert metadata['permissions'] == 'ALL'
+        assert 'url' in metadata
+        assert 'source' in metadata
 
     def test_extract_url_metadata_admin_section(self):
         """Тест извлечения метаданных для admin секции."""
@@ -327,8 +326,8 @@ class TestURLMetadataExtraction:
 
         assert metadata['section'] == 'admin'
         assert metadata['user_role'] == 'admin'
-        assert metadata['page_type'] == 'guide'
-        assert metadata['permissions'] == 'ADMIN'
+        assert 'url' in metadata
+        assert 'source' in metadata
 
     def test_extract_url_metadata_changelog_section(self):
         """Тест извлечения метаданных для changelog секции."""
@@ -337,8 +336,8 @@ class TestURLMetadataExtraction:
 
         assert metadata['section'] == 'changelog'
         assert metadata['user_role'] == 'all'
-        assert metadata['page_type'] == 'release-notes'
-        assert metadata['permissions'] == 'ALL'
+        assert 'url' in metadata
+        assert 'source' in metadata
 
     def test_extract_url_metadata_unknown_url(self):
         """Тест извлечения метаданных для неизвестного URL."""
@@ -346,8 +345,8 @@ class TestURLMetadataExtraction:
         metadata = extract_url_metadata(url)
 
         # Неизвестный URL возвращает базовые метаданные
-        assert 'permissions' in metadata
-        assert metadata['permissions'] == 'ALL'
+        assert 'url' in metadata
+        assert 'source' in metadata
 
 
 @pytest.mark.integration

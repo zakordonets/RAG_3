@@ -45,9 +45,9 @@ class BaseParser(ABC):
     def _detect_page_type(self, url: str, content: str | None = None) -> str:
         """Определяет тип страницы по URL используя стандартную логику классификации."""
         from app.abstractions.data_source import PageType
-        
+
         url_lower = url.lower()
-        
+
         if "faq" in url_lower:
             return PageType.FAQ.value
         elif "api" in url_lower:

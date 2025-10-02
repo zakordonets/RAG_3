@@ -12,7 +12,7 @@ from loguru import logger
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.crawler import crawl_with_sitemap_progress
-from ingestion.parsers_migration import extract_main_text
+from ingestion.processors.html_parser import HTMLParser
 from ingestion.chunker import chunk_text_with_overlap
 from ingestion.indexer import upsert_chunks
 from bs4 import BeautifulSoup
@@ -43,8 +43,9 @@ async def test_single_page_indexing():
 
         # 2. Парсим контент
         print("\n2️⃣ Парсим контент...")
-        soup = BeautifulSoup(html, 'html.parser')
-        main_text = extract_main_text(soup)
+        html_parser = HTMLParser()
+        processed = html_parser.parse(url, html)
+        main_text = processed.content
 
         print(f"   ✅ Извлечено {len(main_text)} символов текста")
         print(f"   📝 Превью: {main_text[:200]}...")

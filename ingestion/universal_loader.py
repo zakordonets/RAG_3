@@ -10,21 +10,15 @@ from typing import Dict, Any, Optional, Union
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from .parsers_migration import (
-    parse_jina_content,
-    extract_url_metadata,
-    parse_docusaurus_structure,
-    parse_api_documentation,
-    parse_release_notes,
-    parse_faq_content,
-    parse_guides
-)
+from app.sources_registry import extract_url_metadata
+from .processors.content_processor import ContentProcessor
 
 
 class UniversalLoader:
     """Универсальный загрузчик для различных типов контента."""
 
     def __init__(self):
+        self.content_processor = ContentProcessor()
         self.content_type_patterns = {
             'jina_reader': [
                 r'^Title:',
@@ -135,56 +129,29 @@ class UniversalLoader:
 
             logger.debug(f"Определен тип контента: {content_type} для URL: {url}")
 
-            # Извлекаем базовые метаданные
+            # Используем ContentProcessor для парсинга
+            processed = self.content_processor.process(content, url, strategy)
+
+            # Базовый результат
             result = {
                 'url': url,
                 'content_type': content_type,
-                'strategy': strategy
+                'strategy': strategy,
+                'title': processed.title,
+                'content': processed.content,
+                'page_type': processed.page_type,
+                'metadata': processed.metadata
             }
-
-            # Парсим контент в зависимости от типа
-            if content_type == 'jina_reader':
-                parsed_data = self._parse_jina_content(content)
-            elif content_type in ['html_docusaurus', 'html_generic']:
-                parsed_data = self._parse_html_content(content, content_type)
-            elif content_type == 'markdown':
-                parsed_data = self._parse_markdown_content(content)
-            else:
-                parsed_data = self._parse_text_content(content)
-
-            # Добавляем парсированные данные
-            result.update(parsed_data)
-
-            # Определяем тип страницы
-            page_type = self.detect_page_type(url, result.get('content', ''))
-            result['page_type'] = page_type
 
             # Извлекаем URL метаданные
             url_metadata = extract_url_metadata(url)
             result.update(url_metadata)
 
-            # Применяем специфичный парсер для типа страницы
-            if page_type in ['api', 'api-reference']:
-                api_data = parse_api_documentation(content)
-                result.update(api_data)
-            elif page_type == 'faq':
-                faq_data = parse_faq_content(content)
-                result.update(faq_data)
-            elif page_type in ['changelog', 'release-notes']:
-                changelog_data = parse_release_notes(content)
-                result.update(changelog_data)
-            else:
-                guide_data = parse_guides(content)
-                result.update(guide_data)
-
             # Добавляем метаданные о загрузке
-            # Сохраняем оригинальный content_length из метаданных, если он есть
-            original_content_length = result.get('content_length')
             result.update({
                 'loaded_at': self._get_timestamp(),
-                'content_length': original_content_length if original_content_length is not None else len(content),
-                'actual_content_length': len(content),  # Реальная длина контента
-                'title': result.get('title', self._extract_title_from_url(url))
+                'content_length': len(content),
+                'actual_content_length': len(content),
             })
 
             # Нормализация permissions: если отсутствует или пустой список — 'ALL'
@@ -198,97 +165,6 @@ class UniversalLoader:
             logger.error(f"Ошибка загрузки контента {url}: {e}")
             return self._create_error_result(url, str(e))
 
-    def _parse_jina_content(self, content: str) -> Dict[str, Any]:
-        """Парсинг контента от Jina Reader."""
-        return parse_jina_content(content)
-
-    def _parse_html_content(self, content: str, html_type: str) -> Dict[str, Any]:
-        """Парсинг HTML контента."""
-        soup = BeautifulSoup(content, "lxml")
-
-        result = {}
-
-        # Извлекаем заголовок
-        title = None
-        if html_type == 'html_docusaurus':
-            h1 = soup.select_one('.theme-doc-markdown h1')
-            if h1:
-                title = h1.get_text(' ', strip=True)
-
-        if not title:
-            title_tag = soup.select_one('h1')
-            if title_tag:
-                title = title_tag.get_text(' ', strip=True)
-            elif soup.title:
-                title = soup.title.get_text(' ', strip=True)
-
-        result['title'] = title or 'Untitled'
-
-        # Извлекаем основной текст
-        if html_type == 'html_docusaurus':
-            main_content = soup.select_one('.theme-doc-markdown')
-            if main_content:
-                result['content'] = main_content.get_text(' ', strip=True)
-            else:
-                result['content'] = soup.get_text(' ', strip=True)
-        else:
-            result['content'] = soup.get_text(' ', strip=True)
-
-        # Добавляем структурные метаданные для Docusaurus
-        if html_type == 'html_docusaurus':
-            docusaurus_metadata = parse_docusaurus_structure(str(soup))
-            result.update(docusaurus_metadata)
-            # Извлекаем Permissions из цитаты, если есть; по умолчанию 'ALL'
-            try:
-                quote = soup.find('blockquote')
-                if quote:
-                    text = quote.get_text(' ', strip=True)
-                    m = re.search(r"Permissions:\s*(.+)$", text, re.IGNORECASE)
-                    if m:
-                        perms_raw = m.group(1)
-                        perms = [p.strip().upper() for p in re.split(r"[,|]", perms_raw) if p.strip()]
-                        # Нормализуем порядок: SUPERVISOR перед AGENT
-                        priority = {"SUPERVISOR": 0, "AGENT": 1, "ADMIN": 2, "INTEGRATOR": 3}
-                        perms.sort(key=lambda x: priority.get(x, 99))
-                        result['permissions'] = perms
-                if 'permissions' not in result:
-                    result['permissions'] = 'ALL'
-            except Exception:
-                pass
-
-        return result
-
-    def _parse_markdown_content(self, content: str) -> Dict[str, Any]:
-        """Парсинг Markdown контента."""
-        lines = content.split('\n')
-
-        # Извлекаем заголовок из первой строки H1
-        title = 'Untitled'
-        for line in lines[:10]:
-            if line.strip().startswith('# '):
-                title = line.strip()[2:].strip()
-                break
-
-        return {
-            'title': title,
-            'content': content
-        }
-
-    def _parse_text_content(self, content: str) -> Dict[str, Any]:
-        """Парсинг обычного текстового контента."""
-        lines = content.split('\n')
-
-        # Извлекаем заголовок из первой непустой строки
-        title = 'Untitled'
-        for line in lines:
-            if line.strip():
-                title = line.strip()[:100]  # Ограничиваем длину
-                break
-
-        return {
-            'title': title,
-            'content': content
-        }
 
     def _extract_title_from_url(self, url: str) -> str:
         """Извлекает заголовок из URL."""

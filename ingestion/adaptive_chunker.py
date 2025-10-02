@@ -74,23 +74,46 @@ class AdaptiveChunker:
         Returns:
             Список чанков с метаданными
         """
-        if not text or not text.strip():
-            return []
+        try:
+            if not text or not text.strip():
+                logger.warning("Empty text provided to chunk_text")
+                return []
 
-        # Определяем тип документа по длине
-        word_count = len(text.split())
-        doc_type = self._classify_document_type(text)
-        strategy = self.strategies[doc_type]
+            # Определяем тип документа по длине
+            word_count = len(text.split())
+            doc_type = self._classify_document_type(text)
+            strategy = self.strategies[doc_type]
 
-        logger.debug(f"Document type: {doc_type.value}, words: {word_count}, strategy: {strategy}")
+            logger.debug(f"Document type: {doc_type.value}, words: {word_count}, strategy: {strategy}")
 
-        # Применяем соответствующую стратегию
-        if doc_type == DocumentType.SHORT:
-            return self._chunk_short_document(text, metadata)
-        elif doc_type == DocumentType.MEDIUM:
-            return self._chunk_medium_document(text, metadata, strategy)
-        else:  # LONG
-            return self._chunk_long_document(text, metadata, strategy)
+            # Применяем соответствующую стратегию
+            if doc_type == DocumentType.SHORT:
+                return self._chunk_short_document(text, metadata)
+            elif doc_type == DocumentType.MEDIUM:
+                return self._chunk_medium_document(text, metadata, strategy)
+            else:  # LONG
+                return self._chunk_long_document(text, metadata, strategy)
+                
+        except Exception as e:
+            logger.error(f"Critical error in chunk_text: {e}")
+            # Fallback: создаем один чанк с исходным текстом
+            try:
+                return [{
+                    'content': text.strip(),
+                    'metadata': {
+                        **(metadata or {}),
+                        'chunk_type': 'fallback',
+                        'chunk_index': 0,
+                        'total_chunks': 1,
+                        'word_count': len(text.split()),
+                        'token_count': count_tokens(text),
+                        'is_complete_document': True,
+                        'error': str(e)
+                    }
+                }]
+            except Exception as fallback_error:
+                logger.error(f"Fallback chunking also failed: {fallback_error}")
+                return []
 
     def _classify_document_type(self, text: str) -> DocumentType:
         """Классифицирует документ по длине используя токенайзер"""
@@ -243,23 +266,36 @@ class AdaptiveChunker:
                 headings = soup.find_all(re.compile(r'^h[1-6]$'))
                 if headings:
                     for idx, h in enumerate(headings):
-                        title = h.get_text(strip=True)
-                        # Контент до следующего заголовка
-                        content_parts = []
-                        for sib in h.next_siblings:
-                            if getattr(sib, 'name', None) and re.match(r'^h[1-6]$', sib.name):
-                                break
-                            # Берём текст параграфов/списков
-                            if getattr(sib, 'get_text', None):
-                                txt = sib.get_text(" ", strip=True)
-                                if txt:
-                                    content_parts.append(txt)
-                        content = '\n\n'.join(content_parts).strip()
-                        if content:
-                            sections.append({'title': title, 'content': content})
+                        try:
+                            title = h.get_text(strip=True)
+                            if not title:  # Пропускаем пустые заголовки
+                                continue
+                                
+                            # Контент до следующего заголовка
+                            content_parts = []
+                            for sib in h.next_siblings:
+                                if getattr(sib, 'name', None) and re.match(r'^h[1-6]$', sib.name):
+                                    break
+                                # Берём текст параграфов/списков
+                                if getattr(sib, 'get_text', None):
+                                    try:
+                                        txt = sib.get_text(" ", strip=True)
+                                        if txt and len(txt) > 10:  # Минимальная длина контента
+                                            content_parts.append(txt)
+                                    except Exception as e:
+                                        logger.debug(f"Error extracting text from sibling element: {e}")
+                                        continue
+                            content = '\n\n'.join(content_parts).strip()
+                            if content and len(content) > 20:  # Минимальная длина секции
+                                sections.append({'title': title, 'content': content})
+                        except Exception as e:
+                            logger.warning(f"Error processing heading {idx}: {e}")
+                            continue
                 if sections:
+                    logger.debug(f"Successfully segmented HTML into {len(sections)} sections")
                     return sections
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Error in HTML hierarchical segmentation: {e}, falling back to Markdown")
                 pass  # fallback к Markdown-разметке
 
         # Markdown-подобные заголовки (# .. ######)
@@ -281,43 +317,83 @@ class AdaptiveChunker:
 
     def _sliding_window_chunking(self, text: str, chunk_size: int, overlap: int) -> List[str]:
         """Sliding window разбивка текста"""
-        # Ограничение на максимальную длину для защиты памяти
-        words = text.split()
-        if len(words) > 200000:  # ~ защитный лимит ~200k слов
-            logger.warning(f"Input too large for sliding window: {len(words)} words, truncating for safety")
-            words = words[:200000]
-        chunks = []
+        try:
+            # Валидация входных параметров
+            if not text or not text.strip():
+                logger.warning("Empty text provided to sliding window chunking")
+                return []
+            
+            if chunk_size <= 0:
+                logger.warning(f"Invalid chunk_size: {chunk_size}, using default 512")
+                chunk_size = 512
+                
+            if overlap < 0 or overlap >= chunk_size:
+                logger.warning(f"Invalid overlap: {overlap}, using default 100")
+                overlap = min(100, chunk_size // 4)
 
-        if len(words) <= chunk_size:
-            return [text]
+            # Ограничение на максимальную длину для защиты памяти
+            words = text.split()
+            if len(words) > 200000:  # ~ защитный лимит ~200k слов
+                logger.warning(f"Input too large for sliding window: {len(words)} words, truncating for safety")
+                words = words[:200000]
+            chunks = []
 
-        start = 0
-        max_chunks = 20000  # защитный лимит
-        produced = 0
-        while start < len(words) and produced < max_chunks:
-            end = min(start + chunk_size, len(words))
-            chunk_words = words[start:end]
+            if len(words) <= chunk_size:
+                return [text]
 
-            # Завершаем на полном предложении если возможно
-            if end < len(words):
-                chunk_text = ' '.join(chunk_words)
-                # Ищем последнюю точку, восклицательный или вопросительный знак
-                last_sentence_end = max(
-                    chunk_text.rfind('.'),
-                    chunk_text.rfind('!'),
-                    chunk_text.rfind('?')
-                )
+            start = 0
+            max_chunks = 20000  # защитный лимит
+            produced = 0
+            while start < len(words) and produced < max_chunks:
+                try:
+                    end = min(start + chunk_size, len(words))
+                    chunk_words = words[start:end]
 
-                if last_sentence_end > len(chunk_text) * 0.7:  # Если предложение не слишком короткое
-                    chunk_text = chunk_text[:last_sentence_end + 1]
-                    # Пересчитываем позицию
-                    end = start + len(chunk_text.split())
+                    # Завершаем на полном предложении если возможно
+                    if end < len(words):
+                        chunk_text = ' '.join(chunk_words)
+                        # Ищем последнюю точку, восклицательный или вопросительный знак
+                        last_sentence_end = max(
+                            chunk_text.rfind('.'),
+                            chunk_text.rfind('!'),
+                            chunk_text.rfind('?')
+                        )
 
-            chunks.append(' '.join(words[start:end]))
-            start = end - overlap  # Перекрытие
-            produced += 1
+                        if last_sentence_end > len(chunk_text) * 0.7:  # Если предложение не слишком короткое
+                            chunk_text = chunk_text[:last_sentence_end + 1]
+                            # Пересчитываем позицию
+                            end = start + len(chunk_text.split())
 
-        return chunks
+                    chunk_content = ' '.join(words[start:end])
+                    if chunk_content.strip():  # Только непустые чанки
+                        chunks.append(chunk_content)
+                    start = end - overlap  # Перекрытие
+                    produced += 1
+                except Exception as e:
+                    logger.warning(f"Error creating chunk {produced}: {e}")
+                    # Пропускаем проблемный чанк и продолжаем
+                    start += chunk_size
+                    produced += 1
+
+            logger.debug(f"Created {len(chunks)} chunks with sliding window")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Critical error in sliding window chunking: {e}")
+            # Fallback: простое разбиение на равные части
+            try:
+                words = text.split()
+                if len(words) <= chunk_size:
+                    return [text]
+                chunks = []
+                for i in range(0, len(words), chunk_size - overlap):
+                    chunk = ' '.join(words[i:i + chunk_size])
+                    if chunk.strip():
+                        chunks.append(chunk)
+                return chunks
+            except Exception as fallback_error:
+                logger.error(f"Fallback chunking also failed: {fallback_error}")
+                return [text]  # Последний resort
 
 
 def adaptive_chunk_text(text: str, metadata: Dict[str, Any] = None) -> List[Dict[str, Any]]:

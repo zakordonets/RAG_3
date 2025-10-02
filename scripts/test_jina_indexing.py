@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from ingestion.crawler import crawl_with_sitemap_progress
-from ingestion.parsers_migration import extract_main_text
+from ingestion.processors.html_parser import HTMLParser
 from ingestion.chunker import chunk_text_with_overlap
 from ingestion.indexer import upsert_chunks
 from bs4 import BeautifulSoup
@@ -46,10 +46,11 @@ async def test_jina_indexing():
 
             # 2. Парсим контент
             print("\n2️⃣ Парсим контент...")
-            soup = BeautifulSoup(jina_text, 'html.parser')
-            main_text = extract_main_text(soup)
+            html_parser = HTMLParser()
+            processed = html_parser.parse(url, jina_text)
+            main_text = processed.content
 
-            # Если extract_main_text не сработал, используем весь текст
+            # Если парсинг не сработал, используем весь текст
             if not main_text or len(main_text) < 100:
                 main_text = jina_text
                 print("   ⚠️ Используем весь текст от Jina Reader")

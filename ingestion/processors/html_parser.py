@@ -40,25 +40,25 @@ class HTMLParser(BaseParser):
 
     def _get_soup(self, content: str) -> BeautifulSoup:
         key = hashlib.md5(content.encode('utf-8')).hexdigest()
-        
+
         # Проверяем кеш
         if key in self._soup_cache:
             # Перемещаем в конец (самый недавно использованный)
             soup = self._soup_cache.pop(key)
             self._soup_cache[key] = soup
             return soup
-        
+
         # Создаем новый объект
         soup = BeautifulSoup(content, "lxml")
-        
+
         # Добавляем в кеш с проверкой размера
         self._soup_cache[key] = soup
-        
+
         # Очищаем кеш если превышен лимит
         if len(self._soup_cache) > self._max_cache_size:
             # Удаляем самый старый элемент (первый в OrderedDict)
             self._soup_cache.popitem(last=False)
-        
+
         return soup
 
     def clear_cache(self) -> None:
