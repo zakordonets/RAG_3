@@ -992,7 +992,7 @@ class CustomCrawler(BaseCrawler):
     def get_available_urls(self) -> List[str]:
         # Ваша логика получения URL
         pass
-    
+
     def crawl(self, max_pages: Optional[int] = None) -> List[CrawlResult]:
         # Ваша логика краулинга
         pass
@@ -1017,11 +1017,11 @@ from ingestion.crawlers import CrawlerFactory
 def test_my_source():
     config = get_source_config("my_new_source")
     crawler = CrawlerFactory.create_crawler(config)
-    
+
     # Тестируйте получение URL
     urls = crawler.get_available_urls()
     assert isinstance(urls, list)
-    
+
     # Тестируйте краулинг
     results = crawler.crawl(max_pages=1)
     assert len(results) == 1
