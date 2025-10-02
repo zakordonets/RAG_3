@@ -153,3 +153,38 @@ def test_pipeline_html_fallback_produces_chunks():
     assert payload["indexed_via"] == "html"
 
     assert result == {"pages": 1, "chunks": 1}
+
+
+def test_pipeline_plain_text_mkdocs_fallback_switches_to_markdown():
+    plain_text_content = "Plain text fallback without HTML markup"
+
+    fallback_pages = [
+        {
+            "url": "https://example.com/plain-text",
+            "text": plain_text_content,
+            "html": plain_text_content,
+            "title": "Plain Text Page",
+        }
+    ]
+
+    with (
+        patch("ingestion.pipeline.crawl_with_sitemap_progress", return_value=[]),
+        patch("ingestion.pipeline.crawl_mkdocs_index", return_value=fallback_pages),
+        patch("ingestion.pipeline.crawl", return_value=[]),
+        patch("ingestion.pipeline.MetadataAwareIndexer.index_chunks_with_metadata") as mock_index,
+    ):
+        mock_index.return_value = 1
+
+        result = crawl_and_index(strategy="jina", use_cache=False, max_pages=1)
+
+    mock_index.assert_called_once()
+
+    (chunks,) = mock_index.call_args[0]
+
+    assert len(chunks) > 0, "Plain text fallback page should produce chunks"
+
+    payload = chunks[0]["payload"]
+    assert payload["content_type"] == "markdown"
+    assert payload["indexed_via"] == "markdown"
+
+    assert result == {"pages": 1, "chunks": 1}
