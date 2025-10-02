@@ -12,6 +12,8 @@
 - **Умная маршрутизация**: Автоматический fallback между LLM провайдерами
 - **Красивое форматирование**: MarkdownV2 через `telegramify-markdown` v0.5.1 с эмодзи и структурированными ответами
 - **Redis кеширование**: Высокопроизводительное кеширование эмбеддингов и результатов поиска
+- **Гибкая система источников**: Поддержка веб-сайтов, локальных папок, API документации, блогов, FAQ
+- **Модульные краулеры**: Легкое добавление новых типов источников данных
 - **Production-ready**: Comprehensive error handling, Circuit Breaker, метрики Prometheus
 - **Безопасность**: Полная валидация, санитизация и мониторинг безопасности
 - **Rate Limiting**: Защита от злоупотреблений с burst protection
@@ -133,8 +135,34 @@ python scripts/init_qdrant.py
 ```
 
 ### 7. Индексация документации
+
+#### Автоматическая индексация (рекомендуется)
+```bash
+python scripts/indexer.py --mode full
+```
+
+#### Ручная индексация через pipeline
 ```bash
 python -c "from ingestion.pipeline import crawl_and_index; crawl_and_index()"
+```
+
+#### Индексация конкретного источника
+```bash
+python scripts/indexer.py --source docs_chatcenter --mode full
+```
+
+#### Добавление нового источника данных
+```bash
+# 1. Добавьте конфигурацию в app/sources_registry.py
+# 2. Протестируйте источник
+python -c "
+from app.sources_registry import get_source_config
+from ingestion.crawlers import CrawlerFactory
+config = get_source_config('your_source_name')
+crawler = CrawlerFactory.create_crawler(config)
+results = crawler.crawl(max_pages=5)
+print(f'Found {len(results)} pages')
+"
 ```
 
 ### 8. Запуск системы

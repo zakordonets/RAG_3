@@ -3,12 +3,13 @@
 ## Обзор
 Новая система загрузки документов основана на модульной архитектуре:
 - `SourcesRegistry` — централизованная конфигурация источников
-- `DataSourceBase`/`plugin_manager` — плагины источников и их краулинг
+- `CrawlerFactory` — фабрика краулеров для разных типов источников
+- `BaseCrawler`/`WebsiteCrawler`/`LocalFolderCrawler` — модульная система краулеров
 - `ContentProcessor` — унифицированная обработка контента (стратегии: Jina, HTML, Markdown)
 - `AdaptiveChunker`/`Chunker` — адаптивный и простой чанкинг
 - Индексация в Qdrant через `MetadataAwareIndexer`
 
-Основные цели: единый формат данных (`ProcessedPage`), предсказуемость пайплайна, корректная кодировка и стабильные метрики.
+Основные цели: единый формат данных (`ProcessedPage`), предсказуемость пайплайна, корректная кодировка, стабильные метрики и легкое добавление новых источников данных.
 
 ## Поток данных
 1. Источник возвращает `CrawlResult` с `Page`
@@ -18,6 +19,11 @@
 
 ## Ключевые компоненты
 - `app/sources_registry.py` — `SourceType`, `SourceConfig`, `SourcesRegistry`
+- `ingestion/crawlers/` — модульная система краулеров:
+  - `base_crawler.py` — `BaseCrawler`, `CrawlResult` (абстрактные классы)
+  - `website_crawler.py` — `WebsiteCrawler` (веб-сайты, документация, блоги)
+  - `local_folder_crawler.py` — `LocalFolderCrawler` (локальные папки)
+  - `crawler_factory.py` — `CrawlerFactory` (выбор подходящего краулера)
 - `ingestion/processors/content_processor.py` — диспетчер парсеров
 - `ingestion/processors/{jina,html,markdown}_parser.py` — специализированные парсеры
 - `ingestion/adaptive_chunker.py` — адаптивная стратегия чанкинга (short/medium/long)
@@ -35,8 +41,28 @@
 - `adaptive_chunking` (True для адаптивной стратегии)
 - Дополнительно для HTML: `section_title`, `section_index`
 
+## Типы источников данных
+
+Система поддерживает различные типы источников данных:
+
+### Веб-сайты
+- **DOCS_SITE** — документационные сайты (Docusaurus, MkDocs)
+- **API_DOCS** — API документация (Swagger, OpenAPI)
+- **BLOG** — блоги и новости
+- **FAQ** — FAQ страницы
+- **EXTERNAL** — внешние сайты
+
+### Локальные файлы
+- **LOCAL_FOLDER** — папки с документами
+- **FILE_COLLECTION** — коллекции файлов (PDF, DOC, MD)
+
+### Планируемые типы
+- **GIT_REPOSITORY** — Git репозитории
+- **CONFLUENCE** — Confluence wiki
+- **NOTION** — Notion workspace
+
 ## Конфигурация
-Параметры задаются через переменные окружения (`env.example`):
+Параметры задаются через переменные окружения (`env.example`) и конфигурацию источников:
 
 - Источники и краулинг: `CRAWL_MAX_PAGES`, `USE_CACHE`, `SEED_URLS`, `SITEMAP_PATH`, `CRAWL_DENY_PREFIXES`
 - Стратегия чанкинга:

@@ -91,13 +91,13 @@ metadata_patterns={
         'page_type': 'guide'
     },
     r'/docs/api/': {
-        'section': 'api', 
+        'section': 'api',
         'user_role': 'developer',
         'page_type': 'api'
     },
     r'/blog/': {
         'section': 'news',
-        'user_role': 'all', 
+        'user_role': 'all',
         'page_type': 'blog'
     }
 }
@@ -121,17 +121,17 @@ from ingestion.crawlers import CrawlerFactory
 def test_new_source():
     # Получаем конфигурацию
     config = get_source_config("my_new_source")
-    
+
     # Создаем краулер
     crawler = CrawlerFactory.create_crawler(config)
-    
+
     # Тестируем получение URL
     urls = crawler.get_available_urls()
     print(f"Found {len(urls)} URLs")
-    
+
     # Тестируем краулинг (ограничиваем 5 страницами)
     results = crawler.crawl(max_pages=5)
-    
+
     print(f"Crawled {len(results)} pages")
     for result in results:
         if result.error:
@@ -230,7 +230,7 @@ class CustomCrawler(BaseCrawler):
     def get_available_urls(self) -> List[str]:
         # Ваша логика получения URL
         pass
-    
+
     def crawl(self, max_pages: Optional[int] = None) -> List[CrawlResult]:
         # Ваша логика краулинга
         pass
@@ -263,10 +263,10 @@ def test_website_crawler():
         base_url="https://example.com/",
         source_type=SourceType.DOCS_SITE,
     )
-    
+
     crawler = CrawlerFactory.create_crawler(config)
     assert isinstance(crawler, WebsiteCrawler)
-    
+
     # Тестируем получение URL
     urls = crawler.get_available_urls()
     assert isinstance(urls, list)
@@ -278,7 +278,7 @@ def test_local_folder_crawler():
         source_type=SourceType.LOCAL_FOLDER,
         local_path="/test/path",
     )
-    
+
     crawler = CrawlerFactory.create_crawler(config)
     assert isinstance(crawler, LocalFolderCrawler)
 ```

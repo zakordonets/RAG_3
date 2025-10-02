@@ -24,9 +24,19 @@ RAG_2/
 │       ├── llm_router.py    # LLM роутинг
 │       └── query_processing.py # Обработка запросов
 ├── ingestion/               # Парсинг и индексация
-│   ├── crawler.py          # Веб-краулер
-│   ├── parsers.py          # HTML парсеры
+│   ├── crawlers/           # Модульная система краулеров
+│   │   ├── base_crawler.py     # Базовый класс краулера
+│   │   ├── website_crawler.py  # Краулер веб-сайтов
+│   │   ├── local_folder_crawler.py # Краулер локальных папок
+│   │   └── crawler_factory.py  # Фабрика краулеров
+│   ├── processors/         # Обработчики контента
+│   │   ├── content_processor.py # Диспетчер парсеров
+│   │   ├── html_parser.py      # HTML парсер
+│   │   ├── jina_parser.py      # Jina Reader парсер
+│   │   └── markdown_parser.py  # Markdown парсер
+│   ├── crawler.py          # Legacy веб-краулер
 │   ├── chunker.py          # Разбиение на чанки
+│   ├── adaptive_chunker.py # Адаптивный чанкер
 │   ├── indexer.py          # Индексация в Qdrant
 │   └── pipeline.py         # Пайплайн индексации
 ├── sparse_service/          # Сервис sparse эмбеддингов
@@ -894,6 +904,133 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
 ```
+
+## Добавление новых источников данных
+
+### 1. Обзор архитектуры
+
+Система использует модульную архитектуру для работы с различными источниками данных:
+
+- **SourcesRegistry** — централизованная конфигурация источников
+- **CrawlerFactory** — фабрика для выбора подходящего краулера
+- **BaseCrawler** — абстрактный базовый класс для всех краулеров
+- **WebsiteCrawler** — для веб-сайтов
+- **LocalFolderCrawler** — для локальных папок
+
+### 2. Добавление нового источника
+
+#### Шаг 1: Определите тип источника
+
+```python
+from app.sources_registry import SourceType
+
+# Выберите подходящий тип
+source_type = SourceType.DOCS_SITE  # или другой тип
+```
+
+#### Шаг 2: Создайте конфигурацию
+
+```python
+from app.sources_registry import SourceConfig
+
+config = SourceConfig(
+    name="my_new_source",
+    base_url="https://example.com/",
+    source_type=SourceType.DOCS_SITE,
+    strategy="jina",  # или "http", "auto"
+    use_cache=True,
+    sitemap_path="/sitemap.xml",
+    seed_urls=["https://example.com/"],
+    crawl_deny_prefixes=["https://example.com/admin/"],
+    metadata_patterns={
+        r'/docs/': {'section': 'docs', 'user_role': 'all'},
+    },
+    timeout_s=30,
+    crawl_delay_ms=1000,
+)
+```
+
+#### Шаг 3: Зарегистрируйте источник
+
+```python
+from app.sources_registry import get_sources_registry
+
+registry = get_sources_registry()
+registry.register(config)
+```
+
+#### Шаг 4: Протестируйте источник
+
+```python
+from ingestion.crawlers import CrawlerFactory
+
+# Создайте краулер
+crawler = CrawlerFactory.create_crawler(config)
+
+# Тестируйте получение URL
+urls = crawler.get_available_urls()
+print(f"Found {len(urls)} URLs")
+
+# Тестируйте краулинг
+results = crawler.crawl(max_pages=5)
+for result in results:
+    if result.error:
+        print(f"❌ {result.url}: {result.error}")
+    else:
+        print(f"✅ {result.url}: {result.title}")
+```
+
+### 3. Создание кастомного краулера
+
+Если стандартные краулеры не подходят:
+
+```python
+from ingestion.crawlers.base_crawler import BaseCrawler, CrawlResult
+from app.sources_registry import SourceConfig
+
+class CustomCrawler(BaseCrawler):
+    def get_available_urls(self) -> List[str]:
+        # Ваша логика получения URL
+        pass
+    
+    def crawl(self, max_pages: Optional[int] = None) -> List[CrawlResult]:
+        # Ваша логика краулинга
+        pass
+
+# Зарегистрируйте краулер
+from ingestion.crawlers import CrawlerFactory
+from app.sources_registry import SourceType
+
+CrawlerFactory.register_crawler(SourceType.CUSTOM, CustomCrawler)
+```
+
+### 4. Тестирование
+
+Создайте тесты для вашего источника:
+
+```python
+# tests/test_my_source.py
+import pytest
+from app.sources_registry import get_source_config
+from ingestion.crawlers import CrawlerFactory
+
+def test_my_source():
+    config = get_source_config("my_new_source")
+    crawler = CrawlerFactory.create_crawler(config)
+    
+    # Тестируйте получение URL
+    urls = crawler.get_available_urls()
+    assert isinstance(urls, list)
+    
+    # Тестируйте краулинг
+    results = crawler.crawl(max_pages=1)
+    assert len(results) == 1
+    assert not results[0].error
+```
+
+### 5. Документация
+
+Добавьте документацию для вашего источника в `docs/adding_data_sources.md`.
 
 ## Отладка
 
