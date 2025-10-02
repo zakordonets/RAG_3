@@ -13,8 +13,28 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
+from app.config import CONFIG
 from ingestion.crawl_cache import get_crawl_cache
 from ingestion.crawler import crawl_sitemap, crawl_with_sitemap_progress
+
+
+
+CRAWL_TEST_MAX_PAGES = os.getenv("CRAWL_TEST_MAX_PAGES")
+try:
+    TEST_MAX_PAGES = int(CRAWL_TEST_MAX_PAGES) if CRAWL_TEST_MAX_PAGES else 5
+except ValueError:
+    TEST_MAX_PAGES = 5
+
+if TEST_MAX_PAGES <= 0:
+    TEST_MAX_PAGES = 5
+
+
+def _get_test_page_limit() -> int:
+    """Return the effective page limit for integration-style crawl tests."""
+    config_limit = getattr(CONFIG, "crawl_max_pages", 0)
+    if config_limit and config_limit > 0:
+        return min(TEST_MAX_PAGES, config_limit) if TEST_MAX_PAGES else config_limit
+    return TEST_MAX_PAGES
 
 
 def test_cache_basic_operations():
@@ -77,8 +97,9 @@ def test_cache_with_real_data():
         logger.error("❌ Не удалось получить URL из sitemap")
         return
 
-    test_urls = urls[:3]  # Берем первые 3 URL для теста
-    logger.info(f"Тестируем с {len(test_urls)} URL")
+    limit = min(len(urls), _get_test_page_limit())
+    test_urls = urls[:limit]
+    logger.info(f"Тестируем с {len(test_urls)} URL (ограничение для тестов)")
 
     cache = get_crawl_cache()
     initial_stats = cache.get_cache_stats()
@@ -89,7 +110,7 @@ def test_cache_with_real_data():
     logger.info("🚀 Первый запуск crawling (без кеша)...")
     start_time = time.time()
 
-    pages1 = crawl_with_sitemap_progress(strategy="jina", use_cache=True)
+    pages1 = crawl_with_sitemap_progress(strategy="jina", use_cache=True, max_pages=limit)
     first_crawl_time = time.time() - start_time
 
     # Фильтруем только тестовые URL
@@ -105,7 +126,7 @@ def test_cache_with_real_data():
     logger.info("⚡ Второй запуск crawling (с кешем)...")
     start_time = time.time()
 
-    pages2 = crawl_with_sitemap_progress(strategy="jina", use_cache=True)
+    pages2 = crawl_with_sitemap_progress(strategy="jina", use_cache=True, max_pages=limit)
     second_crawl_time = time.time() - start_time
 
     # Фильтруем только тестовые URL
@@ -154,7 +175,7 @@ def test_cache_incremental_update():
     # Тест режима cache_only
     logger.info("📖 Тест режима cache_only...")
     try:
-        stats = crawl_and_index(reindex_mode="cache_only")
+        stats = crawl_and_index(reindex_mode="cache_only", max_pages=_get_test_page_limit())
         logger.info(f"cache_only: {stats['pages']} страниц, {stats['chunks']} чанков")
         logger.success("✅ Режим cache_only работает")
     except Exception as e:
@@ -163,7 +184,7 @@ def test_cache_incremental_update():
     # Тест автоматического режима
     logger.info("🤖 Тест автоматического режима...")
     try:
-        stats = crawl_and_index(reindex_mode="auto", use_cache=True)
+        stats = crawl_and_index(reindex_mode="auto", use_cache=True, max_pages=_get_test_page_limit())
         logger.info(f"auto: {stats['pages']} страниц, {stats['chunks']} чанков")
         logger.success("✅ Автоматический режим работает")
     except Exception as e:

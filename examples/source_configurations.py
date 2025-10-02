@@ -256,7 +256,7 @@ if __name__ == "__main__":
     for name in list_available_configs():
         config = get_config_by_name(name)
         print(f"- {name}: {config.source_type.value} ({config.base_url})")
-    
+
     print("\nExample usage:")
     print("from examples.source_configurations import get_config_by_name")
     print("config = get_config_by_name('docusaurus')")

@@ -22,19 +22,35 @@ class ContentProcessor:
     def process(self, raw_content: str, url: str, strategy: str = "auto") -> ProcessedPage:
         content_type = self._detect_content_type(raw_content, strategy)
         parser = self.parsers.get(content_type, self.parsers['html'])
-        return parser.parse(url, raw_content)
+        parsed = parser.parse(url, raw_content)
+
+        # Обогащаем метаданные типом контента для дальнейшего использования
+        if parsed.metadata is None:
+            parsed.metadata = {}
+        parsed.metadata.setdefault('content_type', content_type)
+
+        return parsed
 
     def _detect_content_type(self, content: str, strategy: str) -> str:
         if strategy in ('jina', 'jina_reader'):
             return 'jina'
+        if strategy in ('html', 'markdown'):
+            return strategy
+        if strategy == 'auto':
+            strategy = ''
 
         # Нормализуем контент, убирая лидирующие пробелы, БОМ и переносы строк
-        normalized = content.lstrip('\ufeff \n\r\t')
+        normalized = (content or '').lstrip('\ufeff \n\r\t')
+        normalized_lower = normalized.lower()
 
         if normalized.startswith("Title:") and "URL Source:" in normalized:
             return 'jina'
-        if normalized.startswith("<!DOCTYPE html") or normalized.startswith("<html"):
+        if normalized_lower.startswith("<!doctype html") or normalized_lower.startswith("<html") or '<html' in normalized_lower:
             return 'html'
         if normalized.startswith("#"):
+            return 'markdown'
+        if normalized.startswith("---"):
+            return 'markdown'
+        if '<' not in normalized[:500] and '>' not in normalized[:500] and '\n' in normalized:
             return 'markdown'
         return 'html'

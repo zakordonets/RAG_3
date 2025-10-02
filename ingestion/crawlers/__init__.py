@@ -9,7 +9,7 @@ from .crawler_factory import CrawlerFactory
 
 __all__ = [
     'BaseCrawler',
-    'CrawlResult', 
+    'CrawlResult',
     'WebsiteCrawler',
     'LocalFolderCrawler',
     'CrawlerFactory',

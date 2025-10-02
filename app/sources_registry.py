@@ -40,7 +40,7 @@ class SourceConfig:
     sitemap_path: str = "/sitemap.xml"
     seed_urls: List[str] | None = None
     metadata_patterns: Dict[str, Dict[str, str]] | None = None
-    
+
     # Дополнительные поля для разных типов источников
     local_path: str | None = None                    # Путь к локальной папке
     file_extensions: List[str] | None = None         # Расширения файлов для обработки

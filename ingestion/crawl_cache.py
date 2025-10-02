@@ -23,6 +23,7 @@ class PageCache:
     etag: Optional[str] = None
     title: Optional[str] = None
     page_type: str = "unknown"
+    content_strategy: str = "auto"
     content_length: int = 0
     cached_at: str = ""
     html: str = ""
@@ -116,6 +117,9 @@ class CrawlCache:
             # Обновляем полные данные
             page_cache.html = page_data.get('html', '')
             page_cache.text = page_data.get('text', '')
+            metadata = page_data.get('metadata') or {}
+            if isinstance(metadata, dict):
+                page_cache.content_strategy = metadata.get('content_strategy', page_cache.content_strategy)
 
             return page_cache
         except Exception as e:
@@ -124,7 +128,7 @@ class CrawlCache:
 
     def save_page(self, url: str, html: str, text: str = "",
                   etag: Optional[str] = None, title: Optional[str] = None,
-                  page_type: str = "unknown") -> PageCache:
+                  page_type: str = "unknown", content_strategy: str = "auto") -> PageCache:
         """
         Сохраняет страницу в кеш.
 
@@ -148,6 +152,7 @@ class CrawlCache:
             etag=etag,
             title=title,
             page_type=page_type,
+            content_strategy=content_strategy,
             content_length=len(html),
             html=html,
             text=text
