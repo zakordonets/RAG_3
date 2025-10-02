@@ -15,11 +15,16 @@ from loguru import logger
 
 class SourceType(Enum):
     """Типы источников данных"""
-    DOCS_SITE = "docs_site"
-    API_DOCS = "api_docs"
-    BLOG = "blog"
-    FAQ = "faq"
-    EXTERNAL = "external"
+    DOCS_SITE = "docs_site"          # Документационный сайт (Docusaurus, MkDocs)
+    API_DOCS = "api_docs"            # API документация (Swagger, OpenAPI)
+    BLOG = "blog"                    # Блог или новости
+    FAQ = "faq"                      # FAQ страницы
+    EXTERNAL = "external"            # Внешний сайт
+    LOCAL_FOLDER = "local_folder"    # Локальная папка с документами
+    FILE_COLLECTION = "file_collection"  # Коллекция файлов (PDF, DOC, MD)
+    GIT_REPOSITORY = "git_repository"    # Git репозиторий с документами
+    CONFLUENCE = "confluence"        # Confluence wiki
+    NOTION = "notion"               # Notion workspace
 
 
 @dataclass
@@ -35,6 +40,19 @@ class SourceConfig:
     sitemap_path: str = "/sitemap.xml"
     seed_urls: List[str] | None = None
     metadata_patterns: Dict[str, Dict[str, str]] | None = None
+    
+    # Дополнительные поля для разных типов источников
+    local_path: str | None = None                    # Путь к локальной папке
+    file_extensions: List[str] | None = None         # Расширения файлов для обработки
+    git_url: str | None = None                      # URL Git репозитория
+    git_branch: str = "main"                         # Ветка Git репозитория
+    confluence_space: str | None = None             # Space в Confluence
+    notion_database_id: str | None = None           # ID базы данных в Notion
+    api_key: str | None = None                      # API ключ для внешних сервисов
+    custom_headers: Dict[str, str] | None = None    # Кастомные заголовки
+    crawl_delay_ms: int = 1000                       # Задержка между запросами (мс)
+    timeout_s: int = 30                              # Таймаут запросов (сек)
+    user_agent: str | None = None                   # User-Agent для запросов
 
 
 class SourcesRegistry:
