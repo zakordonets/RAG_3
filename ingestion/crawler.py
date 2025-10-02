@@ -430,7 +430,3 @@ def crawl_mkdocs_index(base_url: str = "https://docs-chatcenter.edna.ru/") -> li
     for p in pages:
         uniq.setdefault(p["url"], p)
     return list(uniq.values())
-
-
-
-
