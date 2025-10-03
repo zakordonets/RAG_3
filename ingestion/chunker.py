@@ -76,9 +76,19 @@ def chunk_text(text: str, min_tokens: int = None, max_tokens: int = None, use_se
         try:
             logger.debug("Using semantic chunker")
             chunks = chunk_text_semantic(text, use_overlap=False)
-            if chunks:
+            if chunks and len(chunks) > 1:
+                # Семантический чанкер успешно разбил на несколько частей
                 logger.debug(f"Semantic chunker produced {len(chunks)} chunks")
                 return chunks
+            elif chunks and len(chunks) == 1:
+                # Семантический чанкер вернул один большой чанк - проверяем размер
+                chunk_size = len(chunks[0])
+                max_reasonable_size = max_tokens * 4  # Примерно 4 символа на токен
+                if chunk_size > max_reasonable_size:
+                    logger.warning(f"Semantic chunker returned single large chunk ({chunk_size} chars), falling back to simple chunker")
+                else:
+                    logger.debug(f"Semantic chunker produced 1 reasonable chunk ({chunk_size} chars)")
+                    return chunks
             else:
                 logger.warning("Semantic chunker returned no chunks, falling back to simple chunker")
         except Exception as e:

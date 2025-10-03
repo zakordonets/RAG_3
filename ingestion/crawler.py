@@ -207,7 +207,7 @@ def crawl(start_url: str = START_URL, concurrency: int = 8, strategy: str = "htt
 
 
 # --- Альтернативный парсер для MkDocs search_index.json ---
-def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina", use_cache: bool = True, max_pages: int = None) -> list[dict]:
+def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru/", strategy: str = "jina", use_cache: bool = True, max_pages: int = None, cleanup_cache: bool = False) -> list[dict]:
     """
     Улучшенный crawling с правильным отображением прогресса и кешированием.
     Сначала получает все URL из sitemap, затем проверяет кеш и обрабатывает только измененные страницы.
@@ -216,28 +216,35 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
         base_url: Базовый URL для crawling
         strategy: Стратегия получения контента (jina, http, browser)
         use_cache: Использовать кеширование результатов
+        max_pages: Максимальное количество страниц для обработки
+        cleanup_cache: Очищать устаревшие записи из кеша (по умолчанию False)
     """
     from ingestion.crawl_cache import get_crawl_cache
 
     page_limit = _resolve_page_limit(max_pages)
 
     # 1. Получаем список всех URL из sitemap
-    urls = crawl_sitemap(base_url)
-    if page_limit:
-        urls = urls[:page_limit]
-    if not urls:
+    all_urls = crawl_sitemap(base_url)  # Полный список для cleanup
+    if not all_urls:
         logger.warning("Sitemap пуст или недоступен, используем fallback к обычному crawling")
         return crawl(start_url=base_url, strategy=strategy, max_pages=page_limit)
 
-    logger.info(f"Найдено {len(urls)} URL в sitemap")
+    # Ограничиваем список для обработки
+    urls = all_urls[:page_limit] if page_limit else all_urls
+    
+    logger.info(f"Найдено {len(all_urls)} URL в sitemap, обрабатываем {len(urls)}")
 
     # 2. Инициализируем кеш если нужно
     cache = get_crawl_cache() if use_cache else None
     pages: list[dict] = []
 
     if cache:
-        # Очищаем устаревшие записи из кеша
-        cache.cleanup_old_pages(set(urls))
+        # Очищаем устаревшие записи из кеша только если явно запрошено
+        if cleanup_cache:
+            cache.cleanup_old_pages(set(all_urls))
+            logger.info("Очистка устаревших записей из кеша выполнена")
+        else:
+            logger.debug("Очистка кеша пропущена (cleanup_cache=False)")
 
         # Проверяем, какие страницы уже есть в кеше
         cached_urls = cache.get_cached_urls()
@@ -247,7 +254,7 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
 
         # Загружаем закешированные страницы
         for url in cached_urls:
-            if url in urls:  # Проверяем, что URL все еще актуален
+            if url in urls:  # Проверяем, что URL в списке для обработки
                 cached_page = cache.get_page(url)
                 if cached_page:
                     pages.append({

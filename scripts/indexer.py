@@ -110,7 +110,8 @@ class Indexer:
                 max_pages: Optional[int] = None,
                 force_full: bool = False,
                 sparse: bool = True,
-                backend: str = "auto") -> Dict[str, Any]:
+                backend: str = "auto",
+                cleanup_cache: bool = False) -> Dict[str, Any]:
         """
         Выполняет переиндексацию
 
@@ -122,6 +123,7 @@ class Indexer:
             force_full: Принудительная полная переиндексация (совместимость с API)
             sparse: Включить sparse векторы
             backend: Backend для эмбеддингов (auto, onnx, bge, hybrid)
+            cleanup_cache: Очищать устаревшие записи из кеша
         """
         logger.info(f"🚀 Начинаем переиндексацию в режиме '{mode}'")
         logger.info(f"📋 Параметры: strategy={strategy}, use_cache={use_cache}, max_pages={max_pages}")
@@ -162,7 +164,8 @@ class Indexer:
                 strategy=strategy,
                 use_cache=use_cache,
                 reindex_mode=reindex_mode,
-                max_pages=max_pages
+                max_pages=max_pages,
+                cleanup_cache=cleanup_cache
             )
 
             # Проверяем результат
@@ -290,9 +293,22 @@ def main():
         default=1024,
         help='Максимальная длина документов (по умолчанию: 1024)'
     )
+    reindex_parser.add_argument(
+        '--cleanup-cache',
+        action='store_true',
+        help='Очистить устаревшие записи из кеша'
+    )
 
     # Команда init
     init_parser = subparsers.add_parser('init', help='Инициализировать коллекцию')
+
+    # Команда clear-cache
+    clear_cache_parser = subparsers.add_parser('clear-cache', help='Очистить кеш страниц')
+    clear_cache_parser.add_argument(
+        '--confirm',
+        action='store_true',
+        help='Подтвердить очистку кеша'
+    )
     init_parser.add_argument(
         '--recreate',
         action='store_true',
@@ -351,7 +367,8 @@ def main():
                 use_cache=not args.no_cache,
                 max_pages=args.max_pages,
                 sparse=args.sparse,
-                backend=args.backend
+                backend=args.backend,
+                cleanup_cache=args.cleanup_cache
             )
 
             if result['success']:
@@ -363,6 +380,41 @@ def main():
 
         elif args.command == 'init':
             result = indexer.init_collection(recreate=args.recreate)
+
+        elif args.command == 'clear-cache':
+            if not args.confirm:
+                print("⚠️  Для очистки кеша используйте флаг --confirm")
+                print("💡 Команда: python scripts/indexer.py clear-cache --confirm")
+                return 1
+
+            from ingestion.crawl_cache import get_crawl_cache
+            cache = get_crawl_cache()
+            cached_urls = cache.get_cached_urls()
+
+            if not cached_urls:
+                print("✅ Кеш уже пуст")
+                return 0
+
+            print(f"🗑️  Очищаем кеш ({len(cached_urls)} страниц)...")
+
+            # Удаляем все файлы страниц
+            from pathlib import Path
+            cache_dir = Path("cache/crawl")
+            pages_dir = cache_dir / "pages"
+
+            if pages_dir.exists():
+                page_files = list(pages_dir.glob("*.json"))
+                for page_file in page_files:
+                    page_file.unlink()
+                print(f"   Удалено {len(page_files)} файлов страниц")
+
+            # Очищаем индекс
+            index_file = cache_dir / "index.json"
+            if index_file.exists():
+                index_file.unlink()
+                print("   Удален index.json")
+
+            print("✅ Кеш очищен")
 
             if result['success']:
                 print("\n✅ Коллекция инициализирована!")

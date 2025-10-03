@@ -432,6 +432,9 @@ python scripts/indexer.py reindex --mode incremental
 # Использование кеша
 python scripts/indexer.py reindex --mode cache_only
 
+# Очистка кеша страниц
+python scripts/indexer.py clear-cache --confirm
+
 # Инициализация коллекции
 python scripts/indexer.py init
 
@@ -439,7 +442,31 @@ python scripts/indexer.py init
 python scripts/indexer.py init --recreate
 ```
 
-### 2. Конфигурация
+### 2. Управление кэшем
+
+Система автоматически сохраняет загруженные страницы в кэш для ускорения последующих индексаций. Кэш сохраняется между запусками и не очищается автоматически.
+
+```bash
+# Проверка содержимого кэша
+ls cache/crawl/pages/  # Просмотр закешированных страниц
+
+# Очистка кэша (требует подтверждения)
+python scripts/indexer.py clear-cache --confirm
+
+# Индексация с очисткой устаревших записей из кэша
+python scripts/indexer.py reindex --mode full --cleanup-cache
+
+# Индексация только из кэша (без загрузки новых страниц)
+python scripts/indexer.py reindex --mode cache_only
+```
+
+**Важные моменты:**
+- Кэш сохраняется между запусками системы
+- При `max_pages` ограничении кэш не очищается автоматически
+- Очистка кэша требуется только при изменении структуры сайта
+- Используйте `cache_only` для быстрого тестирования на закешированных данных
+
+### 3. Конфигурация
 
 ```python
 # Основные параметры
@@ -461,7 +488,7 @@ EMBEDDING_DEVICE = "auto"    # auto, cpu, cuda, directml
 USE_SPARSE = True
 ```
 
-### 3. Мониторинг
+### 4. Мониторинг
 
 ```python
 def get_collection_metadata_stats() -> Dict[str, Any]:

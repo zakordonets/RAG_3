@@ -87,7 +87,7 @@ class AppConfig:
     crawl_jitter_ms: int = int(os.getenv("CRAWL_JITTER_MS", "400"))
     crawl_deny_prefixes: list[str] = field(default_factory=lambda: [p.strip() for p in os.getenv("CRAWL_DENY_PREFIXES", "/docs/api/").split(",") if p.strip()])
     chunk_min_tokens: int = int(os.getenv("CHUNK_MIN_TOKENS", "410"))  # 512 - 20% для BGE-M3
-    chunk_max_tokens: int = int(os.getenv("CHUNK_MAX_TOKENS", "614"))  # 512 + 20% для BGE-M3
+    chunk_max_tokens: int = int(os.getenv("CHUNK_MAX_TOKENS", "500"))  # Оптимизировано по рекомендациям Codex
 
     # Chunking strategy selection
     chunk_strategy: str = os.getenv("CHUNK_STRATEGY", "adaptive").lower()  # adaptive|simple

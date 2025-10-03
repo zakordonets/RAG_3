@@ -55,7 +55,7 @@ def _resolve_page_limit(requested: int | None) -> int | None:
 # Функция classify_page удалена - теперь используется ContentProcessor для определения типа страницы
 
 
-def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto", max_pages: int = None, source_name: Optional[str] = None) -> dict[str, Any]:
+def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache: bool = True, reindex_mode: str = "auto", max_pages: int = None, source_name: Optional[str] = None, cleanup_cache: bool = False) -> dict[str, Any]:
     """Полный цикл: краулинг → чанкинг → эмбеддинги → upsert в Qdrant.
 
     Args:
@@ -66,6 +66,9 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             - "auto": только новые/измененные страницы (по умолчанию)
             - "force": переиндексировать все страницы
             - "cache_only": использовать только кешированные страницы
+        max_pages: максимальное количество страниц для обработки
+        source_name: имя источника данных
+        cleanup_cache: очищать устаревшие записи из кеша (по умолчанию False)
 
     Returns:
         Статистика по страницам и чанкам
@@ -113,7 +116,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
         logger.info(f"Загружено {len(pages)} страниц из кеша")
     else:
-        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache, max_pages=page_limit)
+        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache, max_pages=page_limit, cleanup_cache=cleanup_cache)
 
     # 2) Фолбэки если основной метод не сработал
     if not pages:

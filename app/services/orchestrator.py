@@ -11,6 +11,7 @@ from app.config import CONFIG
 from app.services.retrieval import hybrid_search
 from app.services.rerank import rerank
 from app.services.llm_router import generate_answer
+from app.services.context_optimizer import context_optimizer
 from app.metrics import get_metrics_collector
 from app.services.quality_manager import quality_manager
 
@@ -176,16 +177,24 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         # 5. Reranking
         try:
             # Пакетная обработка reranker: batch_size=20, усечение текста до 384 симв.
-            top_docs = rerank(normalized, candidates, top_n=10, batch_size=20, max_length=384)
+            top_docs = rerank(normalized, candidates, top_n=6, batch_size=20, max_length=384)  # Оптимизировано по Codex
             logger.info(f"Rerank in {time.time() - start:.2f}s")
         except Exception as e:
             logger.warning(f"Reranking failed: {e}, using original candidates")
-            top_docs = candidates[:10]
+            top_docs = candidates[:6]  # Согласованно с оптимизацией
 
-        # 6. LLM Generation
+        # 6. Context Optimization (Codex recommendations)
+        try:
+            optimized_docs = context_optimizer.optimize_context(top_docs, normalized)
+            logger.info(f"Context optimized: {len(top_docs)} -> {len(optimized_docs)} documents")
+        except Exception as e:
+            logger.warning(f"Context optimization failed: {e}, using original documents")
+            optimized_docs = top_docs
+
+        # 7. LLM Generation
         try:
             llm_start = time.time()
-            answer = generate_answer(normalized, top_docs, policy={})
+            answer = generate_answer(normalized, optimized_docs, policy={})
             llm_duration = time.time() - llm_start
             logger.info(f"LLM generation in {llm_duration:.2f}s")
             get_metrics_collector().record_llm_duration("default", llm_duration)
@@ -201,10 +210,10 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 "chat_id": chat_id
             }
 
-        # 7. Extract sources
+        # 8. Extract sources
         sources = []
         try:
-            for d in top_docs:
+            for d in optimized_docs:
                 pl = d.get("payload", {}) or {}
                 if pl.get("url"):
                     sources.append({
