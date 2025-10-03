@@ -209,7 +209,8 @@ def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | No
         if text:
             # Формируем структурированный блок с заголовком и контентом
             content_block = f"📄 {title}\n" if title else f"📄 Документ\n"
-            content_block += f"🔗 {url}\n"
+            if url:
+                content_block += f"🔗 {url}\n"
             content_block += f"📝 {text}"  # Используем полный текст без обрезки
             content_blocks.append(content_block)
             logger.info(f"LLM Router: Added content block {len(content_blocks)} with {len(text)} chars")
