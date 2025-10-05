@@ -384,7 +384,7 @@ make format
 
 ```bash
 # Полный тест pipeline от извлечения до записи в Qdrant
-python scripts/test_full_pipeline.py
+pytest tests/test_end_to_end_pipeline.py -v
 
 # Запуск через pytest
 python scripts/run_tests.py --type fast --verbose
@@ -413,10 +413,10 @@ python scripts/run_tests.py --type fast --verbose
 ### Phase 2: RAGAS Quality System
 ```bash
 # Интеграционные тесты Phase 2
-$env:PYTHONPATH=(Get-Location).Path; pytest scripts/test_phase2_integration.py -v
+$env:PYTHONPATH=(Get-Location).Path; pytest tests/test_integration_phase2.py -v
 
 # Тесты с отключенным RAGAS (быстрые)
-$env:RAGAS_EVALUATION_SAMPLE_RATE="0"; pytest scripts/test_phase2_integration.py -v
+$env:RAGAS_EVALUATION_SAMPLE_RATE="0"; pytest tests/test_integration_phase2.py -v
 
 # Проверка Quality API
 curl http://localhost:9000/v1/admin/quality/stats
@@ -943,7 +943,7 @@ MIT License
 make test-fast
 
 # Полная диагностика
-python scripts/test_full_pipeline.py
+pytest tests/test_end_to_end_pipeline.py -v
 
 # Проверка сервисов
 make check-services

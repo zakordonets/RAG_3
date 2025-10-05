@@ -171,7 +171,7 @@ python scripts/init_quality_db.py
 ### 3. Тестирование системы
 
 ```bash
-python scripts/test_ragas_integration.py
+pytest tests/test_ragas_quality.py -v
 python scripts/test_simple_ragas.py
 ```
 
@@ -385,7 +385,7 @@ python scripts/init_quality_db.py
 - [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
 
 ### Примеры использования
-- `scripts/test_ragas_integration.py` - Полное тестирование
+- `tests/test_ragas_quality.py` - Полное тестирование
 - `scripts/test_simple_ragas.py` - Простое тестирование
 - `scripts/init_quality_db.py` - Инициализация БД
 

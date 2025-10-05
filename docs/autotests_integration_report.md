@@ -26,7 +26,7 @@
 
 ### 2. Полный Pipeline Тест
 
-**Файл:** `scripts/test_full_pipeline.py`
+**Файл:** `tests/test_end_to_end_pipeline.py`
 
 **Функциональность:**
 - Полный end-to-end тест от извлечения до записи в Qdrant

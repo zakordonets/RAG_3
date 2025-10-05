@@ -146,7 +146,8 @@
 - **RAGAS Quality System**: [docs/ragas_quality_system.md](docs/ragas_quality_system.md)
 - **Quick Start Guide**: [docs/ragas_quickstart.md](docs/ragas_quickstart.md)
 - **Configuration**: Обновлен `env.example` с RAGAS параметрами
-- **Scripts**: `init_quality_db.py`, `test_ragas_integration.py`, `test_simple_ragas.py`
+- **Scripts**: `init_quality_db.py`
+- **Tests**: `test_ragas_quality.py`, `test_simple_ragas.py`
 
 ## [2.3.0] - 2025-09-20
 

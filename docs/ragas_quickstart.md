@@ -48,7 +48,7 @@ python scripts/test_simple_ragas.py
 ### 5. Запуск полного тестирования
 
 ```bash
-python scripts/test_ragas_integration.py
+pytest tests/test_ragas_quality.py -v
 ```
 
 ## ⚠️ Важные ограничения

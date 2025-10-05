@@ -328,7 +328,7 @@ rate(rag_quality_evaluation_duration_seconds_count[5m])
 
 ### Интеграционные тесты
 
-**Файл**: `scripts/test_phase2_integration.py`
+**Файл**: `tests/test_integration_phase2.py`
 
 **Покрытие тестов**:
 - ✅ **Quality Manager**: Тестирование основных функций
@@ -340,13 +340,13 @@ rate(rag_quality_evaluation_duration_seconds_count[5m])
 **Запуск тестов**:
 ```bash
 # Все тесты Phase 2
-$env:PYTHONPATH=(Get-Location).Path; pytest scripts/test_phase2_integration.py -v
+$env:PYTHONPATH=(Get-Location).Path; pytest tests/test_integration_phase2.py -v
 
 # Отдельные тесты
-$env:PYTHONPATH=(Get-Location).Path; pytest scripts/test_phase2_integration.py::test_feedback_api -v
+$env:PYTHONPATH=(Get-Location).Path; pytest tests/test_integration_phase2.py::test_feedback_api -v
 
 # Тесты с отключенным RAGAS (быстрые)
-$env:RAGAS_EVALUATION_SAMPLE_RATE="0"; pytest scripts/test_phase2_integration.py -v
+$env:RAGAS_EVALUATION_SAMPLE_RATE="0"; pytest tests/test_integration_phase2.py -v
 ```
 
 **Результаты тестирования**:
@@ -652,7 +652,7 @@ DATABASE_URL=sqlite+aiosqlite:///data/quality_interactions.db
 - [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
 
 ### Примеры кода
-- `scripts/test_phase2_integration.py` - Полное тестирование Phase 2
+- `tests/test_integration_phase2.py` - Полное тестирование Phase 2
 - `app/services/ragas_evaluator.py` - RAGAS evaluator
 - `app/services/quality_manager.py` - Quality manager
 - `app/models/quality_interaction.py` - Database model

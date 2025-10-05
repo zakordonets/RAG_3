@@ -238,6 +238,93 @@ class TestEndToEndPipeline:
         # Очищаем pool
         close_connection_pool()
 
+    @pytest.mark.slow
+    def test_optimized_pipeline_end_to_end(self):
+        """Тест оптимизированного pipeline end-to-end"""
+        print("🚀 ТЕСТ ОПТИМИЗИРОВАННОГО PIPELINE END-TO-END")
+        print("=" * 60)
+
+        try:
+            # Используем run_optimized_indexing для полного теста
+            result = run_optimized_indexing(
+                source_name="edna_docs",
+                max_pages=2,  # Ограничиваем для теста
+                chunk_strategy="adaptive"
+            )
+
+            # Проверяем результат
+            assert result["success"], f"Оптимизированная индексация не удалась: {result.get('error', 'Unknown error')}"
+            assert result["pages"] > 0, "Не было обработано ни одной страницы"
+            assert result["chunks"] > 0, "Не было создано ни одного чанка"
+
+            print(f"✅ Оптимизированная индексация завершена:")
+            print(f"   Страниц: {result['pages']}")
+            print(f"   Чанков: {result['chunks']}")
+            print(f"   Время: {result.get('duration', 'N/A')}s")
+
+        except Exception as e:
+            print(f"❌ Ошибка в оптимизированном pipeline: {e}")
+            raise
+
+    def test_chunking_quality_analysis(self):
+        """Тест анализа качества chunking"""
+        print("🔍 ТЕСТ АНАЛИЗА КАЧЕСТВА CHUNKING")
+        print("=" * 60)
+
+        try:
+            # Получаем документ для анализа
+            edna_config = {
+                "base_url": "https://docs-chatcenter.edna.ru/",
+                "strategy": "jina",
+                "use_cache": False,
+                "max_pages": 1
+            }
+
+            source = plugin_manager.get_source("edna_docs", edna_config)
+            crawl_result = source.fetch_pages(max_pages=1)
+
+            assert crawl_result.pages, "Не удалось получить документ"
+
+            page = crawl_result.pages[0]
+            print(f"📄 Анализируем chunking для: {page.title}")
+            print(f"   Длина контента: {len(page.content)} символов")
+
+            # Тестируем разные стратегии chunking
+            strategies = ["adaptive", "standard"]
+            pipeline = OptimizedPipeline()
+
+            for strategy in strategies:
+                print(f"\n🔧 Стратегия: {strategy}")
+
+                if strategy == "adaptive":
+                    chunks = pipeline._adaptive_chunk_page(page)
+                else:
+                    chunks = pipeline._standard_chunk_page(page)
+
+                print(f"   Чанков: {len(chunks)}")
+
+                if chunks:
+                    total_chars = sum(len(chunk['text']) for chunk in chunks)
+                    avg_chars = total_chars / len(chunks)
+
+                    print(f"   Общая длина: {total_chars} символов")
+                    print(f"   Средняя длина чанка: {avg_chars:.0f} символов")
+
+                    # Проверяем качество chunking
+                    assert len(chunks) > 0, f"Стратегия {strategy} не создала чанков"
+                    assert avg_chars > 50, f"Слишком короткие чанки для стратегии {strategy}"
+                    assert avg_chars < 2000, f"Слишком длинные чанки для стратегии {strategy}"
+
+                    print(f"   ✅ Качество chunking: OK")
+                else:
+                    print(f"   ❌ Стратегия {strategy} не создала чанков")
+
+            print("✅ Анализ качества chunking завершен")
+
+        except Exception as e:
+            print(f"❌ Ошибка в анализе качества chunking: {e}")
+            raise
+
 
 # Конфигурация pytest
 def pytest_configure(config):

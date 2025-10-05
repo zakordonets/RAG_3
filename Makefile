@@ -47,7 +47,7 @@ test-pipeline: ## Запустить тесты pipeline
 
 test-quality: ## Запустить тесты системы качества
 	@echo "$(GREEN)Запуск тестов системы качества...$(NC)"
-	python -m pytest scripts/test_phase2_integration.py -v
+	python -m pytest tests/test_integration_phase2.py -v
 
 test-loading: ## Запустить тесты загрузки данных
 	@echo "$(GREEN)Запуск тестов загрузки данных...$(NC)"
@@ -124,7 +124,7 @@ debug-collection: ## Отладка коллекции Qdrant
 
 debug-pipeline: ## Отладка pipeline
 	@echo "$(GREEN)Отладка pipeline...$(NC)"
-	python scripts/test_full_pipeline.py
+	python -m pytest tests/test_end_to_end_pipeline.py -v
 
 # Показать информацию о проекте
 info: ## Показать информацию о проекте

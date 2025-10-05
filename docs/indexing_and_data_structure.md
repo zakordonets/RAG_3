@@ -585,7 +585,7 @@ python scripts/indexer.py status
 python scripts/indexer.py reindex --mode full --max-pages 5
 
 # Проверка метаданных
-python scripts/test_enhanced_metadata.py
+pytest tests/test_data_validation.py -v
 ```
 
 ### 3. Логирование

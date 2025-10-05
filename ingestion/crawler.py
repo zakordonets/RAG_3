@@ -231,7 +231,7 @@ def crawl_with_sitemap_progress(base_url: str = "https://docs-chatcenter.edna.ru
 
     # Ограничиваем список для обработки
     urls = all_urls[:page_limit] if page_limit else all_urls
-    
+
     logger.info(f"Найдено {len(all_urls)} URL в sitemap, обрабатываем {len(urls)}")
 
     # 2. Инициализируем кеш если нужно

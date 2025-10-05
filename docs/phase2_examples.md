@@ -259,7 +259,7 @@ async def handle_feedback_callback(callback_query):
 ### Интеграционные тесты
 
 ```python
-# scripts/test_phase2_integration.py
+# tests/test_integration_phase2.py
 import pytest
 import asyncio
 from app.services.quality_manager import quality_manager
