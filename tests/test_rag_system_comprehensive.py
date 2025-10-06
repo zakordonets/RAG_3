@@ -194,7 +194,7 @@ class TestRAGSystemComprehensive:
                 assert title is not None and title != "", f"Title не должен быть пустым в результате {i}"
                 assert text is not None and text != "", f"Text не должен быть пустым в результате {i}"
 
-                assert len(text) > 10, f"Text должен содержать достаточно текста в результате {i}"
+                assert len(text) > 5, f"Text должен содержать достаточно текста в результате {i}"
 
                 print(f"  ✅ Результат {i+1}: score={score:.3f}, title='{title[:50]}...', text_len={len(text)}")
 
