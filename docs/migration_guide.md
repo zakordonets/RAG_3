@@ -6,7 +6,7 @@
 
 ## 🎯 Основные изменения
 
-### 1. Модульная структура services/
+### 1. Модульная структура services/ (Этапы 1-5)
 
 **До:**
 ```python
@@ -21,7 +21,7 @@ from app.services.core.embeddings import embed_dense, embed_batch_optimized
 from app.services.infrastructure.orchestrator import RAGOrchestrator
 ```
 
-### 2. UnifiedChunker
+### 2. UnifiedChunker (Этап 2)
 
 **До:**
 ```python
@@ -39,7 +39,7 @@ chunker = UnifiedChunker()
 chunks = chunker.chunk_text(text, ChunkingStrategy.AUTO)
 ```
 
-### 3. GPU Manager
+### 3. GPU Manager (Этап 3)
 
 **До:**
 ```python
@@ -52,7 +52,125 @@ from app.gpu_utils_windows import get_gpu_info
 from app.hardware import get_device, optimize_for_gpu, get_gpu_info
 ```
 
-### 4. Объектно-ориентированные crawlers
+### 4. Объектно-ориентированные crawlers (Этап 5)
+
+**До:**
+```python
+from ingestion.crawler import crawl_website
+```
+
+**После:**
+```python
+from ingestion.crawlers import CrawlerFactory, SourceConfig, SourceType
+
+# Использование
+source_config = SourceConfig(
+    name="edna_docs",
+    source_type=SourceType.DOCS_SITE,
+    base_url="https://docs-chatcenter.edna.ru/"
+)
+crawler = CrawlerFactory.create_crawler(source_config)
+pages = crawler.crawl(max_pages=100)
+```
+
+### 5. TextProcessor (Этап 6)
+
+**До:**
+```python
+from app.text_utils import clean_text_for_processing
+from app.logging_config import clean_text_for_logging
+```
+
+**После:**
+```python
+from app.utils import clean_text_for_processing, clean_text_for_logging
+
+# Или через класс
+from app.utils import TextProcessor
+processor = TextProcessor()
+cleaned_text = processor.clean_text_for_processing(text)
+```
+
+### 6. MetadataExtractor (Этап 7)
+
+**До:**
+```python
+from app.sources_registry import extract_url_metadata
+# Разбросанные функции в разных файлах
+```
+
+**После:**
+```python
+from app.utils import extract_url_metadata, MetadataExtractor
+
+# Или через класс
+extractor = MetadataExtractor()
+metadata = extractor.extract_comprehensive_metadata(content, url)
+```
+
+### 7. Telegram Adapters (Этап 8)
+
+**До:**
+```python
+from adapters.rate_limiter import RateLimiter
+from adapters.telegram_enhanced import TelegramBot
+from adapters.telegram_polling import run_polling_loop
+```
+
+**После:**
+```python
+from adapters.telegram import RateLimiter, TelegramBot, run_polling_loop
+
+# Или отдельно
+from adapters.telegram.bot import TelegramBot
+from adapters.telegram.rate_limiter import RateLimiter
+from adapters.telegram.polling import run_polling_loop
+```
+
+### 8. ContentLoader (Этап 9)
+
+**До:**
+```python
+from ingestion.universal_loader import load_content_universal
+```
+
+**После:**
+```python
+from ingestion.content_loader import load_content_universal
+
+# Или через класс
+from ingestion.content_loader import ContentLoader
+loader = ContentLoader()
+result = loader.load_content(url, content)
+```
+
+### 9. Реорганизованная структура app/ (Этап 10)
+
+**До:**
+```python
+from app.caching import get_cache_stats
+from app.metrics import get_metrics_collector
+from app.security import security_monitor
+from app.tokenizer import count_tokens
+from app.validation import validate_query_data
+```
+
+**После:**
+```python
+# Инфраструктурные компоненты
+from app.infrastructure import get_cache_stats, get_metrics_collector, security_monitor
+
+# Утилиты
+from app.utils import count_tokens, validate_query_data
+
+# Или отдельно
+from app.infrastructure.caching import get_cache_stats
+from app.infrastructure.metrics import get_metrics_collector
+from app.utils.tokenizer import count_tokens
+from app.utils.validation import validate_query_data
+```
+
+## 🔄 Дополнительные изменения (Этапы 6-10)
 
 **До:**
 ```python
