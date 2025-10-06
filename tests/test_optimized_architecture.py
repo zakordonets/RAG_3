@@ -9,8 +9,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 import time
 from app.abstractions.data_source import plugin_manager
-from app.services.optimized_pipeline import OptimizedPipeline, run_optimized_indexing
-from app.services.connection_pool import get_connection_pool, close_connection_pool
+from app.services.indexing.optimized_pipeline import OptimizedPipeline, run_optimized_indexing
+from app.services.infrastructure.connection_pool import get_connection_pool, close_connection_pool
 from app.config import CONFIG
 
 # Import data sources to register them

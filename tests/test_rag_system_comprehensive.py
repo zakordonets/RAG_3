@@ -10,9 +10,9 @@ from typing import Dict, List, Any
 # Добавляем путь к проекту
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.bge_embeddings import embed_unified, embed_dense, embed_sparse_optimized
-from app.services.retrieval import hybrid_search
-from app.services.metadata_aware_indexer import MetadataAwareIndexer
+from app.services.core.embeddings import embed_unified, embed_dense, embed_sparse_optimized
+from app.services.search.retrieval import hybrid_search
+from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
 from app.config import CONFIG
 
 

@@ -93,12 +93,12 @@ class AppConfig:
     chunk_strategy: str = os.getenv("CHUNK_STRATEGY", "adaptive").lower()  # adaptive|simple
 
     # Adaptive chunker parameters
-    adaptive_short_threshold: int = int(os.getenv("ADAPTIVE_SHORT_THRESHOLD", "300"))
-    adaptive_long_threshold: int = int(os.getenv("ADAPTIVE_LONG_THRESHOLD", "1000"))
-    adaptive_medium_size: int = int(os.getenv("ADAPTIVE_MEDIUM_SIZE", "512"))
+    adaptive_short_threshold: int = int(os.getenv("ADAPTIVE_SHORT_THRESHOLD", "200"))
+    adaptive_long_threshold: int = int(os.getenv("ADAPTIVE_LONG_THRESHOLD", "800"))
+    adaptive_medium_size: int = int(os.getenv("ADAPTIVE_MEDIUM_SIZE", "500"))
     adaptive_medium_overlap: int = int(os.getenv("ADAPTIVE_MEDIUM_OVERLAP", "100"))
-    adaptive_long_size: int = int(os.getenv("ADAPTIVE_LONG_SIZE", "800"))
-    adaptive_long_overlap: int = int(os.getenv("ADAPTIVE_LONG_OVERLAP", "160"))
+    adaptive_long_size: int = int(os.getenv("ADAPTIVE_LONG_SIZE", "300"))
+    adaptive_long_overlap: int = int(os.getenv("ADAPTIVE_LONG_OVERLAP", "60"))
     adaptive_merge_short_paragraph_tokens: int = int(os.getenv("ADAPTIVE_MERGE_SHORT_PARAGRAPH_TOKENS", "50"))
     adaptive_chunk_min_merge_tokens: int = int(os.getenv("ADAPTIVE_CHUNK_MIN_MERGE_TOKENS", "50"))
 

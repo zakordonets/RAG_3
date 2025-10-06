@@ -9,42 +9,66 @@
 ```
 RAG_2/
 ├── adapters/                 # Адаптеры каналов связи
-│   └── telegram_polling.py   # Telegram long polling
+│   ├── telegram_polling.py   # Telegram long polling
+│   ├── telegram_enhanced.py  # Enhanced Telegram adapter
+│   └── rate_limiter.py       # Rate limiting utilities
 ├── app/                      # Core API (Flask)
 │   ├── __init__.py          # Flask app factory
 │   ├── config.py            # Конфигурация
+│   ├── hardware/            # 🆕 Hardware management
+│   │   └── gpu_manager.py   # Unified GPU manager
 │   ├── routes/              # API endpoints
 │   │   ├── chat.py          # Chat API
-│   │   └── admin.py         # Admin API
-│   └── services/            # Бизнес-логика
-│       ├── orchestrator.py  # Главный оркестратор
-│       ├── embeddings.py    # Эмбеддинги
-│       ├── retrieval.py     # Векторный поиск
-│       ├── rerank.py        # Реренкинг
-│       ├── llm_router.py    # LLM роутинг
-│       └── query_processing.py # Обработка запросов
+│   │   ├── admin.py         # Admin API
+│   │   └── quality.py       # Quality metrics API
+│   └── services/            # 🆕 Модульная бизнес-логика
+│       ├── core/            # Основные сервисы
+│       │   ├── embeddings.py    # BGE-M3 embeddings
+│       │   ├── llm_router.py    # LLM роутинг
+│       │   ├── query_processing.py # Обработка запросов
+│       │   └── context_optimizer.py # Оптимизация контекста
+│       ├── indexing/        # Сервисы индексации
+│       │   ├── metadata_aware_indexer.py
+│       │   └── optimized_pipeline.py
+│       ├── quality/         # Сервисы качества
+│       │   ├── quality_manager.py
+│       │   └── ragas_evaluator.py
+│       ├── search/          # Сервисы поиска
+│       │   ├── retrieval.py
+│       │   └── rerank.py
+│       └── infrastructure/  # Инфраструктурные сервисы
+│           ├── connection_pool.py
+│           └── orchestrator.py
 ├── ingestion/               # Парсинг и индексация
-│   ├── crawlers/           # Модульная система краулеров
+│   ├── crawlers/           # 🆕 Объектно-ориентированные краулеры
 │   │   ├── base_crawler.py     # Базовый класс краулера
+│   │   ├── edna_docs_crawler.py # Специализированный crawler для edna docs
 │   │   ├── website_crawler.py  # Краулер веб-сайтов
 │   │   ├── local_folder_crawler.py # Краулер локальных папок
 │   │   └── crawler_factory.py  # Фабрика краулеров
+│   ├── chunkers/           # 🆕 Унифицированная система chunking
+│   │   ├── unified_chunker.py  # Основной chunker с интеллектуальным выбором
+│   │   ├── adaptive_chunker.py # Адаптивный чанкер
+│   │   ├── semantic_chunker.py # Семантический чанкер
+│   │   └── __init__.py     # Единый интерфейс экспорта
 │   ├── processors/         # Обработчики контента
 │   │   ├── content_processor.py # Диспетчер парсеров
 │   │   ├── html_parser.py      # HTML парсер
 │   │   ├── jina_parser.py      # Jina Reader парсер
 │   │   └── markdown_parser.py  # Markdown парсер
-│   ├── crawler.py          # Legacy веб-краулер
-│   ├── chunker.py          # Разбиение на чанки
-│   ├── adaptive_chunker.py # Адаптивный чанкер
 │   ├── indexer.py          # Индексация в Qdrant
-│   └── pipeline.py         # Пайплайн индексации
+│   ├── pipeline.py         # Пайплайн индексации
+│   └── universal_loader.py # Legacy универсальный загрузчик
 ├── sparse_service/          # Сервис sparse эмбеддингов
 │   └── app.py              # FastAPI сервис
 ├── scripts/                # Утилиты
-│   └── init_qdrant.py      # Инициализация Qdrant
+│   ├── init_qdrant.py      # Инициализация Qdrant
+│   ├── indexer.py          # Единый модуль индексации
+│   └── manage_cache.py     # Управление кешем
 ├── docs/                   # Документация
-├── tests/                  # Тесты (планируется)
+│   ├── refactoring_complete_report.md # 🆕 Полный отчет по рефакторингу
+│   └── ...                 # Другие документы
+├── tests/                  # Тесты
 ├── requirements.txt        # Python зависимости
 ├── env.example            # Пример конфигурации
 ├── wsgi.py                # WSGI entry point
@@ -499,12 +523,12 @@ custom_counter.labels(label1='value1', label2='value2').inc()
 ```python
 import pytest
 from unittest.mock import Mock, patch
-from app.services.embeddings import embed_dense, embed_sparse
+from app.services.bge_embeddings import embed_dense, embed_sparse_optimized
 from app.services.retrieval import hybrid_search
 from app.services.llm_router import generate_answer
 
 class TestEmbeddings:
-    @patch('app.services.embeddings._get_dense_model')
+    @patch('app.services.bge_embeddings._get_bge_model')
     def test_embed_dense(self, mock_model):
         mock_model.return_value.encode.return_value = [0.1, 0.2, 0.3]
 
@@ -520,9 +544,9 @@ class TestEmbeddings:
         }
         mock_post.return_value.raise_for_status.return_value = None
 
-        result = embed_sparse("test text")
+        result = embed_sparse_optimized("test text")
 
-        assert result == {"indices": ["1", "2"], "values": [0.5, 0.3]}
+        assert result == {"indices": [1, 2], "values": [0.5, 0.3]}
 
 class TestRetrieval:
     @patch('app.services.retrieval.client')

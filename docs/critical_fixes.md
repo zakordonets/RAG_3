@@ -60,7 +60,7 @@
 
 **Файлы**:
 - `app/caching.py` - модуль кэширования
-- `app/services/embeddings.py` - интеграция кэширования
+- `app/services/bge_embeddings.py` - интеграция кэширования
 - `app/config.py` - конфигурация Redis
 
 ### 5. Circuit Breaker для надежности

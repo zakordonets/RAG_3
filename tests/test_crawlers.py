@@ -25,7 +25,7 @@ class TestCrawlerFactory:
         config = SourceConfig(
             name="test_site",
             base_url="https://example.com/",
-            source_type=SourceType.DOCS_SITE,
+            source_type=SourceType.API_DOCS,  # Используем API_DOCS для WebsiteCrawler
         )
 
         crawler = CrawlerFactory.create_crawler(config)
@@ -331,7 +331,7 @@ class TestCrawlerIntegration:
         config = SourceConfig(
             name="test_integration",
             base_url="https://httpbin.org/",  # Тестовый сайт
-            source_type=SourceType.DOCS_SITE,
+            source_type=SourceType.API_DOCS,  # Используем API_DOCS для WebsiteCrawler
             seed_urls=["https://httpbin.org/"],
         )
 

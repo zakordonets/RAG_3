@@ -12,7 +12,7 @@ os.environ.setdefault("CHUNK_STRATEGY", "adaptive")
 os.environ.setdefault("CRAWL_MAX_PAGES", "5")
 
 from app.config import CONFIG
-from app.services.optimized_pipeline import run_optimized_indexing
+from app.services.indexing.optimized_pipeline import run_optimized_indexing
 
 
 def _is_host_reachable(url: str) -> bool:

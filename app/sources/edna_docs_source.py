@@ -12,7 +12,8 @@ from loguru import logger
 from app.abstractions.data_source import (
     DataSourceBase, Page, PageType, CrawlResult, register_data_source
 )
-from ingestion.crawler import crawl_with_sitemap_progress
+from ingestion.crawlers import CrawlerFactory
+from app.sources_registry import SourceConfig, SourceType
 from ingestion.processors.content_processor import ContentProcessor
 
 
@@ -37,11 +38,21 @@ class EdnaDocsDataSource(DataSourceBase):
         start_time = time.time()
 
         try:
-            # Use existing crawler with progress tracking
-            pages_data = crawl_with_sitemap_progress(
+            # Use new crawler architecture
+            source_config = SourceConfig(
+                name="edna_docs",
+                source_type=SourceType.DOCS_SITE,
+                base_url=self.base_url,
                 strategy=self.strategy,
                 use_cache=self.use_cache,
                 max_pages=max_pages or self.max_pages
+            )
+
+            crawler = CrawlerFactory.create_crawler(source_config)
+            pages_data = crawler.crawl(
+                max_pages=max_pages or self.max_pages,
+                strategy=self.strategy,
+                use_cache=self.use_cache
             )
 
             pages: List[Page] = []
@@ -52,7 +63,7 @@ class EdnaDocsDataSource(DataSourceBase):
                     page = self._parse_page_data(page_data)
                     pages.append(page)
                 except Exception as e:
-                    error_msg = f"Failed to parse page {page_data.get('url', 'unknown')}: {e}"
+                    error_msg = f"Failed to parse page {page_data.url}: {e}"
                     logger.warning(error_msg)
                     errors.append(error_msg)
 
@@ -106,10 +117,10 @@ class EdnaDocsDataSource(DataSourceBase):
         # Default to guide
         return PageType.GUIDE
 
-    def _parse_page_data(self, page_data: Dict[str, Any]) -> Page:
+    def _parse_page_data(self, page_data) -> Page:
         """Parse raw page data into Page object"""
-        url = page_data["url"]
-        html = page_data["html"]
+        url = page_data.url
+        html = page_data.html
 
         # Parse content based on URL
         parsed_content = self._parse_content(url, html)

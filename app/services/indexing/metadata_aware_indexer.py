@@ -12,9 +12,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, SparseVector, Filter, FieldCondition, MatchValue
 
 from app.config import CONFIG
-from app.services.bge_embeddings import embed_batch_optimized
+from app.services.core.embeddings import embed_batch_optimized
 from app.models.enhanced_metadata import EnhancedMetadata
-from ingestion.chunker import text_hash
+from ingestion.chunkers import text_hash
 import uuid
 
 
@@ -308,7 +308,7 @@ class MetadataAwareIndexer:
             sparse_hits = [{"id": str(r.id), "score": r.score, "payload": r.payload} for r in sparse_results]
 
             # Apply RRF fusion
-            from app.services.retrieval import rrf_fuse
+            from app.services.search.retrieval import rrf_fuse
             fused_results = rrf_fuse(dense_hits, sparse_hits)
 
             return fused_results[:limit]

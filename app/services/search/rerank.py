@@ -6,7 +6,7 @@ import threading
 from FlagEmbedding import FlagReranker
 from sentence_transformers import CrossEncoder
 from app.config import CONFIG
-from app.gpu_utils import get_device, optimize_for_gpu, clear_gpu_cache
+from app.hardware import get_device, optimize_for_gpu, clear_gpu_cache
 from loguru import logger
 from pathlib import Path
 import onnxruntime as ort

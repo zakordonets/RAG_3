@@ -17,7 +17,7 @@ except ImportError:
     logger.warning("SentenceTransformers not available, using fallback chunker")
 
 from app.config import CONFIG
-from app.gpu_utils import get_device, optimize_for_gpu
+from app.hardware import get_device, optimize_for_gpu
 
 
 class SemanticChunker:

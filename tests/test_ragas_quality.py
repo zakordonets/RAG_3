@@ -11,8 +11,8 @@ sys.path.insert(0, str(project_root))
 
 from loguru import logger
 from app.config import CONFIG
-from app.services.quality_manager import quality_manager
-from app.services.ragas_evaluator import ragas_evaluator
+from app.services.quality.quality_manager import quality_manager
+from app.services.quality.ragas_evaluator import ragas_evaluator
 
 async def test_ragas_evaluation():
     """Test RAGAS evaluation"""

@@ -5,12 +5,12 @@ import re
 from typing import Any, Optional
 from loguru import logger
 from tqdm import tqdm
-from ingestion.crawler import crawl, crawl_mkdocs_index, crawl_with_sitemap_progress
-from ingestion.processors.content_processor import ContentProcessor
+from ingestion.crawlers import CrawlerFactory
 from app.sources_registry import get_source_config
-from ingestion.chunker import chunk_text
-from app.services.metadata_aware_indexer import MetadataAwareIndexer
-from app.services.optimized_pipeline import run_optimized_indexing
+from ingestion.processors.content_processor import ContentProcessor
+from ingestion.chunkers import chunk_text
+from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
+from app.services.indexing.optimized_pipeline import run_optimized_indexing
 from app.config import CONFIG
 from app.text_utils import clean_text_for_processing, validate_text_quality, safe_batch_text_processing
 
@@ -88,9 +88,40 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
         except Exception as e:
             logger.warning(f"Не удалось загрузить конфиг источника '{source_name}': {e}. Использую параметры функции.")
 
-    # 1) Используем улучшенный crawling с кешированием
+    # 1) Используем новую архитектуру crawlers
     page_strategy = strategy
     page_limit = _resolve_page_limit(max_pages)
+
+    # Получаем конфигурацию источника
+    if source_name:
+        try:
+            source_config = get_source_config(source_name)
+        except Exception as e:
+            logger.warning(f"Не удалось загрузить конфиг источника '{source_name}': {e}. Использую параметры функции.")
+            # Создаем временную конфигурацию
+            from app.sources_registry import SourceConfig, SourceType
+            source_config = SourceConfig(
+                name=source_name or "default",
+                source_type=SourceType.DOCS_SITE,
+                base_url=CONFIG.crawl_start_url,
+                strategy=strategy,
+                use_cache=use_cache,
+                max_pages=max_pages
+            )
+    else:
+        # Создаем временную конфигурацию
+        from app.sources_registry import SourceConfig, SourceType
+        source_config = SourceConfig(
+            name="default",
+            source_type=SourceType.DOCS_SITE,
+            base_url=CONFIG.crawl_start_url,
+            strategy=strategy,
+            use_cache=use_cache,
+            max_pages=max_pages
+        )
+
+    # Создаем crawler через фабрику
+    crawler = CrawlerFactory.create_crawler(source_config)
 
     if reindex_mode == "cache_only":
         logger.info("Режим cache_only: используем только кешированные страницы")
@@ -101,14 +132,14 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
         for url in cache.get_cached_urls():
             cached_page = cache.get_page(url)
             if cached_page:
-                pages.append({
-                    "url": url,
-                    "html": cached_page.html,
-                    "text": cached_page.text,
-                    "title": cached_page.title,
-                    "cached": True,
-                    "content_strategy": getattr(cached_page, "content_strategy", "auto")
-                })
+                from ingestion.crawlers import CrawlResult
+                pages.append(CrawlResult(
+                    url=url,
+                    html=cached_page.html,
+                    text=cached_page.text,
+                    title=cached_page.title or "",
+                    metadata={"cached": True, "content_strategy": getattr(cached_page, "content_strategy", "auto")}
+                ))
 
                 # Ограничиваем количество страниц для тестирования
                 if page_limit and len(pages) >= page_limit:
@@ -116,19 +147,9 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
         logger.info(f"Загружено {len(pages)} страниц из кеша")
     else:
-        pages = crawl_with_sitemap_progress(strategy=strategy, use_cache=use_cache, max_pages=page_limit, cleanup_cache=cleanup_cache)
-
-    # 2) Фолбэки если основной метод не сработал
-    if not pages:
-        logger.warning("Sitemap crawling не дал результатов, пробуем MkDocs index...")
-        pages = crawl_mkdocs_index()
-        if page_limit:
-            pages = pages[:page_limit]
-        page_strategy = "markdown"
-    if not pages:
-        logger.warning("MkDocs index недоступен, пробуем HTTP обход...")
-        pages = crawl(strategy="http", max_pages=page_limit)
-        page_strategy = "html"
+        # Используем новый crawler
+        pages = crawler.crawl(max_pages=page_limit, strategy=strategy, use_cache=use_cache, cleanup_cache=cleanup_cache)
+        page_strategy = strategy
     # Собираем все чанки для батчевой обработки
     all_chunks = []
     logger.info("Обрабатываем страницы и собираем чанки...")
@@ -140,8 +161,8 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
     with tqdm(total=len(pages), desc="Processing pages") as pbar:
         for p in pages:
-            url = p["url"]
-            raw_content = p.get("text") or p.get("html") or ""
+            url = p.url
+            raw_content = p.text or p.html or ""
 
             if not raw_content:
                 logger.warning(f"Пустой контент для {url}, пропускаем")
@@ -151,8 +172,8 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             page_strategy_for_page = page_strategy
 
             if page_strategy_for_page == "html":
-                html_content = p.get("html") or ""
-                text_content = p.get("text") or ""
+                html_content = p.html or ""
+                text_content = p.text or ""
                 html_stripped = html_content.strip()
                 text_stripped = text_content.strip()
 
@@ -295,7 +316,7 @@ if __name__ == "__main__":
     logger.info(f"  EMBEDDING_BATCH_SIZE: {CONFIG.embedding_batch_size}")
 
     # Определяем оптимальную стратегию
-    from app.services.bge_embeddings import _get_optimal_backend_strategy
+    from app.services.core.embeddings import _get_optimal_backend_strategy
     optimal_backend = _get_optimal_backend_strategy()
     logger.info(f"  Оптимальная стратегия: {optimal_backend}")
 

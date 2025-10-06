@@ -11,9 +11,8 @@ from loguru import logger
 from tqdm import tqdm
 
 from app.abstractions.data_source import DataSourceBase, Page, CrawlResult, plugin_manager
-from app.services.metadata_aware_indexer import MetadataAwareIndexer
-from ingestion.chunker import chunk_text
-from ingestion.adaptive_chunker import adaptive_chunk_text
+from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
+from ingestion.chunkers import chunk_text, chunk_text_with_metadata
 from app.sources_registry import extract_url_metadata
 from ingestion.processors.content_processor import ContentProcessor
 from app.config import CONFIG
@@ -263,7 +262,7 @@ class OptimizedPipeline:
             }
 
             # Use adaptive chunker for intelligent chunking
-            adaptive_chunks = adaptive_chunk_text(processed_page.content, chunker_metadata)
+            adaptive_chunks = chunk_text_with_metadata(processed_page.content, chunker_metadata, strategy="adaptive")
 
             # Convert to our format
             chunks = []

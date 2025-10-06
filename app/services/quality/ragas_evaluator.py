@@ -20,8 +20,8 @@ from langchain_core.outputs import LLMResult, Generation
 from langchain_core.messages import BaseMessage
 
 from app.config import CONFIG
-from app.services.llm_router import _yandex_complete as _raw_yandex_complete
-from app.services.bge_embeddings import embed_unified
+from app.services.core.llm_router import _yandex_complete as _raw_yandex_complete
+from app.services.core.embeddings import embed_unified
 
 class YandexGPTLangChainWrapper(BaseLanguageModel):
     """LangChain wrapper for YandexGPT"""

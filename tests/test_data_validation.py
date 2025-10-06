@@ -15,8 +15,8 @@ from loguru import logger
 # Добавляем корневую директорию проекта в путь
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.services.retrieval import client, COLLECTION
-from app.services.optimized_pipeline import run_optimized_indexing
+from app.services.search.retrieval import client, COLLECTION
+from app.services.indexing.optimized_pipeline import run_optimized_indexing
 from ingestion.universal_loader import load_content_universal
 from ingestion.crawl_cache import get_crawl_cache
 

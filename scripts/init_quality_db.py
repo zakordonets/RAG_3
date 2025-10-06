@@ -12,7 +12,7 @@ sys.path.insert(0, str(project_root))
 from loguru import logger
 from app.config import CONFIG
 from app.models.quality_interaction import quality_db, QualityInteractionData
-from app.services.quality_manager import quality_manager
+from app.services.quality.quality_manager import quality_manager
 from datetime import datetime
 
 async def create_quality_tables():

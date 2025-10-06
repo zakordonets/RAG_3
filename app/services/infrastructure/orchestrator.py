@@ -4,16 +4,15 @@ import asyncio
 from loguru import logger
 
 from typing import Any
-from app.services.query_processing import process_query
-from app.services.embeddings import embed_dense
-from app.services.bge_embeddings import embed_unified, embed_dense_optimized, embed_sparse_optimized
+from app.services.core.query_processing import process_query
+from app.services.core.embeddings import embed_unified, embed_dense_optimized, embed_sparse_optimized, embed_dense
 from app.config import CONFIG
-from app.services.retrieval import hybrid_search
-from app.services.rerank import rerank
-from app.services.llm_router import generate_answer
-from app.services.context_optimizer import context_optimizer
+from app.services.search.retrieval import hybrid_search
+from app.services.search.rerank import rerank
+from app.services.core.llm_router import generate_answer
+from app.services.core.context_optimizer import context_optimizer
 from app.metrics import get_metrics_collector
-from app.services.quality_manager import quality_manager
+from app.services.quality.quality_manager import quality_manager
 
 
 class RAGError(Exception):
@@ -80,7 +79,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             embedding_start = time.time()
 
             # Import optimal strategy detection
-            from app.services.bge_embeddings import _get_optimal_backend_strategy
+            from app.services.core.embeddings import _get_optimal_backend_strategy
             optimal_backend = _get_optimal_backend_strategy()
 
             # Choose embedding strategy based on optimal backend

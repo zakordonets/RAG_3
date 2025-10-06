@@ -96,12 +96,19 @@ def validate_cache():
 def test_cache_performance():
     """Тестирует производительность кеша."""
     import time
-    from ingestion.crawler import crawl_sitemap
+    from ingestion.crawlers import CrawlerFactory
+    from app.sources_registry import SourceConfig, SourceType
 
     print("🚀 Тестирование производительности кеша...")
 
     # Получаем список URL для тестирования
-    urls = crawl_sitemap()
+    source_config = SourceConfig(
+        name="test",
+        source_type=SourceType.DOCS_SITE,
+        base_url="https://docs-chatcenter.edna.ru/"
+    )
+    crawler = CrawlerFactory.create_crawler(source_config)
+    urls = crawler.get_available_urls()
     if not urls:
         print("❌ Не удалось получить URL из sitemap")
         return

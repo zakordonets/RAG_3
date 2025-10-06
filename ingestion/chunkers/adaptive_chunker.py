@@ -342,8 +342,16 @@ class AdaptiveChunker:
                 return [text]
 
             start = 0
-            max_chunks = 20000  # защитный лимит
+            max_chunks = 1000  # Уменьшенный защитный лимит
             produced = 0
+
+            # Убеждаемся, что overlap не больше chunk_size
+            safe_overlap = min(overlap, chunk_size - 1)
+            if safe_overlap <= 0:
+                safe_overlap = max(1, chunk_size // 4)  # Минимальный overlap
+
+            logger.debug(f"Sliding window: chunk_size={chunk_size}, safe_overlap={safe_overlap}")
+
             while start < len(words) and produced < max_chunks:
                 try:
                     end = min(start + chunk_size, len(words))
@@ -367,8 +375,21 @@ class AdaptiveChunker:
                     chunk_content = ' '.join(words[start:end])
                     if chunk_content.strip():  # Только непустые чанки
                         chunks.append(chunk_content)
-                    start = end - overlap  # Перекрытие
+
+                    # Безопасное увеличение позиции
+                    next_start = end - safe_overlap
+                    if next_start <= start:
+                        # Предотвращаем бесконечный цикл
+                        next_start = start + 1
+
+                    start = next_start
                     produced += 1
+
+                    # Дополнительная защита от бесконечного цикла
+                    if produced > 100 and len(chunks) == 0:
+                        logger.warning("Sliding window stuck, breaking loop")
+                        break
+
                 except Exception as e:
                     logger.warning(f"Error creating chunk {produced}: {e}")
                     # Пропускаем проблемный чанк и продолжаем

@@ -12,10 +12,10 @@ from loguru import logger
 # Добавляем путь к модулю app
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.services.retrieval import client, COLLECTION
-from app.services.bge_embeddings import embed_unified
-from app.services.retrieval import hybrid_search
-from app.services.rerank import rerank
+from app.services.search.retrieval import client, COLLECTION
+from app.services.core.embeddings import embed_unified
+from app.services.search.retrieval import hybrid_search
+from app.services.search.rerank import rerank
 from qdrant_client.models import Filter
 
 

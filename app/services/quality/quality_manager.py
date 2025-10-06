@@ -11,7 +11,7 @@ from loguru import logger
 
 from app.config import CONFIG
 from app.models.quality_interaction import quality_db, QualityInteractionData
-from app.services.ragas_evaluator import ragas_evaluator
+from app.services.quality.ragas_evaluator import ragas_evaluator
 from app.metrics import get_metrics_collector
 
 class UnifiedQualityManager:
@@ -93,10 +93,10 @@ class UnifiedQualityManager:
                 get_metrics_collector().record_ragas_score("context_precision", ragas_scores.get('context_precision', 0.0))
                 get_metrics_collector().record_ragas_score("answer_relevancy", ragas_scores.get('answer_relevancy', 0.0))
                 get_metrics_collector().record_ragas_score("overall_score", ragas_scores.get('overall_score', 0.0))
-                
+
                 # Record combined quality score
                 get_metrics_collector().record_combined_quality_score(combined_score)
-                
+
                 # Record quality interaction
                 get_metrics_collector().record_quality_interaction("ragas_evaluation", "api", "completed")
                 logger.debug(f"Metrics recorded successfully for {interaction_id}")

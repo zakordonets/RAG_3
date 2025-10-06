@@ -6,10 +6,9 @@ from loguru import logger
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, SparseVector
 from app.config import CONFIG
-from app.services.embeddings import embed_dense_batch, embed_sparse_batch
-from app.services.bge_embeddings import embed_batch_optimized
+from app.services.core.embeddings import embed_batch_optimized, embed_dense_batch
 import uuid
-from ingestion.chunker import text_hash
+from ingestion.chunkers import text_hash
 
 
 client = QdrantClient(url=CONFIG.qdrant_url, api_key=CONFIG.qdrant_api_key or None)
@@ -24,7 +23,7 @@ def upsert_chunks(chunks: list[dict]) -> int:
     texts = [c["text"] for c in chunks]
 
     # Import and determine optimal strategy
-    from app.services.bge_embeddings import _get_optimal_backend_strategy
+    from app.services.core.embeddings import _get_optimal_backend_strategy
     optimal_backend = _get_optimal_backend_strategy()
 
     # Choose embedding strategy based on optimal backend

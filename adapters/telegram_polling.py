@@ -15,7 +15,7 @@ import asyncio
 from loguru import logger
 from app.config import CONFIG
 from app.log_utils import write_debug_event
-from app.services.quality_manager import quality_manager
+from app.services.quality.quality_manager import quality_manager
 
 
 BOT_TOKEN = CONFIG.telegram_bot_token

@@ -9,7 +9,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 
 from app.config import CONFIG
-from app.services.optimized_pipeline import OptimizedPipeline
+from app.services.indexing.optimized_pipeline import OptimizedPipeline
 from app.abstractions.data_source import Page, PageType
 
 

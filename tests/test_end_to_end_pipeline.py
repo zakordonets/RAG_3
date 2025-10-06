@@ -15,9 +15,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 from app.sources import edna_docs_source
 
 from app.abstractions.data_source import plugin_manager
-from app.services.optimized_pipeline import OptimizedPipeline, run_optimized_indexing
-from app.services.metadata_aware_indexer import MetadataAwareIndexer
-from ingestion.chunker import chunk_text
+from app.services.indexing.optimized_pipeline import OptimizedPipeline, run_optimized_indexing
+from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
+from ingestion.chunkers import chunk_text
 from app.config import CONFIG
 
 
@@ -136,7 +136,7 @@ class TestEndToEndPipeline:
         assert indexed_count == 1, "Чанк не проиндексирован"
 
         # Проверяем запись в Qdrant
-        from app.services.retrieval import client, COLLECTION
+        from app.services.search.retrieval import client, COLLECTION
 
         # Ищем по URL, который должен быть уникальным
         search_result = client.scroll(
@@ -224,7 +224,7 @@ class TestEndToEndPipeline:
     @pytest.mark.integration
     def test_connection_pool(self):
         """Тест connection pooling"""
-        from app.services.connection_pool import get_connection_pool, close_connection_pool
+        from app.services.infrastructure.connection_pool import get_connection_pool, close_connection_pool
 
         # Получаем pool
         pool = get_connection_pool()

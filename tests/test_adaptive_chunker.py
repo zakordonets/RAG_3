@@ -5,7 +5,7 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from ingestion.adaptive_chunker import (
+from ingestion.chunkers.adaptive_chunker import (
     AdaptiveChunker,
     DocumentType,
     ChunkingStrategy

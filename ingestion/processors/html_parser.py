@@ -88,16 +88,22 @@ class HTMLParser(BaseParser):
         return self._text_from_element(soup)
 
     def _text_from_element(self, element) -> str:
+        # Сначала пробуем извлечь весь текст элемента
+        full_text = element.get_text(' ', strip=True)
+        if full_text and len(full_text) > 100:  # Если есть достаточно текста
+            return full_text
+
+        # Fallback к старому методу для структурированного контента
         parts: list[str] = []
-        # Извлекаем все заголовки h1, h2, h3
-        for h in element.find_all(['h1', 'h2', 'h3']):
+        # Извлекаем все заголовки h1, h2, h3, h4, h5, h6
+        for h in element.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
             txt = h.get_text(' ', strip=True)
             if txt:
                 parts.append(txt)
-        # Извлекаем параграфы и списки
-        for node in element.find_all(['p', 'li']):
+        # Извлекаем параграфы, списки и div'ы
+        for node in element.find_all(['p', 'li', 'div', 'span']):
             txt = node.get_text(' ', strip=True)
-            if txt:
+            if txt and len(txt) > 10:  # Игнорируем очень короткие фрагменты
                 parts.append(txt)
         return "\n\n".join(parts)
 

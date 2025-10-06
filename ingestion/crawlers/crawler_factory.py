@@ -9,6 +9,7 @@ from app.sources_registry import SourceConfig, SourceType
 from .base_crawler import BaseCrawler
 from .website_crawler import WebsiteCrawler
 from .local_folder_crawler import LocalFolderCrawler
+from .edna_docs_crawler import EdnaDocsCrawler
 
 
 class CrawlerFactory:
@@ -16,7 +17,7 @@ class CrawlerFactory:
 
     # Реестр доступных краулеров
     _crawlers: Dict[SourceType, Type[BaseCrawler]] = {
-        SourceType.DOCS_SITE: WebsiteCrawler,
+        SourceType.DOCS_SITE: EdnaDocsCrawler,  # Используем специализированный crawler для edna docs
         SourceType.API_DOCS: WebsiteCrawler,
         SourceType.BLOG: WebsiteCrawler,
         SourceType.FAQ: WebsiteCrawler,

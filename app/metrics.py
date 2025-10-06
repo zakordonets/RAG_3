@@ -342,7 +342,7 @@ class MetricsCollector:
     async def update_satisfaction_rates(self):
         """Обновить satisfaction rates из unified quality data."""
         try:
-            from app.services.quality_manager import quality_manager
+            from app.services.quality.quality_manager import quality_manager
 
             analytics = await quality_manager.get_quality_analytics(days=7)
 

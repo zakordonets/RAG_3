@@ -16,8 +16,8 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./data/quality_intera
 os.environ.setdefault("RAGAS_EVALUATION_SAMPLE_RATE", "0")  # отключить RAGAS для внешних тестов
 
 from app import create_app
-from app.services.quality_manager import quality_manager
-from app.services.ragas_evaluator import ragas_evaluator
+from app.services.quality.quality_manager import quality_manager
+from app.services.quality.ragas_evaluator import ragas_evaluator
 
 
 @pytest.fixture(scope="module")
@@ -149,7 +149,7 @@ sys.path.insert(0, str(project_root))
 
 from loguru import logger
 from app.config import CONFIG
-from app.services.quality_manager import quality_manager
+from app.services.quality.quality_manager import quality_manager
 
 
 async def test_quality_manager():

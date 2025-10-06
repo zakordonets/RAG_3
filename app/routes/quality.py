@@ -6,7 +6,7 @@ from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from loguru import logger
 import asyncio
-from app.services.quality_manager import quality_manager
+from app.services.quality.quality_manager import quality_manager
 from app.config import CONFIG
 
 bp = Blueprint("quality", __name__)
