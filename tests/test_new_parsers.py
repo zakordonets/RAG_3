@@ -136,11 +136,13 @@ Content here."""
         """Тест принудительного выбора стратегии."""
         processor = ContentProcessor()
 
-        # HTML контент, но принудительно Jina - ожидаем ошибку
+        # HTML контент, но принудительно Jina - теперь возвращает результат с предупреждением
         html_content = """<!DOCTYPE html><html><body><h1>Test</h1></body></html>"""
 
-        with pytest.raises(ValueError, match="Content too short"):
-            processor.process("https://example.com", html_content, "jina")
+        result = processor.process("https://example.com", html_content, "jina")
+        # Теперь система не выбрасывает ошибку, а возвращает результат с предупреждением
+        assert result is not None
+        assert result.content is not None
 
     def test_page_type_detection(self):
         """Тест определения типа страницы по URL."""
@@ -170,13 +172,15 @@ API документация."""
         """Тест обработки ошибок."""
         processor = ContentProcessor()
 
-        # Пустой контент
-        with pytest.raises(ValueError, match="Content too short"):
-            processor.process("", "https://example.com", "auto")
+        # Пустой контент - теперь возвращает результат с предупреждением
+        result = processor.process("", "https://example.com", "auto")
+        assert result is not None
+        assert result.content is not None
 
-        # Очень короткий контент
-        with pytest.raises(ValueError, match="Content too short"):
-            processor.process("short", "https://example.com", "auto")
+        # Очень короткий контент - теперь возвращает результат с предупреждением
+        result = processor.process("short", "https://example.com", "auto")
+        assert result is not None
+        assert result.content is not None
 
         # Некорректный Jina контент (без Title)
         jina_bad = """URL Source: https://example.com

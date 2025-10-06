@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from loguru import logger
 
-from app.sources_registry import SourceConfig
+from app.config import SourceConfig
 
 
 @dataclass

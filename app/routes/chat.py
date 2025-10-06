@@ -3,8 +3,8 @@ from __future__ import annotations
 from flask import Blueprint, request, jsonify
 from loguru import logger
 from app.services.infrastructure.orchestrator import handle_query
-from app.validation import validate_query_data
-from app.security import validate_request, security_monitor
+from app.utils import validate_query_data
+from app.infrastructure import validate_request, security_monitor
 
 bp = Blueprint("chat", __name__)
 

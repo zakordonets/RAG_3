@@ -223,7 +223,7 @@ from app.services.bge_embeddings import *
 from app.services.orchestrator import *
 from app.services.retrieval import *
 from app.services.rerank import *
-from app.services.llm_router import *
+from app.services.core.llm_router import *
 from app.services.query_processing import *
 
 # Новые импорты

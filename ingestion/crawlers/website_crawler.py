@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from .base_crawler import BaseCrawler, CrawlResult
-from app.sources_registry import SourceConfig, SourceType
+from app.config import SourceConfig, SourceType
 
 
 class WebsiteCrawler(BaseCrawler):

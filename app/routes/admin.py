@@ -3,11 +3,12 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from loguru import logger
 from ingestion.pipeline import crawl_and_index
-from app.metrics import get_metrics_summary, reset_metrics
-from app.circuit_breaker import get_all_circuit_breakers, reset_all_circuit_breakers
-from app.caching import get_cache_stats
-from adapters.rate_limiter import rate_limiter
-from app.security import security_monitor
+from app.infrastructure import get_metrics_summary, reset_metrics, get_all_circuit_breakers, reset_all_circuit_breakers, get_cache_stats
+from adapters.telegram import RateLimiter
+
+# Создаем глобальный экземпляр rate limiter
+rate_limiter = RateLimiter()
+from app.infrastructure import security_monitor
 
 bp = Blueprint("admin", __name__)
 

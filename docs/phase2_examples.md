@@ -306,7 +306,7 @@ if __name__ == "__main__":
 ```python
 # tests/test_ragas_evaluator.py
 import pytest
-from app.services.ragas_evaluator import RAGASEvaluatorWithoutGroundTruth
+from app.services.quality.ragas_evaluator import RAGASEvaluatorWithoutGroundTruth
 
 @pytest.mark.asyncio
 async def test_ragas_evaluation():

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from app.config import CONFIG
-from app.tokenizer import count_tokens, get_size_category
+from app.utils import count_tokens, get_size_category
 try:
     from bs4 import BeautifulSoup  # type: ignore
 except Exception:  # pragma: no cover

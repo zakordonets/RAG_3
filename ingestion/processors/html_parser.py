@@ -108,38 +108,6 @@ class HTMLParser(BaseParser):
         return "\n\n".join(parts)
 
     def _extract_metadata(self, soup: BeautifulSoup, url: str) -> Dict[str, Any]:
-        data: Dict[str, Any] = {}
-
-        # Хлебные крошки
-        crumbs = [a.get_text(' ', strip=True) for a in soup.select('.theme-doc-breadcrumbs a')]
-        if crumbs:
-            data['breadcrumb_path'] = crumbs
-
-        # Описание страницы
-        meta_desc = soup.select_one('meta[name="description"]')
-        if meta_desc and meta_desc.get('content'):
-            data['meta_description'] = meta_desc['content']
-        else:
-            data['meta_description'] = ""
-
-        # Заголовки секций
-        headers = [h.get_text(' ', strip=True) for h in soup.select('.theme-doc-markdown h2, .theme-doc-markdown h3')]
-        if headers:
-            data['section_headers'] = headers
-
-        # Разрешения, если встретятся в тексте
-        # Ищем блоки с "Permissions:"
-        for strong in soup.find_all('strong'):
-            text = strong.get_text(' ', strip=True)
-            if 'Permissions' in text:
-                # Берем следующий текстовый узел после strong
-                next_sibling = strong.next_sibling
-                if next_sibling:
-                    perms_text = next_sibling.strip()
-                    # Парсим разрешения
-                    perms = [p.strip().upper() for p in perms_text.replace(',', ' ').split() if p.isalpha()]
-                    if perms:
-                        data['permissions'] = sorted(set(perms))
-                break
-
-        return data
+        from app.utils import MetadataExtractor
+        extractor = MetadataExtractor()
+        return extractor.extract_html_metadata(soup, url)

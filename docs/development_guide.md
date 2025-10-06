@@ -523,12 +523,12 @@ custom_counter.labels(label1='value1', label2='value2').inc()
 ```python
 import pytest
 from unittest.mock import Mock, patch
-from app.services.bge_embeddings import embed_dense, embed_sparse_optimized
-from app.services.retrieval import hybrid_search
-from app.services.llm_router import generate_answer
+from app.services.core.embeddings import embed_dense, embed_sparse_optimized
+from app.services.search.retrieval import hybrid_search
+from app.services.core.llm_router import generate_answer
 
 class TestEmbeddings:
-    @patch('app.services.bge_embeddings._get_bge_model')
+    @patch('app.services.core.embeddings._get_bge_model')
     def test_embed_dense(self, mock_model):
         mock_model.return_value.encode.return_value = [0.1, 0.2, 0.3]
 
@@ -549,7 +549,7 @@ class TestEmbeddings:
         assert result == {"indices": [1, 2], "values": [0.5, 0.3]}
 
 class TestRetrieval:
-    @patch('app.services.retrieval.client')
+    @patch('app.services.search.retrieval.client')
     def test_hybrid_search(self, mock_client):
         mock_client.search.return_value = [
             {"id": "1", "score": 0.9, "payload": {"text": "test"}}
@@ -561,7 +561,7 @@ class TestRetrieval:
         assert result[0]["id"] == "1"
 
 class TestLLMRouter:
-    @patch('app.services.llm_router._yandex_complete')
+    @patch('app.services.core.llm_router._yandex_complete')
     def test_generate_answer(self, mock_yandex):
         mock_yandex.return_value = "Test answer"
 
@@ -619,7 +619,7 @@ def test_health_endpoint(client):
 import pytest
 import time
 from adapters.telegram_polling import run_polling_loop
-from app.services.orchestrator import handle_query
+from app.services.infrastructure.orchestrator import handle_query
 
 def test_full_pipeline():
     """Тест полного пайплайна обработки запроса."""
@@ -658,7 +658,7 @@ pytest -n auto
 ```python
 import cProfile
 import pstats
-from app.services.orchestrator import handle_query
+from app.services.infrastructure.orchestrator import handle_query
 
 def profile_query_processing():
     profiler = cProfile.Profile()
@@ -682,7 +682,7 @@ if __name__ == "__main__":
 
 ```python
 import tracemalloc
-from app.services.orchestrator import handle_query
+from app.services.infrastructure.orchestrator import handle_query
 
 def monitor_memory():
     tracemalloc.start()

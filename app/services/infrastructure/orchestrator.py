@@ -11,7 +11,7 @@ from app.services.search.retrieval import hybrid_search
 from app.services.search.rerank import rerank
 from app.services.core.llm_router import generate_answer
 from app.services.core.context_optimizer import context_optimizer
-from app.metrics import get_metrics_collector
+from app.infrastructure import get_metrics_collector
 from app.services.quality.quality_manager import quality_manager
 
 

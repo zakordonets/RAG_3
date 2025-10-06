@@ -31,7 +31,7 @@ def app_client():
 @pytest.fixture()
 def interaction_id_fixture(monkeypatch) -> str:
     # Мок низкоуровневого LLM и ragas.evaluate внутри модуля evaluator
-    import app.services.ragas_evaluator as reval
+    import app.services.quality.ragas_evaluator as reval
     monkeypatch.setattr(reval, "_raw_yandex_complete", lambda *args, **kwargs: "OK")
     import ragas
     monkeypatch.setattr(ragas, "evaluate", lambda *args, **kwargs: {
@@ -52,7 +52,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_quality_flow_via_manager_and_api(app_client, monkeypatch):
     # Мокаем низкоуровневый LLM прямо в обёртке RAGAS (alias внутри модуля)
-    import app.services.ragas_evaluator as reval
+    import app.services.quality.ragas_evaluator as reval
     monkeypatch.setattr(reval, "_raw_yandex_complete", lambda *args, **kwargs: "OK")
     # Мокаем ragas.evaluate, чтобы убрать внутренний asyncio и сеть
     import ragas
@@ -106,7 +106,7 @@ async def test_quality_flow_via_manager_and_api(app_client, monkeypatch):
 @pytest.mark.asyncio
 async def test_ragas_evaluator_basic(monkeypatch):
     # Мокаем alias низкоуровневого LLM и ragas.evaluate
-    import app.services.ragas_evaluator as reval
+    import app.services.quality.ragas_evaluator as reval
     monkeypatch.setattr(reval, "_raw_yandex_complete", lambda *args, **kwargs: "OK")
     import ragas
     monkeypatch.setattr(ragas, "evaluate", lambda *args, **kwargs: {

@@ -125,7 +125,8 @@ class TestRAGSystemComprehensive:
         indexer = MetadataAwareIndexer()
 
         # Получаем информацию о коллекции
-        info = indexer.client.get_collection(CONFIG.qdrant_collection)
+        collection_name = getattr(CONFIG, 'qdrant_collection', 'chatcenter_docs')
+        info = indexer.client.get_collection(collection_name)
 
         assert info.status == "green", f"Статус коллекции должен быть green, получен: {info.status}"
         assert info.points_count > 0, "Коллекция должна содержать точки"

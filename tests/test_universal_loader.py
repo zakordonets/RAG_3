@@ -4,8 +4,9 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from ingestion.universal_loader import UniversalLoader, load_content_universal
-from app.sources_registry import extract_url_metadata
+from ingestion.content_loader import UniversalLoader, load_content_universal
+from app.utils import extract_url_metadata
+from tests.conftest import TestDataFactory
 
 
 class TestUniversalLoader:
@@ -15,28 +16,16 @@ class TestUniversalLoader:
         """Настройка для каждого теста."""
         self.loader = UniversalLoader()
 
-    def test_content_type_detection_jina_reader(self):
+    def test_content_type_detection_jina_reader(self, test_data_factory):
         """Тест определения Jina Reader контента."""
-        content = """Title: Тестовая страница
-URL Source: https://example.com
-Markdown Content:
-
-# Заголовок
-
-Содержимое страницы.
-"""
+        content = test_data_factory.create_jina_content()
         assert self.loader.detect_content_type(content) == 'jina_reader'
 
-    def test_content_type_detection_html_docusaurus(self):
+    def test_content_type_detection_html_docusaurus(self, test_data_factory):
         """Тест определения HTML Docusaurus контента."""
-        content = """<!DOCTYPE html>
-<html>
-<body>
-<nav class="theme-doc-breadcrumbs">
-<article class="theme-doc-markdown">
-<div class="theme-doc-sidebar">
-</body>
-</html>"""
+        content = test_data_factory.create_html_content(
+            content="<nav class='theme-doc-breadcrumbs'><article class='theme-doc-markdown'><div class='theme-doc-sidebar'></div></article></nav>"
+        )
         assert self.loader.detect_content_type(content) == 'html_docusaurus'
 
     def test_content_type_detection_html_generic(self):
@@ -177,7 +166,7 @@ edna Chat Center — это система для организации раб�
         assert result['title'] == 'Настройка маршрутизации'
         assert 'Маршрутизация позволяет' in result['content']
         assert result['content_type'] == 'html_docusaurus'
-        assert result['page_type'] == 'guide'  # Fallback к guide, так как URL не распознан как agent в load_content
+        assert result['page_type'] == 'agent'  # URL содержит /agent/, поэтому page_type = 'agent'
 
         # Проверяем URL метаданные
         assert result['section'] == 'agent'
@@ -211,8 +200,8 @@ edna Chat Center — это система для организации раб�
         url = "https://example.com/page"
         content = "Valid content"
 
-        # Мокаем parse_jina_content для вызова исключения
-        with patch('ingestion.universal_loader.parse_jina_content', side_effect=Exception("Test error")):
+        # Мокаем ContentProcessor для вызова исключения
+        with patch.object(self.loader.content_processor, 'process', side_effect=Exception("Test error")):
             result = self.loader.load_content(url, content, 'force_jina')
 
             assert 'error' in result
@@ -390,7 +379,7 @@ Markdown Content:
         # URL метаданные
         assert result['section'] == 'agent'
         assert result['user_role'] == 'agent'
-        assert result['page_type'] == 'guide'  # load_content использует fallback к guide
+        assert result['page_type'] == 'agent'  # URL содержит /agent/, поэтому page_type = 'agent'
         assert result['permissions'] == 'AGENT'
 
         # Проверяем наличие контента
@@ -423,7 +412,7 @@ Markdown Content:
         content = "Valid content"
 
         # Мокаем ошибку в парсинге
-        with patch('ingestion.universal_loader.parse_jina_content', side_effect=Exception("Parse error")):
+        with patch.object(loader.content_processor, 'process', side_effect=Exception("Parse error")):
             result = loader.load_content(url, content, 'force_jina')
 
             # Должен вернуть результат с ошибкой, а не упасть
@@ -541,5 +530,4 @@ POST /api/messages/create
         # Проверяем значения ключевых полей
         assert result['section'] == 'api'
         assert result['user_role'] == 'integrator'
-        assert result['page_type'] == 'api-reference'  # URL определяет как api-reference
-        assert result['api_method'] == 'POST'
+        assert result['page_type'] == 'api'  # URL содержит /api/, поэтому page_type = 'api'

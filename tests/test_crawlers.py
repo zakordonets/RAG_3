@@ -8,7 +8,8 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
-from app.sources_registry import SourceConfig, SourceType
+from app.config import SourceConfig, SourceType
+from tests.test_utils import TestUtils, MockDataFactory
 from ingestion.crawlers import (
     CrawlerFactory,
     WebsiteCrawler,

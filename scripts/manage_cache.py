@@ -97,7 +97,7 @@ def test_cache_performance():
     """Тестирует производительность кеша."""
     import time
     from ingestion.crawlers import CrawlerFactory
-    from app.sources_registry import SourceConfig, SourceType
+    from app.config import SourceConfig, SourceType
 
     print("🚀 Тестирование производительности кеша...")
 

@@ -6,7 +6,7 @@ import requests
 import telegramify_markdown
 from app.config import CONFIG
 from loguru import logger
-from app.log_utils import write_debug_event
+from app.utils import write_debug_event
 
 
 DEFAULT_LLM = CONFIG.default_llm

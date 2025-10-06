@@ -10,7 +10,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'rag-telegram-bot=adapters.telegram_polling:main',
+            'rag-telegram-bot=adapters.telegram.polling:main',
             'rag-api=wsgi:app',
         ],
     },

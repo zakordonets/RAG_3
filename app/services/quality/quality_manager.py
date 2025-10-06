@@ -12,7 +12,7 @@ from loguru import logger
 from app.config import CONFIG
 from app.models.quality_interaction import quality_db, QualityInteractionData
 from app.services.quality.ragas_evaluator import ragas_evaluator
-from app.metrics import get_metrics_collector
+from app.infrastructure import get_metrics_collector
 
 class UnifiedQualityManager:
     """Unified quality manager for RAGAS and user feedback"""

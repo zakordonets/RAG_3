@@ -6,13 +6,13 @@ from typing import Any, Optional
 from loguru import logger
 from tqdm import tqdm
 from ingestion.crawlers import CrawlerFactory
-from app.sources_registry import get_source_config
+from app.config.sources_config import get_source_config
 from ingestion.processors.content_processor import ContentProcessor
 from ingestion.chunkers import chunk_text
 from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
 from app.services.indexing.optimized_pipeline import run_optimized_indexing
 from app.config import CONFIG
-from app.text_utils import clean_text_for_processing, validate_text_quality, safe_batch_text_processing
+from app.utils import clean_text_for_processing, validate_text_quality, safe_batch_text_processing
 
 def _resolve_content_strategy(page: dict[str, Any], default_strategy: str | None) -> str:
     explicit = page.get("content_strategy")
@@ -99,7 +99,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
         except Exception as e:
             logger.warning(f"Не удалось загрузить конфиг источника '{source_name}': {e}. Использую параметры функции.")
             # Создаем временную конфигурацию
-            from app.sources_registry import SourceConfig, SourceType
+            from app.config.sources_config import SourceConfig, SourceType
             source_config = SourceConfig(
                 name=source_name or "default",
                 source_type=SourceType.DOCS_SITE,
@@ -110,7 +110,7 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
             )
     else:
         # Создаем временную конфигурацию
-        from app.sources_registry import SourceConfig, SourceType
+        from app.config.sources_config import SourceConfig, SourceType
         source_config = SourceConfig(
             name="default",
             source_type=SourceType.DOCS_SITE,
@@ -161,8 +161,14 @@ def crawl_and_index(incremental: bool = True, strategy: str = "jina", use_cache:
 
     with tqdm(total=len(pages), desc="Processing pages") as pbar:
         for p in pages:
-            url = p.url
-            raw_content = p.text or p.html or ""
+            # Поддерживаем как объекты, так и словари
+            if hasattr(p, 'url'):
+                url = p.url
+                raw_content = p.text or p.html or ""
+            else:
+                # Если это словарь
+                url = p.get('url', '')
+                raw_content = p.get('text') or p.get('html') or ""
 
             if not raw_content:
                 logger.warning(f"Пустой контент для {url}, пропускаем")

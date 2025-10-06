@@ -57,22 +57,6 @@ class JinaParser(BaseParser):
         return '\n'.join(content_lines).strip()
 
     def _extract_metadata(self, lines: List[str]) -> Dict[str, Any]:
-        metadata: Dict[str, Any] = {}
-        for line in lines[:30]:
-            s = line.strip()
-            if s.startswith("URL Source:"):
-                metadata['url_source'] = s.split(":", 1)[1].strip()
-            elif s.startswith("Content Length:"):
-                try:
-                    metadata['content_length'] = int(s.split(":", 1)[1].strip())
-                except ValueError:
-                    pass
-            elif s.startswith("Language Detected:"):
-                metadata['language_detected'] = s.split(":", 1)[1].strip()
-            elif s.startswith("Published Time:"):
-                metadata['published_time'] = s.split(":", 1)[1].strip()
-            elif s.startswith("Images:"):
-                metadata['images_count'] = s.split(":", 1)[1].strip()
-            elif s.startswith("Links:"):
-                metadata['links_count'] = s.split(":", 1)[1].strip()
-        return metadata
+        from app.utils import MetadataExtractor
+        extractor = MetadataExtractor()
+        return extractor.extract_jina_metadata(lines)

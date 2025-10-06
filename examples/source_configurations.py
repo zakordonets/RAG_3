@@ -2,7 +2,7 @@
 Примеры конфигураций для различных типов источников данных.
 """
 
-from app.sources_registry import SourceConfig, SourceType
+from app.config import SourceConfig, SourceType
 
 
 # Пример 1: Документационный сайт (Docusaurus)

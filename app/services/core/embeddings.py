@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Any, Union
 from loguru import logger
 
 from app.config import CONFIG
-from app.caching import cache_embedding
+from app.infrastructure import cache_embedding
 
 # Windows compatibility for HuggingFace Hub
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")

@@ -5,7 +5,7 @@
 from typing import Type, Dict
 from loguru import logger
 
-from app.sources_registry import SourceConfig, SourceType
+from app.config import SourceConfig, SourceType
 from .base_crawler import BaseCrawler
 from .website_crawler import WebsiteCrawler
 from .local_folder_crawler import LocalFolderCrawler

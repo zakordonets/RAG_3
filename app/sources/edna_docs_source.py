@@ -13,7 +13,7 @@ from app.abstractions.data_source import (
     DataSourceBase, Page, PageType, CrawlResult, register_data_source
 )
 from ingestion.crawlers import CrawlerFactory
-from app.sources_registry import SourceConfig, SourceType
+from app.config import SourceConfig, SourceType
 from ingestion.processors.content_processor import ContentProcessor
 
 

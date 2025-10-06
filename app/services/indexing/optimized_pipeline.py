@@ -13,11 +13,11 @@ from tqdm import tqdm
 from app.abstractions.data_source import DataSourceBase, Page, CrawlResult, plugin_manager
 from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
 from ingestion.chunkers import chunk_text, chunk_text_with_metadata
-from app.sources_registry import extract_url_metadata
+from app.utils import extract_url_metadata
 from ingestion.processors.content_processor import ContentProcessor
 from app.config import CONFIG
-from app.tokenizer import count_tokens
-from app.metrics import (
+from app.utils import count_tokens
+from app.infrastructure import (
     chunk_created_total,
     chunk_size_words_hist,
     chunk_size_tokens_hist,

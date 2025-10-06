@@ -54,7 +54,11 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
     - query_sparse: словарь с полями indices/values (BGE-M3 sparse)
     - boosts: словарь типа {page_type: factor}
     """
-    from loguru import logger
+    try:
+        from loguru import logger
+    except ImportError:
+        import logging
+        logger = logging.getLogger(__name__)
 
     boosts = boosts or {}
     params = SearchParams(hnsw_ef=EF_SEARCH)
@@ -68,7 +72,8 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
             limit=k,
             search_params=params,
         )
-        logger.debug(f"Dense search returned {len(dense_res)} results")
+        if hasattr(logger, 'debug'):
+            logger.debug(f"Dense search returned {len(dense_res)} results")
     except Exception as e:
         logger.error(f"Dense search failed: {e}")
         dense_res = []
@@ -92,17 +97,20 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
                 limit=k,
                 search_params=params,
             )
-            logger.debug(f"Sparse search returned {len(sparse_res)} results")
+            if hasattr(logger, 'debug'):
+                logger.debug(f"Sparse search returned {len(sparse_res)} results")
         except Exception as e:
             logger.warning(f"Sparse search failed: {e}")
             sparse_res = []
     else:
-        logger.debug("Skipping sparse search: no indices/values or disabled")
+        if hasattr(logger, 'debug'):
+            logger.debug("Skipping sparse search: no indices/values or disabled")
 
     # RRF fusion
     try:
         fused = rrf_fuse(to_hit(dense_res), to_hit(sparse_res))
-        logger.debug(f"RRF fusion returned {len(fused)} results")
+        if hasattr(logger, 'debug'):
+            logger.debug(f"RRF fusion returned {len(fused)} results")
     except Exception as e:
         logger.error(f"RRF fusion failed: {e}")
         # Fallback to dense only
@@ -180,5 +188,6 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
 
     fused.sort(key=lambda x: x["boosted_score"], reverse=True)
 
-    logger.debug(f"Final results: {len(fused[:k])} items")
+    if hasattr(logger, 'debug'):
+        logger.debug(f"Final results: {len(fused[:k])} items")
     return fused[:k]

@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from loguru import logger
 
 from .base_crawler import BaseCrawler, CrawlResult
-from app.sources_registry import SourceConfig, SourceType
+from app.config import SourceConfig, SourceType
 
 
 class LocalFolderCrawler(BaseCrawler):

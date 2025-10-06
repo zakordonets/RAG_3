@@ -12,44 +12,14 @@ from loguru import logger
 
 def clean_text_for_logging(text: str) -> str:
     """Очищает текст от символов, которые могут вызвать проблемы с кодировкой в логах"""
-    if not isinstance(text, str):
-        return str(text)
-
-    # Удаляем zero-width space и другие проблемные символы
-    text = re.sub(r'[\u200b-\u200d\ufeff]', '', text)
-
-    # Заменяем другие проблемные символы на безопасные
-    text = text.replace('\u2013', '-')  # en dash
-    text = text.replace('\u2014', '--')  # em dash
-    text = text.replace('\u2018', "'")  # left single quotation mark
-    text = text.replace('\u2019', "'")  # right single quotation mark
-    text = text.replace('\u201c', '"')  # left double quotation mark
-    text = text.replace('\u201d', '"')  # right double quotation mark
-
-    return text
+    from .text_processor import clean_text_for_logging as _clean_text_for_logging
+    return _clean_text_for_logging(text)
 
 
 def setup_windows_encoding():
     """Настраивает кодировку для Windows"""
-
-    # Устанавливаем UTF-8 кодировку для Python
-    os.environ['PYTHONIOENCODING'] = 'utf-8'
-    os.environ['PYTHONUTF8'] = '1'
-
-    # Для Windows устанавливаем кодовую страницу UTF-8
-    if platform.system() == 'Windows':
-        try:
-            import subprocess
-            subprocess.run(['chcp', '65001'], check=False,
-                         capture_output=True, shell=True)
-        except Exception:
-            pass
-
-    # Настраиваем stdout/stderr для UTF-8
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    if hasattr(sys.stderr, 'reconfigure'):
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    from .text_processor import setup_windows_encoding as _setup_windows_encoding
+    return _setup_windows_encoding()
 
 
 def configure_logging():

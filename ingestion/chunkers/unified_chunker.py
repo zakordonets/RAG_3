@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from loguru import logger
 
 from app.config import CONFIG
-from app.tokenizer import count_tokens
+from app.utils import count_tokens
 from .adaptive_chunker import adaptive_chunk_text
 from .semantic_chunker import chunk_text_semantic
 import hashlib

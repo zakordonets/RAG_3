@@ -5,7 +5,7 @@
 
 import pytest
 import time
-from app.tokenizer import (
+from app.utils import (
     UnifiedTokenizer,
     get_tokenizer,
     count_tokens,

@@ -34,7 +34,7 @@ def _register_stub(name: str, module: types.ModuleType) -> None:
 
 _register_stub("ingestion.crawler", types.ModuleType("ingestion.crawler"))
 sys.modules["ingestion.crawler"].crawl_with_sitemap_progress = lambda *args, **kwargs: []
-sys.modules["ingestion.crawler"].crawl_mkdocs_index = lambda *args, **kwargs: []
+# sys.modules["ingestion.crawler"].crawl_mkdocs_index = lambda *args, **kwargs: []  # Удалено после рефакторинга
 sys.modules["ingestion.crawler"].crawl_sitemap = lambda *args, **kwargs: []
 sys.modules["ingestion.crawler"].crawl = lambda *args, **kwargs: []
 
@@ -196,9 +196,9 @@ def test_pipeline_html_fallback_produces_chunks(mock_logger):
     ]
 
     with (
-        patch("ingestion.pipeline.crawl_with_sitemap_progress", return_value=[]),
-        patch("ingestion.pipeline.crawl_mkdocs_index", return_value=fallback_pages),
-        patch("ingestion.pipeline.crawl", return_value=[]),
+        patch("ingestion.pipeline.crawl_and_index", return_value=[]),
+        patch("ingestion.crawlers.edna_docs_crawler.EdnaDocsCrawler._crawl_mkdocs_index", return_value=fallback_pages),
+        patch("ingestion.pipeline.crawl_and_index", return_value=[]),
         patch("ingestion.pipeline.MetadataAwareIndexer.index_chunks_with_metadata") as mock_index,
     ):
         mock_index.return_value = 1
@@ -234,9 +234,9 @@ def test_pipeline_plain_text_mkdocs_fallback_switches_to_markdown(mock_logger):
     ]
 
     with (
-        patch("ingestion.pipeline.crawl_with_sitemap_progress", return_value=[]),
-        patch("ingestion.pipeline.crawl_mkdocs_index", return_value=fallback_pages),
-        patch("ingestion.pipeline.crawl", return_value=[]),
+        patch("ingestion.pipeline.crawl_and_index", return_value=[]),
+        patch("ingestion.crawlers.edna_docs_crawler.EdnaDocsCrawler._crawl_mkdocs_index", return_value=fallback_pages),
+        patch("ingestion.pipeline.crawl_and_index", return_value=[]),
         patch("ingestion.pipeline.MetadataAwareIndexer.index_chunks_with_metadata") as mock_index,
     ):
         mock_index.return_value = 1
