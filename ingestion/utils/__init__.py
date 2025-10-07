@@ -11,7 +11,7 @@ from .docusaurus_utils import (
 
 __all__ = [
     'clean',
-    'replace_contentref', 
+    'replace_contentref',
     'clean_segment',
     'fs_to_url'
 ]
