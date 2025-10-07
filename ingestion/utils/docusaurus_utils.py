@@ -51,9 +51,19 @@ def clean(text: str) -> str:
     t = RE_ADMON.sub(lambda m: m.group(2), t)
     t = RE_SELF_CLOSING_JSX.sub("", t)
     t = _strip_pair_jsx(t)
-    # Нормализация
-    t = re.sub(r"[ \t]+", " ", t)
-    t = re.sub(r"\n{3,}", "\n\n", t)
+
+    # Очистка HTML-тегов (details, summary и других)
+    t = re.sub(r"<details[^>]*>", "", t)
+    t = re.sub(r"</details>", "", t)
+    t = re.sub(r"<summary[^>]*>", "", t)
+    t = re.sub(r"</summary>", "", t)
+    t = re.sub(r"<[^>]+>", "", t)  # Удаляем все остальные HTML-теги
+
+    # Нормализация (сохраняем структуру текста)
+    t = re.sub(r"[ \t]+", " ", t)  # Заменяем множественные пробелы и табы на одинарные пробелы
+    t = re.sub(r" \n", "\n", t)    # Убираем пробелы перед переносами строк
+    t = re.sub(r"\n ", "\n", t)    # Убираем пробелы после переносов строк
+    t = re.sub(r"\n{3,}", "\n\n", t)  # Ограничиваем множественные переносы строк
     return t.strip()
 
 
