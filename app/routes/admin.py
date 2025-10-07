@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 from loguru import logger
-from ingestion.pipeline import crawl_and_index
+from ingestion.run import run_unified_indexing
 from app.infrastructure import get_metrics_summary, reset_metrics, get_all_circuit_breakers, reset_all_circuit_breakers, get_cache_stats
 from adapters.telegram import RateLimiter
 
@@ -41,7 +41,23 @@ def reindex():
     """
     try:
         force_full = bool((request.get_json(silent=True) or {}).get("force_full", False))
-        res = crawl_and_index(incremental=not force_full)
+        
+        # Используем новую единую функцию индексации
+        from app.config.app_config import CONFIG
+        config = {
+            "docs_root": CONFIG.docs_root,
+            "site_base_url": CONFIG.site_base_url,
+            "site_docs_prefix": CONFIG.site_docs_prefix,
+            "collection_name": CONFIG.qdrant_collection
+        }
+        
+        res = run_unified_indexing(
+            source_type="docusaurus",
+            config=config,
+            reindex_mode="full" if force_full else "changed",
+            clear_collection=force_full
+        )
+        
         return jsonify({"status": "done", "force_full": force_full, **res})
     except Exception as e:
         logger.error(f"Reindex failed: {e}")
