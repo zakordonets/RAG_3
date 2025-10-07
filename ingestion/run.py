@@ -23,6 +23,38 @@ from ingestion.pipeline.dag import PipelineDAG
 from ingestion.state.state_manager import get_state_manager
 
 
+def _clear_qdrant_collection(collection_name: str) -> None:
+    """Полностью очищает коллекцию Qdrant."""
+    try:
+        from qdrant_client import QdrantClient
+        from app.config.app_config import CONFIG
+        
+        client = QdrantClient(
+            url=CONFIG.qdrant_url,
+            api_key=CONFIG.qdrant_api_key or None
+        )
+        
+        # Проверяем, существует ли коллекция
+        try:
+            collection_info = client.get_collection(collection_name)
+            logger.info(f"📊 Коллекция {collection_name} содержит {collection_info.points_count} точек")
+        except Exception:
+            logger.info(f"📊 Коллекция {collection_name} не существует, создаем новую")
+            return
+        
+        # Удаляем все точки из коллекции
+        client.delete(
+            collection_name=collection_name,
+            points_selector={"filter": {"must": []}}  # Удаляем все точки
+        )
+        
+        logger.success(f"✅ Коллекция {collection_name} полностью очищена")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка при очистке коллекции {collection_name}: {e}")
+        raise
+
+
 def create_docusaurus_dag(config: Dict[str, Any]) -> PipelineDAG:
     """Создает DAG для Docusaurus источников."""
     steps = [
@@ -70,7 +102,8 @@ def create_website_dag(config: Dict[str, Any]) -> PipelineDAG:
 def run_unified_indexing(
     source_type: str,
     config: Dict[str, Any],
-    reindex_mode: str = "changed"
+    reindex_mode: str = "changed",
+    clear_collection: bool = False
 ) -> Dict[str, Any]:
     """
     Запускает унифицированную индексацию для любого источника.
@@ -79,11 +112,17 @@ def run_unified_indexing(
         source_type: Тип источника ("docusaurus", "website")
         config: Конфигурация источника
         reindex_mode: Режим переиндексации ("full", "changed")
+        clear_collection: Полная очистка коллекции перед индексацией
 
     Returns:
         Результат индексации
     """
     logger.info(f"🚀 Запуск унифицированной индексации для источника: {source_type}")
+
+    # Полная очистка коллекции, если запрошено
+    if clear_collection:
+        logger.warning("🗑️ Полная очистка коллекции перед индексацией")
+        _clear_qdrant_collection(config.get("collection_name", "docs_chatcenter"))
 
     try:
         # Создаем адаптер источника
@@ -216,6 +255,12 @@ def main():
     )
 
     parser.add_argument(
+        "--clear-collection",
+        action="store_true",
+        help="Полная очистка коллекции перед индексацией (удаляет все существующие данные)"
+    )
+
+    parser.add_argument(
         "--render-js",
         action="store_true",
         help="Использовать Playwright для рендеринга JS (для website)"
@@ -257,7 +302,7 @@ def main():
             config["max_pages"] = args.max_pages
 
     # Запускаем индексацию
-    result = run_unified_indexing(args.source, config, args.reindex_mode)
+    result = run_unified_indexing(args.source, config, args.reindex_mode, args.clear_collection)
 
     if result["success"]:
         logger.success("🎉 Индексация завершена успешно!")

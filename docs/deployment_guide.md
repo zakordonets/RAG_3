@@ -91,6 +91,9 @@ python scripts/init_qdrant.py
 
 # Индексация документации (v4.0.0)
 python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs"
+
+# Полная переиндексация с очисткой коллекции
+python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --clear-collection
 ```
 
 ### 5. Запуск приложения

@@ -162,6 +162,9 @@ python -m ingestion.run --source website --seed-urls "https://example.com"
 
 # С конфигурационным файлом
 python -m ingestion.run --source docusaurus --config ingestion/config.yaml
+
+# Полная переиндексация с очисткой коллекции
+python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --clear-collection
 ```
 
 #### Конфигурация индексации

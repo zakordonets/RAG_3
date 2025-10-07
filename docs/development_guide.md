@@ -1037,7 +1037,7 @@ from typing import Iterable
 class NewSourceAdapter(SourceAdapter):
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-    
+
     def iter_documents(self) -> Iterable[RawDoc]:
         # Логика получения документов из источника
         for doc in self._fetch_documents():
