@@ -28,12 +28,12 @@ def _clear_qdrant_collection(collection_name: str) -> None:
     try:
         from qdrant_client import QdrantClient
         from app.config.app_config import CONFIG
-        
+
         client = QdrantClient(
             url=CONFIG.qdrant_url,
             api_key=CONFIG.qdrant_api_key or None
         )
-        
+
         # Проверяем, существует ли коллекция
         try:
             collection_info = client.get_collection(collection_name)
@@ -41,15 +41,15 @@ def _clear_qdrant_collection(collection_name: str) -> None:
         except Exception:
             logger.info(f"📊 Коллекция {collection_name} не существует, создаем новую")
             return
-        
+
         # Удаляем все точки из коллекции
         client.delete(
             collection_name=collection_name,
             points_selector={"filter": {"must": []}}  # Удаляем все точки
         )
-        
+
         logger.success(f"✅ Коллекция {collection_name} полностью очищена")
-        
+
     except Exception as e:
         logger.error(f"❌ Ошибка при очистке коллекции {collection_name}: {e}")
         raise
