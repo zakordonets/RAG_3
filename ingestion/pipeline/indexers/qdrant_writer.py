@@ -236,12 +236,12 @@ class QdrantWriter(PipelineStep):
         vector_dict = {"dense": dense_vec}
 
         # Создаем sparse вектор если есть
-        sparse_vectors = None
         if CONFIG.use_sparse and sparse_data:
             try:
                 indices, values = self._convert_sparse_data(sparse_data)
                 if indices:
-                    sparse_vectors = {"sparse": SparseVector(indices=indices, values=values)}
+                    # Добавляем sparse вектор в vector_dict
+                    vector_dict["sparse"] = SparseVector(indices=indices, values=values)
             except Exception as e:
                 doc_id = payload.get("doc_id", "unknown")
                 site_url = payload.get("site_url", "unknown")
@@ -253,13 +253,9 @@ class QdrantWriter(PipelineStep):
         # Создаем структуру точки
         point_data = {
             "id": point_id,
-            "vector": vector_dict,  # dense / named-dense
+            "vector": vector_dict,  # dense + sparse в одном объекте
             "payload": qdrant_payload
         }
-
-        # Добавляем sparse векторы если есть
-        if sparse_vectors:
-            point_data["sparse_vectors"] = sparse_vectors
 
         return PointStruct(**point_data)
 
@@ -453,7 +449,7 @@ class QdrantWriter(PipelineStep):
             else:
                 logger.warning(f"Ошибка при проверке коллекции {self.collection_name}: {e}")
                 logger.info(f"Попытка создать коллекцию {self.collection_name} с гибридной схемой")
-            
+
             # Создаем коллекцию с нуля
             logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
 
