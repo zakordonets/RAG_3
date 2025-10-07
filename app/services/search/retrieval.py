@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, Filter, SparseVector, SearchParams, NamedSparseVector
+from qdrant_client.models import PointStruct, Filter, SparseVector, SearchParams, NamedSparseVector, FieldCondition, MatchValue
 from app.config import CONFIG
 
 
@@ -13,6 +13,15 @@ W_DENSE = CONFIG.hybrid_dense_weight
 W_SPARSE = CONFIG.hybrid_sparse_weight
 
 client = QdrantClient(url=CONFIG.qdrant_url, api_key=CONFIG.qdrant_api_key or None)
+
+
+def _make_filter(categories: list[str] | None) -> Filter | None:
+    """Создает фильтр по категориям для разделения АРМ."""
+    if not categories:
+        return None
+    return Filter(
+        must=[FieldCondition(key="category", match=MatchValue(value=c)) for c in categories]
+    )
 
 
 def rrf_fuse(dense_hits: list[dict], sparse_hits: list[dict]) -> list[dict]:
@@ -48,11 +57,13 @@ def to_hit(res) -> list[dict]:
     return out
 
 
-def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: dict[str, float] | None = None) -> list[dict]:
+def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: dict[str, float] | None = None, categories: list[str] | None = None) -> list[dict]:
     """Гибридный поиск в Qdrant с RRF и улучшенным ранжированием.
     - query_dense: плотный вектор BGE-M3
     - query_sparse: словарь с полями indices/values (BGE-M3 sparse)
+    - k: количество результатов для возврата
     - boosts: словарь типа {page_type: factor}
+    - categories: список категорий для фильтрации (например, ["АРМ_adm", "АРМ_sv"])
     """
     try:
         from loguru import logger
@@ -62,6 +73,14 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
 
     boosts = boosts or {}
     params = SearchParams(hnsw_ef=EF_SEARCH)
+    qfilter = _make_filter(categories)
+    
+    # Увеличиваем k для лучшего recall в RRF
+    k_dense = int(k * 2)
+    k_sparse = int(k * 2)
+    
+    if hasattr(logger, 'debug'):
+        logger.debug(f"Hybrid search: k={k}, k_dense={k_dense}, k_sparse={k_sparse}, categories={categories}, sparse_enabled={CONFIG.use_sparse}")
 
     # Dense search
     try:
@@ -69,8 +88,9 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
             collection_name=COLLECTION,
             query_vector=("dense", query_dense),
             with_payload=True,
-            limit=k,
+            limit=k_dense,
             search_params=params,
+            query_filter=qfilter,
         )
         if hasattr(logger, 'debug'):
             logger.debug(f"Dense search returned {len(dense_res)} results")
@@ -94,8 +114,9 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
                 collection_name=COLLECTION,
                 query_vector=sparse_vector,
                 with_payload=True,
-                limit=k,
+                limit=k_sparse,
                 search_params=params,
+                query_filter=qfilter,
             )
             if hasattr(logger, 'debug'):
                 logger.debug(f"Sparse search returned {len(sparse_res)} results")
@@ -127,8 +148,8 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
             s *= float(boosts[page_type])
 
         # 2. Тип документа на основе URL структуры
-        url = payload.get("url", "").lower()
-        title = payload.get("title", "").lower()
+        url = (payload.get("url") or payload.get("site_url") or "").lower()
+        title = (payload.get("title") or "").lower()
 
         # Обзорная документация (высокий приоритет)
         if any(path in url for path in ["/start/", "/overview", "/introduction", "/what-is", "/about"]):
@@ -151,7 +172,7 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
 
         # 4. Boost на основе полноты информации
         text = payload.get("text", "")
-        content_length = payload.get("content_length", 0)
+        content_length = payload.get("content_length") or len(text)
 
         # Документы средней длины (не слишком короткие, не слишком длинные)
         if 1000 <= content_length <= 5000:

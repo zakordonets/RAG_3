@@ -7,7 +7,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType
+from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType, VectorParams, Distance, CreateCollection
 
 from app.config import CONFIG
 from app.services.core.embeddings import embed_batch_optimized
@@ -64,6 +64,9 @@ class QdrantWriter(PipelineStep):
 
         logger.info(f"QdrantWriter: начинаем обработку {len(chunks)} чанков")
         start_time = time.time()
+
+        # Убеждаемся, что коллекция существует
+        self.ensure_collection()
 
         # Обрабатываем чанки батчами
         total_processed = 0
@@ -147,6 +150,7 @@ class QdrantWriter(PipelineStep):
             # Fallback векторы
             dense_vecs = [[0.0] * CONFIG.embedding_dim] * len(texts)
             sparse_results = [{}] * len(texts)
+            logger.warning(f"Используем {len(dense_vecs)} нулевых dense векторов в качестве фолбэка")
 
         # Создаем точки для Qdrant
         points = []
@@ -277,7 +281,23 @@ class QdrantWriter(PipelineStep):
 
         # Если это уже словарь lexical_weights
         if isinstance(sparse_data, dict):
-            # Фильтруем нулевые веса и конвертируем ключи
+            # Быстрый путь для формата {"indices": [...], "values": [...]}
+            if "indices" in sparse_data and "values" in sparse_data:
+                indices = sparse_data["indices"]
+                values = sparse_data["values"]
+                # Фильтруем нулевые веса
+                valid_pairs = [(idx, val) for idx, val in zip(indices, values) if val != 0.0]
+                if valid_pairs:
+                    # Сортируем по абсолютному значению веса (desc)
+                    sorted_pairs = sorted(valid_pairs, key=lambda x: abs(x[1]), reverse=True)
+                    # Ограничиваем количество
+                    max_indices = 1000
+                    if len(sorted_pairs) > max_indices:
+                        sorted_pairs = sorted_pairs[:max_indices]
+                    return [idx for idx, _ in sorted_pairs], [val for _, val in sorted_pairs]
+                return [], []
+
+            # Обычный формат lexical_weights: {"token_id": weight}
             valid_items = []
             for k, v in sparse_data.items():
                 try:
@@ -355,6 +375,8 @@ class QdrantWriter(PipelineStep):
                 {"field_name": "content_type", "field_schema": PayloadSchemaType.KEYWORD},
                 {"field_name": "site_url", "field_schema": PayloadSchemaType.KEYWORD},  # Исправлено: site_url вместо canonical_url
                 {"field_name": "indexed_at", "field_schema": PayloadSchemaType.FLOAT},
+                {"field_name": "doc_id", "field_schema": PayloadSchemaType.KEYWORD},  # Удобно фильтровать/переиндексировать конкретный документ
+                {"field_name": "heading_path", "field_schema": PayloadSchemaType.KEYWORD},  # Для таргетных бустов/фильтров по разделам
             ]
 
             for index_config in indexes:
@@ -369,6 +391,50 @@ class QdrantWriter(PipelineStep):
 
         except Exception as e:
             logger.error(f"Ошибка создания индексов: {e}")
+
+    def ensure_collection(self) -> None:
+        """Создает коллекцию с нужной схемой если она не существует."""
+        try:
+            # Проверяем, существует ли коллекция
+            self.client.get_collection(self.collection_name)
+            logger.info(f"Коллекция {self.collection_name} уже существует")
+        except Exception:
+            # Создаем коллекцию с нужной схемой
+            logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
+            
+            # Схема векторов: named dense + named sparse
+            vectors_config = {
+                "dense": VectorParams(
+                    size=CONFIG.embedding_dim,  # 1024 для BGE-M3
+                    distance=Distance.COSINE,
+                    hnsw_config={
+                        "m": CONFIG.qdrant_hnsw_m,
+                        "ef_construct": CONFIG.qdrant_hnsw_ef_construct,
+                        "full_scan_threshold": CONFIG.qdrant_hnsw_full_scan_threshold,
+                    }
+                )
+            }
+            
+            # Добавляем sparse вектор если включен
+            if CONFIG.use_sparse:
+                vectors_config["sparse"] = VectorParams(
+                    size=CONFIG.embedding_dim,  # Размерность sparse вектора
+                    distance=Distance.DOT,
+                )
+            
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=vectors_config
+            )
+            
+            logger.success(f"✅ Коллекция {self.collection_name} создана с гибридной схемой")
+            
+            # Создаем индексы payload
+            self.create_payload_indexes()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при создании коллекции {self.collection_name}: {e}")
+            raise
 
     def get_stats(self) -> Dict[str, Any]:
         """Возвращает статистику обработки."""
