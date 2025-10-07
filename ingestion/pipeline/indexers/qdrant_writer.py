@@ -421,7 +421,7 @@ class QdrantWriter(PipelineStep):
         try:
             # Проверяем, существует ли коллекция
             info = self.client.get_collection(self.collection_name)
-            
+
             # Если хотим sparse, а его нет — добавим
             if CONFIG.use_sparse and not info.config.sparse_vectors_config:
                 logger.info("Добавляем sparse_vectors_config для существующей коллекции")
@@ -430,16 +430,16 @@ class QdrantWriter(PipelineStep):
                     sparse_vectors_config={"sparse": SparseVectorParams()}  # пустой — ок
                 )
                 logger.success("✅ Добавлен sparse_vectors_config для существующей коллекции")
-            
+
             # Убеждаемся, что индексы есть
             self.create_payload_indexes()
             logger.info(f"Коллекция {self.collection_name} уже существует")
             return
-            
+
         except Exception:
             # Создаем коллекцию с нуля
             logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
-            
+
             # Схема векторов: named dense + named sparse
             vectors_config = {
                 "dense": VectorParams(
@@ -452,18 +452,18 @@ class QdrantWriter(PipelineStep):
                     }
                 )
             }
-            
+
             # Sparse векторы настраиваются отдельно
             sparse_cfg = {"sparse": {}} if CONFIG.use_sparse else None
-            
+
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=vectors_config,
                 sparse_vectors_config=sparse_cfg
             )
-            
+
             logger.success(f"✅ Коллекция {self.collection_name} создана с гибридной схемой")
-            
+
             # Создаем индексы payload
             self.create_payload_indexes()
 
