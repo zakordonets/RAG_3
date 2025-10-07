@@ -251,11 +251,29 @@ class QdrantWriter(PipelineStep):
                 sorted_items = sorted_items[:max_indices]
 
             indices = [int(k) for k, v in sorted_items]
-            values = [float(v) for k, v in sorted_items]
+            values = [float(v) if not hasattr(v, 'item') else float(v.item()) for k, v in sorted_items]
 
             return indices, values
 
         return [], []
+
+    def _clean_numpy_types(self, value: Any) -> Any:
+        """Очищает numpy типы для сериализации в JSON."""
+        try:
+            import numpy as np
+            if isinstance(value, np.ndarray):  # numpy array
+                return value.tolist()
+            elif isinstance(value, (np.float32, np.float64, np.int32, np.int64)):  # numpy scalar
+                return value.item()
+            elif isinstance(value, dict):
+                return {k: self._clean_numpy_types(v) for k, v in value.items()}
+            elif isinstance(value, (list, tuple)):
+                return [self._clean_numpy_types(item) for item in value]
+            else:
+                return value
+        except ImportError:
+            # Если numpy не установлен, возвращаем как есть
+            return value
 
     def _create_payload(self, chunk: Dict[str, Any], text: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Создает payload для Qdrant."""
@@ -264,7 +282,7 @@ class QdrantWriter(PipelineStep):
         # Копируем все поля из payload
         for key, value in payload.items():
             if value is not None:
-                qdrant_payload[key] = value
+                qdrant_payload[key] = self._clean_numpy_types(value)
 
         # Добавляем обязательные поля
         qdrant_payload["text"] = text
