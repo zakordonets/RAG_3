@@ -140,8 +140,10 @@ class UniversalChunker:
             except Exception:
                 pass
 
-        # Fallback через слова
-        return len(text.split())
+        # Fallback через regex-токенизацию (ближе к реальным токенам)
+        import re
+        tokens = re.findall(r"[\w\-_/]+|[^\s\w]", text)
+        return len(tokens)
 
     def _blockify_markdown(self, text: str) -> List[Block]:
         """Разбирает Markdown текст на структурные блоки"""
@@ -232,6 +234,113 @@ class UniversalChunker:
                 ))
 
         return blocks
+
+    def _blockify_html(self, text: str) -> List[Block]:
+        """Разбирает HTML текст на структурные блоки"""
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            logger.warning("BeautifulSoup не установлен, используем простой HTML парсинг")
+            return self._blockify_html_simple(text)
+
+        try:
+            soup = BeautifulSoup(text, 'html.parser')
+            blocks = []
+
+            # Обрабатываем основные элементы
+            for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'ul', 'ol', 'pre', 'code', 'table', 'blockquote']):
+                block_type = self._classify_html_element(element)
+                if block_type:
+                    block_text = element.get_text(strip=True)
+                    if block_text:
+                        depth = self._get_html_element_depth(element)
+                        blocks.append(Block(
+                            type=block_type,
+                            text=block_text,
+                            depth=depth,
+                            is_atomic=self._is_atomic_block(block_type),
+                            start_line=0,  # HTML не имеет понятия строк
+                            end_line=0
+                        ))
+
+            return blocks if blocks else [Block(
+                type='paragraph',
+                text=text,
+                depth=0,
+                is_atomic=False,
+                start_line=0,
+                end_line=0
+            )]
+
+        except Exception as e:
+            logger.warning(f"Ошибка при парсинге HTML: {e}")
+            return self._blockify_html_simple(text)
+
+    def _blockify_html_simple(self, text: str) -> List[Block]:
+        """Простой HTML парсинг без BeautifulSoup"""
+        # Удаляем HTML теги и разбиваем на параграфы
+        import re
+        clean_text = re.sub(r'<[^>]+>', '', text)
+        paragraphs = re.split(r'\n\s*\n', clean_text)
+
+        blocks = []
+        for para in paragraphs:
+            para = para.strip()
+            if para:
+                blocks.append(Block(
+                    type='paragraph',
+                    text=para,
+                    depth=0,
+                    is_atomic=False,
+                    start_line=0,
+                    end_line=0
+                ))
+
+        return blocks if blocks else [Block(
+            type='paragraph',
+            text=text,
+            depth=0,
+            is_atomic=False,
+            start_line=0,
+            end_line=0
+        )]
+
+    def _classify_html_element(self, element) -> Optional[str]:
+        """Классифицирует HTML элемент по типу блока"""
+        tag_name = element.name.lower()
+
+        if tag_name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+            return 'heading'
+        elif tag_name in ['ul', 'ol']:
+            return 'list'
+        elif tag_name in ['pre', 'code']:
+            return 'code_block'
+        elif tag_name == 'table':
+            return 'table'
+        elif tag_name == 'blockquote':
+            return 'blockquote'
+        elif tag_name in ['p', 'div']:
+            return 'paragraph'
+
+        return None
+
+    def _get_html_element_depth(self, element) -> int:
+        """Получает глубину HTML элемента"""
+        tag_name = element.name.lower()
+
+        if tag_name.startswith('h'):
+            return int(tag_name[1])  # h1 -> 1, h2 -> 2, etc.
+        elif tag_name in ['ul', 'ol']:
+            # Подсчитываем уровень вложенности списков
+            depth = 0
+            parent = element.parent
+            while parent and parent.name in ['ul', 'ol', 'li']:
+                if parent.name in ['ul', 'ol']:
+                    depth += 1
+                parent = parent.parent
+            return depth
+
+        return 0
 
     def _classify_markdown_line(self, line: str) -> str:
         """Классифицирует строку Markdown по типу блока"""
@@ -477,8 +586,74 @@ class UniversalChunker:
         return chunks
 
     def _split_paragraph_block(self, block: Block) -> List[Block]:
-        """Разбивает параграф по предложениям"""
-        sentences = re.split(r'[.!?]+\s+', block.text)
+        """Разбивает параграф по предложениям с учетом русских сокращений"""
+        # Сначала пробуем разбить по абзацам
+        paragraphs = re.split(r'\n\s*\n+', block.text)
+
+        if len(paragraphs) > 1:
+            # Если есть абзацы, разбиваем по ним
+            chunks = []
+            for para in paragraphs:
+                para = para.strip()
+                if para:
+                    chunks.append(Block(
+                        type=block.type,
+                        text=para,
+                        depth=block.depth,
+                        is_atomic=False,
+                        start_line=block.start_line,
+                        end_line=block.end_line
+                    ))
+            return chunks if chunks else [block]
+
+        # Если абзацев нет, разбиваем по предложениям с учетом русских сокращений
+        text = block.text
+
+        # Список русских сокращений, которые не должны разбивать предложения
+        russian_abbreviations = [
+            'т.д.', 'т.п.', 'и т.д.', 'и т.п.', 'т.е.', 'т.к.', 'т.о.',
+            'др.', 'пр.', 'стр.', 'г.', 'гг.', 'в.', 'вв.', 'н.э.',
+            'до н.э.', 'см.', 'рис.', 'табл.', 'гл.', 'разд.', 'п.',
+            'пп.', 'ст.', 'стст.', 'ч.', 'чч.', 'с.', 'сс.', 'кн.',
+            'кнн.', 'т.', 'тт.', 'вып.', 'выпп.', '№', '№№'
+        ]
+
+        # Создаем паттерн для разбиения с исключениями
+        # Разбиваем по [.!?], но не если перед ними сокращение
+        sentences = []
+        current_sentence = ""
+
+        # Простое разбиение с проверкой сокращений
+        parts = re.split(r'([.!?]+)', text)
+
+        for i, part in enumerate(parts):
+            current_sentence += part
+
+            # Проверяем, является ли это концом предложения
+            if re.match(r'[.!?]+', part) and i < len(parts) - 1:
+                # Проверяем, не является ли предыдущая часть сокращением
+                is_abbreviation = False
+                for abbrev in russian_abbreviations:
+                    if current_sentence.strip().endswith(abbrev):
+                        is_abbreviation = True
+                        break
+
+                if not is_abbreviation:
+                    # Это конец предложения
+                    sentence = current_sentence.strip()
+                    if sentence:
+                        sentences.append(sentence)
+                    current_sentence = ""
+
+        # Добавляем последнее предложение
+        if current_sentence.strip():
+            sentences.append(current_sentence.strip())
+
+        # Если не удалось разбить на предложения, используем весь текст
+        if not sentences:
+            sentences = [text]
+
+        # Формируем чанки из предложений
         chunks = []
         current_chunk = []
 
@@ -530,7 +705,7 @@ class UniversalChunker:
         return chunks if chunks else [block]
 
     def _semantic_packing(self, blocks: List[Block]) -> List[List[Block]]:
-        """Семантическая упаковка блоков в чанки"""
+        """Семантическая упаковка блоков в чанки с BM25-анализом"""
         if not BM25_AVAILABLE:
             # Fallback без семантического анализа
             return self._simple_packing(blocks)
@@ -540,7 +715,7 @@ class UniversalChunker:
         current_tokens = 0
         current_heading_path = []
 
-        for block in blocks:
+        for i, block in enumerate(blocks):
             block_tokens = self._count_tokens(block.text)
 
             # Обновляем heading_path
@@ -548,23 +723,77 @@ class UniversalChunker:
                 current_heading_path = self._update_heading_path(current_heading_path, block)
 
             # Проверяем, поместится ли блок
-            if current_tokens + block_tokens <= self.max_tokens:
-                current_chunk.append(block)
-                current_tokens += block_tokens
-            else:
-                # Завершаем текущий чанк
-                if current_chunk:
-                    chunks.append(current_chunk)
+            new_tokens = current_tokens + block_tokens
 
-                # Начинаем новый чанк
+            should_close_chunk = False
+
+            if new_tokens > self.max_tokens:
+                # Превышен лимит токенов
+                if current_tokens >= self.min_tokens:
+                    should_close_chunk = True
+                else:
+                    # Недостаточно токенов, но превышен лимит - принудительно закрываем
+                    should_close_chunk = True
+            elif i < len(blocks) - 1:
+                # Проверяем семантическую похожесть со следующим блоком
+                next_block = blocks[i + 1]
+                similarity = self._calculate_block_similarity(block, next_block)
+
+                if similarity < 0.15 and current_tokens >= self.min_tokens:
+                    # Низкая похожесть и достаточно токенов - закрываем чанк
+                    should_close_chunk = True
+
+            if should_close_chunk and current_chunk:
+                # Завершаем текущий чанк
+                chunks.append(current_chunk)
                 current_chunk = [block]
                 current_tokens = block_tokens
+            else:
+                # Добавляем блок к текущему чанку
+                current_chunk.append(block)
+                current_tokens = new_tokens
 
         # Добавляем последний чанк
         if current_chunk:
             chunks.append(current_chunk)
 
         return chunks
+
+    def _calculate_block_similarity(self, block1: Block, block2: Block) -> float:
+        """Вычисляет семантическую похожесть между блоками с помощью BM25"""
+        if not BM25_AVAILABLE:
+            return 0.5  # Средняя похожесть для fallback
+
+        try:
+            # Токенизируем тексты блоков
+            tokens1 = self._tokenize_for_bm25(block1.text)
+            tokens2 = self._tokenize_for_bm25(block2.text)
+
+            if not tokens1 or not tokens2:
+                return 0.0
+
+            # Создаем BM25 индекс
+            corpus = [tokens1, tokens2]
+            bm25 = BM25Okapi(corpus)
+
+            # Вычисляем похожесть
+            scores = bm25.get_scores(tokens1)
+            similarity = scores[1]  # Похожесть tokens1 к tokens2
+
+            # Нормализуем к диапазону [0, 1]
+            return min(similarity / 10.0, 1.0)  # Эмпирическая нормализация
+
+        except Exception as e:
+            logger.warning(f"Ошибка при вычислении BM25 похожести: {e}")
+            return 0.5  # Fallback к средней похожести
+
+    def _tokenize_for_bm25(self, text: str) -> List[str]:
+        """Токенизация текста для BM25"""
+        # Простая токенизация для BM25
+        import re
+        # Убираем знаки препинания и разбиваем на слова
+        words = re.findall(r'\b\w+\b', text.lower())
+        return words
 
     def _simple_packing(self, blocks: List[Block]) -> List[List[Block]]:
         """Простая упаковка без семантического анализа"""
@@ -732,15 +961,8 @@ class UniversalChunker:
         if fmt == 'markdown':
             blocks = self._blockify_markdown(text)
         else:
-            # Для HTML пока используем простое разбиение
-            blocks = [Block(
-                type='paragraph',
-                text=text,
-                depth=0,
-                is_atomic=False,
-                start_line=0,
-                end_line=0
-            )]
+            # Для HTML используем HTML blockify
+            blocks = self._blockify_html(text)
 
         # Шаг 2: Safe Split Oversize Blocks
         processed_blocks = []
@@ -775,10 +997,14 @@ class UniversalChunker:
         total_chunks = len(overlapped_chunks)
 
         for i, chunk_blocks in enumerate(overlapped_chunks):
-            chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
-
             # Извлекаем heading_path
             heading_path = self._extract_heading_path(chunk_blocks)
+
+            # Формируем текст чанка
+            chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
+
+            # Добавляем заголовок в начало чанка, если его нет
+            chunk_text = self._add_heading_to_chunk(chunk_text, heading_path, chunk_blocks)
 
             # Создаем чанк
             chunk = Chunk(
@@ -799,6 +1025,34 @@ class UniversalChunker:
 
         logger.info(f"Создано {len(final_chunks)} чанков для документа {meta.get('doc_id', 'unknown')}")
         return final_chunks
+
+    def _add_heading_to_chunk(self, chunk_text: str, heading_path: List[str], chunk_blocks: List[Block]) -> str:
+        """Добавляет заголовок в начало чанка, если его нет"""
+        if not heading_path:
+            return chunk_text
+
+        # Проверяем, есть ли уже заголовок в начале чанка
+        has_heading_at_start = False
+        for block in chunk_blocks:
+            if block.type == 'heading':
+                has_heading_at_start = True
+                break
+
+        if has_heading_at_start:
+            return chunk_text
+
+        # Добавляем последний заголовок из heading_path
+        last_heading = heading_path[-1]
+
+        # Определяем уровень заголовка (H1, H2, H3)
+        heading_level = min(len(heading_path), 3)  # Максимум H3
+        heading_prefix = '#' * heading_level
+
+        # Формируем заголовок
+        formatted_heading = f"{heading_prefix} {last_heading}"
+
+        # Добавляем в начало чанка
+        return f"{formatted_heading}\n\n{chunk_text}"
 
 
 # Глобальный экземпляр для использования в пайплайне
