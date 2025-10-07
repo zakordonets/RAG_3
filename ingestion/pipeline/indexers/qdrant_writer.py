@@ -232,16 +232,16 @@ class QdrantWriter(PipelineStep):
         # Генерируем ID
         point_id = self._generate_point_id(chunk, text)
 
-        # Создаем dense вектор
-        vector_dict = {"dense": dense_vec}
+        # Создаем векторы согласно официальной документации Qdrant
+        vectors = {"dense": dense_vec}
 
-        # Создаем sparse вектор если есть
+        # Добавляем sparse вектор если есть (в том же поле vectors)
         if CONFIG.use_sparse and sparse_data:
             try:
                 indices, values = self._convert_sparse_data(sparse_data)
                 if indices:
-                    # Добавляем sparse вектор в vector_dict
-                    vector_dict["sparse"] = SparseVector(indices=indices, values=values)
+                    # Sparse вектор добавляется в то же поле vectors с именем "sparse"
+                    vectors["sparse"] = SparseVector(indices=indices, values=values)
             except Exception as e:
                 doc_id = payload.get("doc_id", "unknown")
                 site_url = payload.get("site_url", "unknown")
@@ -250,14 +250,12 @@ class QdrantWriter(PipelineStep):
         # Создаем payload
         qdrant_payload = self._create_payload(chunk, text, payload)
 
-        # Создаем структуру точки
-        point_data = {
-            "id": point_id,
-            "vector": vector_dict,  # dense + sparse в одном объекте
-            "payload": qdrant_payload
-        }
-
-        return PointStruct(**point_data)
+        # Создаем структуру точки согласно официальной документации
+        return PointStruct(
+            id=point_id,
+            vector=vectors,  # dense + sparse в одном поле vector (единственное число)
+            payload=qdrant_payload
+        )
 
     def _generate_point_id(self, chunk: Dict[str, Any], text: str) -> str:
         """Генерирует ID точки для Qdrant."""
@@ -427,16 +425,23 @@ class QdrantWriter(PipelineStep):
 
             # Проверяем sparse векторы (может не быть в старых версиях Qdrant)
             try:
-                has_sparse = hasattr(info.config, 'sparse_vectors_config') and info.config.sparse_vectors_config
+                # Более надежная проверка sparse векторов
+                has_sparse = False
+                if hasattr(info.config, 'sparse_vectors_config'):
+                    sparse_config = info.config.sparse_vectors_config
+                    has_sparse = sparse_config is not None and len(sparse_config) > 0
+                
                 if CONFIG.use_sparse and not has_sparse:
                     logger.info("Добавляем sparse_vectors_config для существующей коллекции")
                     self.client.update_collection(
                         collection_name=self.collection_name,
-                        sparse_vectors_config={"sparse": SparseVectorParams()}  # пустой — ок
+                        sparse_vectors_config={"sparse": SparseVectorParams()}
                     )
                     logger.success("✅ Добавлен sparse_vectors_config для существующей коллекции")
-            except AttributeError:
-                logger.warning("Версия Qdrant не поддерживает sparse_vectors_config, пропускаем")
+                elif CONFIG.use_sparse and has_sparse:
+                    logger.info("✅ Sparse векторы уже настроены в коллекции")
+            except Exception as e:
+                logger.warning(f"Ошибка при проверке/добавлении sparse векторов: {e}")
 
             # Убеждаемся, что индексы есть
             self.create_payload_indexes()
@@ -466,13 +471,13 @@ class QdrantWriter(PipelineStep):
                 )
             }
 
-            # Sparse векторы настраиваются отдельно
-            sparse_cfg = {"sparse": {}} if CONFIG.use_sparse else None
+            # Sparse векторы настраиваются отдельно согласно документации
+            sparse_vectors_config = {"sparse": SparseVectorParams()} if CONFIG.use_sparse else None
 
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=vectors_config,
-                sparse_vectors_config=sparse_cfg
+                sparse_vectors_config=sparse_vectors_config
             )
 
             logger.success(f"✅ Коллекция {self.collection_name} создана с гибридной схемой")

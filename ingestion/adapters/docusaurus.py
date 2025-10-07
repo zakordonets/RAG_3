@@ -63,7 +63,7 @@ class DocusaurusAdapter(SourceAdapter):
             drop_prefix_all_levels=self.drop_prefix_all_levels
         ))
         total_files = len(all_items)
-        
+
         # Ограничиваем количество файлов если указан max_pages
         if self.max_pages and self.max_pages < total_files:
             all_items = all_items[:self.max_pages]

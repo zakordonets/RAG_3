@@ -170,13 +170,24 @@ class URLMapper(PipelineStep):
         updated_metadata = data.metadata.copy()
 
         # Если есть site_url в метаданных, используем его
-        if "site_url" in updated_metadata:
+        if "site_url" in updated_metadata and updated_metadata["site_url"]:
             canonical_url = updated_metadata["site_url"]
         else:
-            # Строим URL из базового URL и префикса
-            canonical_url = f"{self.site_base_url}{self.site_docs_prefix}"
+            # Строим уникальный URL на основе пути файла
+            # Используем URI документа для создания уникального пути
+            doc_uri = data.metadata.get("uri", "")
+            if doc_uri.startswith("file://"):
+                # Извлекаем путь файла из URI
+                file_path = doc_uri.replace("file://", "")
+                # Создаем относительный путь от docs_root
+                # Это будет уникальным для каждого файла
+                canonical_url = f"{self.site_base_url}{self.site_docs_prefix}/{file_path}"
+            else:
+                # Fallback: используем базовый URL
+                canonical_url = f"{self.site_base_url}{self.site_docs_prefix}"
 
         updated_metadata["canonical_url"] = canonical_url
+        updated_metadata["doc_id"] = canonical_url  # Устанавливаем doc_id как canonical_url
         updated_metadata["url_mapped"] = True
 
         # Создаем результат
