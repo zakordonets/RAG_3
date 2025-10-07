@@ -236,8 +236,8 @@ def _format_for_telegram(text: str) -> str:
     except Exception as e:
         logger.warning(f"telegramify_markdown.markdownify failed: {type(e).__name__}: {e}")
 
-    # Fallback: возвращаем исходный текст
-    return text
+    # Fallback: экранируем специальные символы для MarkdownV2
+    return _escape_markdown_v2(text)
 
 
 def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[Dict[str, Any]] = None) -> str:

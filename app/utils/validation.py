@@ -52,9 +52,8 @@ class QuerySchema(Schema):
             'validator_failed': f'Channel must be one of: {", ".join(SecurityConfig.ALLOWED_CHANNELS)}'
         }
     )
-    chat_id = fields.Str(
+    chat_id = fields.Raw(
         missing="",
-        validate=validate.Length(max=100),
         error_messages={
             'invalid': 'Invalid chat_id format'
         }

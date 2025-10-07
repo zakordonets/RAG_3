@@ -155,7 +155,7 @@ def handle_message(message: dict) -> None:
         logger.error(f"Error handling message: {e}")
 
 
-def send_telegram_message(chat_id: int, answer_data: dict) -> None:
+def send_telegram_message(chat_id, answer_data: dict) -> None:
     """Отправляет сообщение в Telegram"""
     try:
         answer = answer_data.get("answer", "")
