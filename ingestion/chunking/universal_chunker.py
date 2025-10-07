@@ -114,6 +114,12 @@ class UniversalChunker:
             'blockquote': re.compile(r'^>\s+.+$', re.MULTILINE),
             'admonition': re.compile(r'^:::\w+[\s\S]*?^:::', re.MULTILINE),
         }
+        
+        # Исправленный детектор списков
+        self.LIST_RE = re.compile(r'^\s*(?:[-*+]|\d+\.)\s+')
+        
+        # Единый regex для токенизации
+        self._TOKEN_RE = re.compile(r"[\w\-_/]+|[^\s\w]", re.UNICODE)
 
         logger.info(f"UniversalChunker инициализирован: max_tokens={max_tokens}, min_tokens={min_tokens}")
 
@@ -132,6 +138,10 @@ class UniversalChunker:
 
         return fallback_tokenize
 
+    def _regex_tokenize(self, text: str) -> List[str]:
+        """Единая regex токенизация"""
+        return self._TOKEN_RE.findall(text or "")
+    
     def _count_tokens(self, text: str) -> int:
         """Подсчитывает количество токенов в тексте"""
         if hasattr(self.tokenizer, 'encode'):
@@ -139,11 +149,9 @@ class UniversalChunker:
                 return len(self.tokenizer.encode(text, add_special_tokens=False))
             except Exception:
                 pass
-
-        # Fallback через regex-токенизацию (ближе к реальным токенам)
-        import re
-        tokens = re.findall(r"[\w\-_/]+|[^\s\w]", text)
-        return len(tokens)
+        
+        # Fallback через единую regex-токенизацию
+        return len(self._regex_tokenize(text))
 
     def _blockify_markdown(self, text: str) -> List[Block]:
         """Разбирает Markdown текст на структурные блоки"""
@@ -251,7 +259,12 @@ class UniversalChunker:
             for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'ul', 'ol', 'pre', 'code', 'table', 'blockquote']):
                 block_type = self._classify_html_element(element)
                 if block_type:
-                    block_text = element.get_text(strip=True)
+                    # Сохраняем структуру для атомарных блоков
+                    if block_type in ("code_block", "table", "list"):
+                        block_text = element.get_text("\n", strip=True)  # Важны переводы строк
+                    else:
+                        block_text = element.get_text(" ", strip=True)  # Обычный текст
+                    
                     if block_text:
                         depth = self._get_html_element_depth(element)
                         blocks.append(Block(
@@ -357,7 +370,7 @@ class UniversalChunker:
             return 'blockquote'
         elif line.startswith(':::'):
             return 'admonition'
-        elif re.match(r'^\s*[-*+]|\s*\d+\.', line):
+        elif self.LIST_RE.match(line):
             return 'list'
         else:
             return 'paragraph'
@@ -383,21 +396,21 @@ class UniversalChunker:
             return current_type != 'table'
 
         # Списки должны начинаться с -, *, + или цифры
-        if re.match(r'^\s*[-*+]|\s*\d+\.', line_stripped):
+        if self.LIST_RE.match(line_stripped):
             # Проверяем, является ли это другим типом списка
             if current_type == 'list':
                 # Проверяем, является ли текущий блок маркированным списком
-                current_is_bullet = any(re.match(r'^\s*[-*+]', l.strip()) for l in current_text if l.strip())
-                current_is_numbered = any(re.match(r'^\s*\d+\.', l.strip()) for l in current_text if l.strip())
-
+                current_is_bullet = any(self.LIST_RE.match(l.strip()) and re.match(r'^\s*[-*+]', l.strip()) for l in current_text if l.strip())
+                current_is_numbered = any(self.LIST_RE.match(l.strip()) and re.match(r'^\s*\d+\.', l.strip()) for l in current_text if l.strip())
+                
                 # Проверяем новый элемент
                 new_is_bullet = re.match(r'^\s*[-*+]', line_stripped)
                 new_is_numbered = re.match(r'^\s*\d+\.', line_stripped)
-
+                
                 # Если типы списков разные, начинаем новый блок
                 if (current_is_bullet and new_is_numbered) or (current_is_numbered and new_is_bullet):
                     return True
-
+            
             return current_type != 'list'
 
         # Блоки цитат начинаются с >
@@ -409,7 +422,7 @@ class UniversalChunker:
             return current_type != 'admonition'
 
         # Если текущий тип - список, а строка не является списком, начинаем новый блок
-        if current_type == 'list' and not re.match(r'^\s*[-*+]|\s*\d+\.', line_stripped) and line_stripped:
+        if current_type == 'list' and not self.LIST_RE.match(line_stripped) and line_stripped:
             return True
 
         # Если текущий тип - таблица, а строка не является таблицей, начинаем новый блок
@@ -456,48 +469,113 @@ class UniversalChunker:
             return self._split_by_sentences(block)
 
     def _split_code_block(self, block: Block) -> List[Block]:
-        """Разбивает код-блок по пустым строкам и комментариям"""
-        lines = block.text.split('\n')
-        chunks = []
-        current_chunk = []
-
-        for line in lines:
-            current_chunk.append(line)
-
-            # Проверяем, нужно ли разбить
-            if (line.strip() == '' or
-                line.strip().startswith(('#', '//', '/*', '*/')) or
-                len(current_chunk) >= 20):  # Максимум 20 строк в чанке
-
-                if current_chunk:
-                    chunk_text = '\n'.join(current_chunk)
+        """Разбивает код-блок с проверкой размера в токенах"""
+        # Базово: порции ~20 строк
+        lines = block.text.splitlines()
+        chunks, buf = [], []
+        
+        for ln in lines:
+            buf.append(ln)
+            if len(buf) >= 20:
+                chunk = "\n".join(buf).strip()
+                if self._count_tokens(chunk) > self.max_tokens:
+                    # Вторичный разрез по пустым строкам/комментариям
+                    chunks.extend(self._split_code_soft(chunk, block))
+                else:
                     chunks.append(Block(
                         type=block.type,
-                        text=chunk_text,
+                        text=chunk,
                         depth=block.depth,
                         is_atomic=True,
                         start_line=block.start_line,
                         end_line=block.end_line
                     ))
-                    current_chunk = []
-
-        # Добавляем последний чанк
-        if current_chunk:
-            chunk_text = '\n'.join(current_chunk)
-            chunks.append(Block(
-                type=block.type,
-                text=chunk_text,
-                depth=block.depth,
+                buf = []
+        
+        if buf:
+            chunk = "\n".join(buf).strip()
+            if self._count_tokens(chunk) > self.max_tokens:
+                chunks.extend(self._split_code_soft(chunk, block))
+            else:
+                chunks.append(Block(
+                    type=block.type,
+                    text=chunk,
+                    depth=block.depth,
+                    is_atomic=True,
+                    start_line=block.start_line,
+                    end_line=block.end_line
+                ))
+        
+        return [c for c in chunks if c] if chunks else [block]
+    
+    def _split_code_soft(self, code_piece: str, original_block: Block) -> List[Block]:
+        """Делим код по блокам, пустым строкам и комментариям"""
+        out, cur = [], []
+        for ln in code_piece.splitlines():
+            cur.append(ln)
+            if not ln.strip() or ln.strip().startswith(("#", "//", "/*", "*", "*/")):
+                candidate = "\n".join(cur).strip()
+                if self._count_tokens(candidate) >= self.max_tokens:
+                    # Если ещё слишком большой — финальный hard-split по строкам
+                    out.extend(self._hard_split_by_tokens(candidate, original_block))
+                else:
+                    out.append(Block(
+                        type=original_block.type,
+                        text=candidate,
+                        depth=original_block.depth,
+                        is_atomic=True,
+                        start_line=original_block.start_line,
+                        end_line=original_block.end_line
+                    ))
+                cur = []
+        
+        if cur:
+            candidate = "\n".join(cur).strip()
+            if self._count_tokens(candidate) > self.max_tokens:
+                out.extend(self._hard_split_by_tokens(candidate, original_block))
+            else:
+                out.append(Block(
+                    type=original_block.type,
+                    text=candidate,
+                    depth=original_block.depth,
+                    is_atomic=True,
+                    start_line=original_block.start_line,
+                    end_line=original_block.end_line
+                ))
+        
+        return out
+    
+    def _hard_split_by_tokens(self, text: str, original_block: Block) -> List[Block]:
+        """Жесткое разбиение по токенам"""
+        toks = self._regex_tokenize(text)
+        res, buf = [], []
+        acc = 0
+        
+        for tk in toks:
+            buf.append(tk)
+            acc += 1
+            if acc >= self.max_tokens:
+                res.append(Block(
+                    type=original_block.type,
+                    text=" ".join(buf),
+                    depth=original_block.depth,
+                    is_atomic=True,
+                    start_line=original_block.start_line,
+                    end_line=original_block.end_line
+                ))
+                buf, acc = [], 0
+        
+        if buf:
+            res.append(Block(
+                type=original_block.type,
+                text=" ".join(buf),
+                depth=original_block.depth,
                 is_atomic=True,
-                start_line=block.start_line,
-                end_line=block.end_line
+                start_line=original_block.start_line,
+                end_line=original_block.end_line
             ))
-
-        # Если не удалось разбить, возвращаем исходный блок
-        if not chunks:
-            return [block]
-
-        return chunks
+        
+        return res
 
     def _split_list_block(self, block: Block) -> List[Block]:
         """Разбивает список по группам пунктов"""
@@ -510,7 +588,7 @@ class UniversalChunker:
             current_chunk.append(line)
 
             # Считаем пункты списка
-            if re.match(r'^\s*[-*+]|\s*\d+\.', line):
+            if self.LIST_RE.match(line):
                 list_item_count += 1
 
                 # Разбиваем каждые 15 пунктов
@@ -615,7 +693,8 @@ class UniversalChunker:
             'др.', 'пр.', 'стр.', 'г.', 'гг.', 'в.', 'вв.', 'н.э.',
             'до н.э.', 'см.', 'рис.', 'табл.', 'гл.', 'разд.', 'п.',
             'пп.', 'ст.', 'стст.', 'ч.', 'чч.', 'с.', 'сс.', 'кн.',
-            'кнн.', 'т.', 'тт.', 'вып.', 'выпп.', '№', '№№'
+            'кнн.', 'т.', 'тт.', 'вып.', 'выпп.', '№', '№№',
+            'т.д.;', 'т.п.;', 'и пр.', 'напр.', 'т.н.'
         ]
 
         # Создаем паттерн для разбиения с исключениями
@@ -738,8 +817,12 @@ class UniversalChunker:
                 # Проверяем семантическую похожесть со следующим блоком
                 next_block = blocks[i + 1]
                 similarity = self._calculate_block_similarity(block, next_block)
-
-                if similarity < 0.15 and current_tokens >= self.min_tokens:
+                
+                # Жёсткая граница: если следующий блок — заголовок H1/H2 и уже набрали min_tokens,
+                # закрываем чанк независимо от похожести
+                if next_block.type == "heading" and getattr(next_block, "depth", 3) <= 2 and current_tokens >= self.min_tokens:
+                    should_close_chunk = True
+                elif similarity < 0.15 and current_tokens >= self.min_tokens:
                     # Низкая похожесть и достаточно токенов - закрываем чанк
                     should_close_chunk = True
 
@@ -761,39 +844,46 @@ class UniversalChunker:
 
     def _calculate_block_similarity(self, block1: Block, block2: Block) -> float:
         """Вычисляет семантическую похожесть между блоками с помощью BM25"""
-        if not BM25_AVAILABLE:
-            return 0.5  # Средняя похожесть для fallback
-
+        return self._bm25_similarity_sym(block1.text, block2.text)
+    
+    def _bm25_similarity_sym(self, text_a: str, text_b: str) -> float:
+        """
+        Симметричная похожесть блоков. Если rank_bm25 недоступен — fallback на Jaccard.
+        Нормализация s/(1+s) даёт значение в [0,1] и стабильный порог ~0.15.
+        """
         try:
-            # Токенизируем тексты блоков
-            tokens1 = self._tokenize_for_bm25(block1.text)
-            tokens2 = self._tokenize_for_bm25(block2.text)
-
-            if not tokens1 or not tokens2:
+            from rank_bm25 import BM25Okapi
+            import re
+            
+            tok_a = re.findall(r"[\w\-_/]+", text_a.lower())
+            tok_b = re.findall(r"[\w\-_/]+", text_b.lower())
+            
+            if not tok_a or not tok_b:
                 return 0.0
-
-            # Создаем BM25 индекс
-            corpus = [tokens1, tokens2]
-            bm25 = BM25Okapi(corpus)
-
-            # Вычисляем похожесть
-            scores = bm25.get_scores(tokens1)
-            similarity = scores[1]  # Похожесть tokens1 к tokens2
-
-            # Нормализуем к диапазону [0, 1]
-            return min(similarity / 10.0, 1.0)  # Эмпирическая нормализация
-
-        except Exception as e:
-            logger.warning(f"Ошибка при вычислении BM25 похожести: {e}")
-            return 0.5  # Fallback к средней похожести
+            
+            bm = BM25Okapi([tok_a, tok_b])
+            s12 = bm.get_score(tok_b, 0)  # как "doc0" к "query tokens2"
+            s21 = bm.get_score(tok_a, 1)  # как "doc1" к "query tokens1"
+            s = 0.5 * (s12 + s21)
+            return s / (1.0 + s)  # сглаженная нормализация в [0,1]
+            
+        except Exception:
+            # Fallback на Jaccard similarity
+            import re
+            set_a = set(re.findall(r"[\w\-_/]+", text_a.lower()))
+            set_b = set(re.findall(r"[\w\-_/]+", text_b.lower()))
+            
+            if not set_a or not set_b:
+                return 0.0
+            
+            intersection = len(set_a & set_b)
+            union = len(set_a | set_b)
+            return intersection / float(union) if union > 0 else 0.0
 
     def _tokenize_for_bm25(self, text: str) -> List[str]:
         """Токенизация текста для BM25"""
-        # Простая токенизация для BM25
-        import re
-        # Убираем знаки препинания и разбиваем на слова
-        words = re.findall(r'\b\w+\b', text.lower())
-        return words
+        # Используем единую токенизацию
+        return [word.lower() for word in self._regex_tokenize(text) if word.isalnum()]
 
     def _simple_packing(self, blocks: List[Block]) -> List[List[Block]]:
         """Простая упаковка без семантического анализа"""
@@ -920,20 +1010,14 @@ class UniversalChunker:
                 # Частично берем блок
                 if current_tokens < overlap_tokens:
                     remaining_tokens = overlap_tokens - current_tokens
-                    partial_text = self._extract_partial_text(block.text, remaining_tokens)
+                    is_code_like = block.type in {"code_block", "table", "list"}
+                    partial_text = self._extract_partial_text(block.text, remaining_tokens, is_code_like=is_code_like)
                     if partial_text:
                         overlap_text.insert(0, partial_text)
                 break
 
         return '\n\n'.join(overlap_text)
 
-    def _extract_partial_text(self, text: str, max_tokens: int) -> str:
-        """Извлекает частичный текст до указанного количества токенов"""
-        words = text.split()
-        if len(words) <= max_tokens:
-            return text
-
-        return ' '.join(words[:max_tokens])
 
     def chunk(
         self,
@@ -1004,7 +1088,7 @@ class UniversalChunker:
             chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
 
             # Добавляем заголовок в начало чанка, если его нет
-            chunk_text = self._add_heading_to_chunk(chunk_text, heading_path, chunk_blocks)
+            chunk_text = self._prepend_heading(heading_path, chunk_text)
 
             # Создаем чанк
             chunk = Chunk(
@@ -1053,6 +1137,47 @@ class UniversalChunker:
 
         # Добавляем в начало чанка
         return f"{formatted_heading}\n\n{chunk_text}"
+    
+    def _prepend_heading(self, heading_path: List[str], text: str) -> str:
+        """Вставляет заголовок в начало чанка как шапку"""
+        if not heading_path:
+            return text
+        
+        # Берём последний заголовок (до H3), и добавляем как Markdown «шапку»
+        title = heading_path[-1]
+        
+        # Если текст уже начинается с '#', не дублируем
+        if text.lstrip().startswith("#"):
+            return text
+        
+        return f"{'# ' + title}\n\n{text}".strip()
+    
+    def _extract_partial_text(self, text: str, max_tokens: int, is_code_like: bool = False) -> str:
+        """Извлекает частичный текст для overlap с учетом типа блока"""
+        if max_tokens <= 0 or not text:
+            return ""
+
+        if is_code_like:
+            # Для кода/таблиц/списков - по строкам
+            acc = 0
+            out = []
+            for ln in reversed(text.splitlines()):
+                t = self._count_tokens(ln)
+                if acc + t > max_tokens:
+                    break
+                out.insert(0, ln)
+                acc += t
+            return "\n".join(out)
+
+        # Обычный режим — по regex-токенам
+        toks = self._regex_tokenize(text)
+        if len(toks) <= max_tokens:
+            return text
+        
+        # Соберём подстроку из конца по количеству токенов
+        cut = " ".join(toks[-max_tokens:])
+        # Небольшой трюк: вернуть хвост в исходном регистре, если он встречается
+        return text[-len(cut) * 2:]  # грубый, но дешёвый эвристический вариант
 
 
 # Глобальный экземпляр для использования в пайплайне

@@ -565,10 +565,10 @@ database:
             <tr><td>Ячейка 1</td><td>Ячейка 2</td></tr>
         </table>
         """
-        
+
         chunker = UniversalChunker()
         blocks = chunker._blockify_html(html_text)
-        
+
         # Проверяем, что блоки правильно классифицированы
         block_types = [block.type for block in blocks]
         assert 'heading' in block_types
@@ -580,7 +580,7 @@ database:
     def test_russian_abbreviations(self):
         """Тест обработки русских сокращений"""
         text = "Это первое предложение. Это второе предложение т.д. Это третье предложение."
-        
+
         chunker = UniversalChunker()
         block = Block(
             type='paragraph',
@@ -590,9 +590,9 @@ database:
             start_line=0,
             end_line=0
         )
-        
+
         split_blocks = chunker._split_paragraph_block(block)
-        
+
         # Должно быть разбито на предложения, но "т.д." не должно разбивать
         assert len(split_blocks) >= 1
         # Проверяем, что "т.д." не разорвало предложение
@@ -610,10 +610,10 @@ database:
 
 Текст под заголовком 2.
 """
-        
+
         chunker = UniversalChunker(max_tokens=200, min_tokens=100)
         chunks = chunker.chunk(text, 'markdown', {'doc_id': 'test'})
-        
+
         # Проверяем, что заголовки включены в чанки
         for chunk in chunks:
             if 'Заголовок 2' in chunk.heading_path:
@@ -623,7 +623,7 @@ database:
     def test_bm25_similarity(self):
         """Тест вычисления BM25 похожести"""
         chunker = UniversalChunker()
-        
+
         block1 = Block(
             type='paragraph',
             text='Это текст о программировании и разработке.',
@@ -632,7 +632,7 @@ database:
             start_line=0,
             end_line=0
         )
-        
+
         block2 = Block(
             type='paragraph',
             text='Программирование и разработка - это интересная тема.',
@@ -641,9 +641,9 @@ database:
             start_line=0,
             end_line=0
         )
-        
+
         similarity = chunker._calculate_block_similarity(block1, block2)
-        
+
         # Должна быть похожесть (слова пересекаются)
         assert -1.0 <= similarity <= 1.0  # BM25 может давать отрицательные значения
         assert similarity != 0.0  # Должна быть какая-то похожесть
@@ -651,13 +651,131 @@ database:
     def test_regex_tokenization(self):
         """Тест regex токенизации"""
         chunker = UniversalChunker()
-        
+
         text = "Это тест токенизации с разными символами: test@example.com, 123-456, и т.д."
         tokens = chunker._count_tokens(text)
-        
+
         # Должно быть больше токенов, чем просто слов
         words_count = len(text.split())
         assert tokens >= words_count  # Regex должен дать больше токенов
+
+    def test_heading_boundaries(self):
+        """Тест границ чанков по заголовкам H1/H2"""
+        text = """
+# Раздел 1
+
+Текст первого раздела. Это довольно длинный текст, который должен заполнить минимальное количество токенов для тестирования границ чанков.
+
+## Подраздел 1.1
+
+Текст подраздела 1.1.
+
+## Подраздел 1.2
+
+Текст подраздела 1.2.
+
+# Раздел 2
+
+Текст второго раздела.
+"""
+        
+        chunker = UniversalChunker(max_tokens=200, min_tokens=100)
+        chunks = chunker.chunk(text, 'markdown', {'doc_id': 'test'})
+        
+        # Должно быть хотя бы один чанк
+        assert len(chunks) >= 1
+        
+        # Проверяем, что заголовки включены в чанки
+        all_text = ' '.join(chunk.text for chunk in chunks)
+        assert 'Раздел 1' in all_text
+        assert 'Раздел 2' in all_text
+
+    def test_code_overlap_preservation(self):
+        """Тест сохранения структуры кода в overlap"""
+        text = """
+# Код пример
+
+```python
+def function1():
+    print("Hello")
+    return True
+
+def function2():
+    print("World")
+    return False
+```
+
+Дополнительный текст после кода.
+"""
+        
+        chunker = UniversalChunker(max_tokens=150, min_tokens=50)
+        chunks = chunker.chunk(text, 'markdown', {'doc_id': 'test'})
+        
+        # Проверяем, что код не разорван
+        code_preserved = any('def function1()' in chunk.text and 'def function2()' in chunk.text for chunk in chunks)
+        assert code_preserved
+
+    def test_improved_code_splitting(self):
+        """Тест улучшенного разбиения больших код-блоков"""
+        # Создаем большой код-блок
+        large_code = "def function():\n" + "    print('line')\n" * 100
+        
+        chunker = UniversalChunker(max_tokens=50, min_tokens=20)
+        block = Block(
+            type='code_block',
+            text=large_code,
+            depth=0,
+            is_atomic=True,
+            start_line=0,
+            end_line=0
+        )
+        
+        split_blocks = chunker._split_code_block(block)
+        
+        # Должно быть разбито на несколько блоков
+        assert len(split_blocks) > 1
+        
+        # Каждый блок не должен превышать max_tokens (с небольшим допуском)
+        for block in split_blocks:
+            assert chunker._count_tokens(block.text) <= chunker.max_tokens + 10  # Небольшой допуск
+
+    def test_prepend_heading(self):
+        """Тест добавления заголовка в начало чанка"""
+        chunker = UniversalChunker()
+        
+        heading_path = ['Главный раздел', 'Подраздел']
+        text = 'Обычный текст без заголовка.'
+        
+        result = chunker._prepend_heading(heading_path, text)
+        
+        # Должен быть добавлен заголовок
+        assert result.startswith('# Подраздел')
+        assert 'Обычный текст без заголовка.' in result
+        
+        # Если текст уже содержит заголовок, не дублируем
+        text_with_heading = '# Существующий заголовок\n\nТекст'
+        result2 = chunker._prepend_heading(heading_path, text_with_heading)
+        assert result2 == text_with_heading
+
+    def test_expanded_russian_abbreviations(self):
+        """Тест расширенного списка русских сокращений"""
+        text = "Это первое предложение. Это второе предложение т.н. Это третье предложение."
+        
+        chunker = UniversalChunker()
+        block = Block(
+            type='paragraph',
+            text=text,
+            depth=0,
+            is_atomic=False,
+            start_line=0,
+            end_line=0
+        )
+        
+        split_blocks = chunker._split_paragraph_block(block)
+        
+        # Проверяем, что "т.н." не разорвало предложение
+        all_text = ' '.join(block.text for block in split_blocks)
+        assert 'т.н.' in all_text
 
 
 if __name__ == "__main__":
