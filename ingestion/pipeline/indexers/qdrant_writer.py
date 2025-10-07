@@ -7,7 +7,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType, VectorParams, Distance
+from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType, VectorParams, Distance, SparseVectorParams, UpdateCollection
 
 from app.config import CONFIG
 from app.services.core.embeddings import embed_batch_optimized
@@ -41,7 +41,8 @@ class QdrantWriter(PipelineStep):
             "processed_chunks": 0,
             "failed_chunks": 0,
             "batches_processed": 0,
-            "zero_dense_vectors": 0  # Подсчет нулевых dense векторов
+            "zero_dense_vectors": 0,  # Подсчет нулевых dense векторов
+            "last_upsert_points": 0  # Количество реально записанных точек в последний батч
         }
 
     def process(self, data: Any) -> Any:
@@ -177,6 +178,7 @@ class QdrantWriter(PipelineStep):
                         points=points,
                         wait=True
                     )
+                    self.stats["last_upsert_points"] = len(points)
                     return len(points)
                 except Exception as e:
                     logger.warning(f"upsert retry {attempt+1}/3: {e}")
@@ -184,6 +186,17 @@ class QdrantWriter(PipelineStep):
                         time.sleep(1.5 * (attempt + 1))
                     else:
                         logger.error(f"Ошибка записи в Qdrant после 3 попыток: {e}")
+                        logger.error(f"Не удалось записать {len(points)} точек в батч")
+                        self.stats["last_upsert_points"] = 0
+                        
+                        # Binary split для переживания "битых" точек
+                        if len(points) > 1:
+                            logger.info(f"Пробуем binary split: разбиваем {len(points)} точек пополам")
+                            mid = len(points) // 2
+                            first_half = self._process_batch([chunks[i] for i in range(mid)])
+                            second_half = self._process_batch([chunks[i] for i in range(mid, len(chunks))])
+                            return first_half + second_half
+                        
                         return 0
 
         return 0
@@ -379,6 +392,7 @@ class QdrantWriter(PipelineStep):
                 {"field_name": "indexed_at", "field_schema": PayloadSchemaType.FLOAT},
                 {"field_name": "doc_id", "field_schema": PayloadSchemaType.KEYWORD},  # Удобно фильтровать/переиндексировать конкретный документ
                 {"field_name": "heading_path", "field_schema": PayloadSchemaType.KEYWORD},  # Для таргетных бустов/фильтров по разделам
+                {"field_name": "page_type", "field_schema": PayloadSchemaType.KEYWORD},  # Для бустов по типу страницы
             ]
 
             for index_config in indexes:
@@ -398,8 +412,19 @@ class QdrantWriter(PipelineStep):
         """Создает коллекцию с нужной схемой если она не существует."""
         try:
             # Проверяем, существует ли коллекция
-            self.client.get_collection(self.collection_name)
+            info = self.client.get_collection(self.collection_name)
+            
+            # Если хотим sparse, а его нет — добавим
+            if CONFIG.use_sparse and not info.config.sparse_vectors_config:
+                logger.info("Добавляем sparse_vectors_config для существующей коллекции")
+                self.client.update_collection(
+                    collection_name=self.collection_name,
+                    sparse_vectors_config={"sparse": SparseVectorParams()}  # пустой — ок
+                )
+                logger.success("✅ Добавлен sparse_vectors_config для существующей коллекции")
+            
             logger.info(f"Коллекция {self.collection_name} уже существует")
+            return
         except Exception:
             # Создаем коллекцию с нужной схемой
             logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
@@ -416,10 +441,10 @@ class QdrantWriter(PipelineStep):
                     }
                 )
             }
-            
+
             # Sparse векторы настраиваются отдельно
             sparse_cfg = {"sparse": {}} if CONFIG.use_sparse else None
-            
+
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=vectors_config,
