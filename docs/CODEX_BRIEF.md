@@ -44,7 +44,7 @@
 
 
 ## Qdrant
-- Коллекция: `docs_chatcenter` (конфиг).
+- Коллекция: `chatcenter_docs` (конфиг).
 - Индексы payload: `category` (keyword), `groups_path` (keyword[]), `title` (fulltext).
 - Upsert по `chunk_id`, GC опционально.
 

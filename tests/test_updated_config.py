@@ -16,7 +16,7 @@ def test_updated_config_structure():
             "global": {
                 "qdrant": {
                     "url": "http://localhost:6333",
-                    "collection": "docs_chatcenter"
+                    "collection": "chatcenter_docs"
                 },
                 "indexing": {
                     "batch_size": 256,

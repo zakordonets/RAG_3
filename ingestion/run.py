@@ -21,6 +21,7 @@ from ingestion.pipeline.embedder import Embedder
 from ingestion.pipeline.indexers.qdrant_writer import QdrantWriter
 from ingestion.pipeline.dag import PipelineDAG
 from ingestion.state.state_manager import get_state_manager
+from app.config.app_config import CONFIG
 
 
 def _clear_qdrant_collection(collection_name: str) -> None:
@@ -43,9 +44,10 @@ def _clear_qdrant_collection(collection_name: str) -> None:
             return
 
         # Удаляем все точки из коллекции
+        from qdrant_client.models import Filter
         client.delete(
             collection_name=collection_name,
-            points_selector={"filter": {"must": []}}  # Удаляем все точки
+            points_selector=Filter()  # Пустой фильтр удаляет все точки
         )
 
         logger.success(f"✅ Коллекция {collection_name} полностью очищена")
@@ -72,7 +74,7 @@ def create_docusaurus_dag(config: Dict[str, Any]) -> PipelineDAG:
             oversize_block_limit=config.get("chunk_oversize_block_limit", 1200)
         ),
         Embedder(batch_size=config.get("batch_size", 16)),
-        QdrantWriter(collection_name=config.get("collection_name", "docs_chatcenter"))
+        QdrantWriter(collection_name=config.get("collection_name", CONFIG.qdrant_collection))
     ]
 
     return PipelineDAG(steps)
@@ -93,7 +95,7 @@ def create_website_dag(config: Dict[str, Any]) -> PipelineDAG:
             oversize_block_limit=config.get("chunk_oversize_block_limit", 1200)
         ),
         Embedder(batch_size=config.get("batch_size", 16)),
-        QdrantWriter(collection_name=config.get("collection_name", "docs_chatcenter"))
+        QdrantWriter(collection_name=config.get("collection_name", CONFIG.qdrant_collection))
     ]
 
     return PipelineDAG(steps)
@@ -122,7 +124,7 @@ def run_unified_indexing(
     # Полная очистка коллекции, если запрошено
     if clear_collection:
         logger.warning("🗑️ Полная очистка коллекции перед индексацией")
-        _clear_qdrant_collection(config.get("collection_name", "docs_chatcenter"))
+        _clear_qdrant_collection(config.get("collection_name", CONFIG.qdrant_collection))
 
     try:
         # Создаем адаптер источника
@@ -222,7 +224,7 @@ def main():
 
     parser.add_argument(
         "--collection-name",
-        default="docs_chatcenter",
+        default=CONFIG.qdrant_collection,
         help="Имя коллекции в Qdrant"
     )
 

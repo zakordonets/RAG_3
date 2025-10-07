@@ -173,7 +173,7 @@ python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --clear
 global:
   qdrant:
     url: "http://localhost:6333"
-    collection: "docs_chatcenter"
+    collection: "chatcenter_docs"
   embeddings:
     backend: "auto"
     batch_size: 2
