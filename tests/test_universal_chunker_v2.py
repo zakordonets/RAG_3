@@ -719,7 +719,7 @@ def function2():
         """Тест улучшенного разбиения больших код-блоков"""
         # Создаем большой код-блок
         large_code = "def function():\n" + "    print('line')\n" * 100
-        
+
         chunker = UniversalChunker(max_tokens=50, min_tokens=20)
         block = Block(
             type='code_block',
@@ -729,16 +729,16 @@ def function2():
             start_line=0,
             end_line=0
         )
-        
+
         split_blocks = chunker._split_code_block(block)
-        
+
         # Должно быть разбито на несколько блоков (или остаться одним, если не превышает лимит)
         assert len(split_blocks) >= 1
-        
+
         # Проверяем, что если блок большой, то он разбивается
         if chunker._count_tokens(block.text) > chunker.max_tokens:
             assert len(split_blocks) > 1
-        
+
         # Каждый блок не должен превышать max_tokens (с небольшим допуском)
         for block in split_blocks:
             assert chunker._count_tokens(block.text) <= chunker.max_tokens + 10  # Небольшой допуск
@@ -801,33 +801,33 @@ def function2():
 
 Финальный текст.
 """
-        
+
         chunker = UniversalChunker()
         blocks = chunker._blockify_markdown(text)
-        
+
         # Проверяем, что admonitions собраны как единые блоки
         admonition_blocks = [block for block in blocks if block.type == 'admonition']
         assert len(admonition_blocks) == 2
-        
+
         # Проверяем содержимое admonitions
         tip_block = next(block for block in admonition_blocks if 'tip' in block.text)
         warning_block = next(block for block in admonition_blocks if 'warning' in block.text)
-        
+
         assert 'Это совет.\nМногострочный совет.' in tip_block.text
         assert 'Предупреждение!' in warning_block.text
 
     def test_heading_depth_prepend(self):
         """Тест добавления заголовка с учетом глубины"""
         chunker = UniversalChunker()
-        
+
         # Тест для H1
         result1 = chunker._prepend_heading(['Главный раздел'], 'Текст', heading_depth=1)
         assert result1.startswith('# Главный раздел')
-        
+
         # Тест для H2
         result2 = chunker._prepend_heading(['Главный раздел', 'Подраздел'], 'Текст', heading_depth=2)
         assert result2.startswith('## Подраздел')
-        
+
         # Тест для H3+
         result3 = chunker._prepend_heading(['Главный раздел', 'Подраздел', 'Подподраздел'], 'Текст', heading_depth=3)
         assert result3.startswith('### Подподраздел')
@@ -835,13 +835,13 @@ def function2():
     def test_precise_token_extraction(self):
         """Тест точного извлечения токенов по позициям"""
         chunker = UniversalChunker()
-        
+
         text = "Это тест точного извлечения токенов из текста."
-        
+
         # Тест для обычного текста
         result = chunker._extract_partial_text(text, 3, is_code_like=False)
         assert len(chunker._regex_tokenize(result)) <= 3
-        
+
         # Тест для кода
         code_text = "line1\nline2\nline3\nline4"
         result_code = chunker._extract_partial_text(code_text, 2, is_code_like=True)

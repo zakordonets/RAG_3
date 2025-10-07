@@ -120,7 +120,7 @@ class UniversalChunker:
 
         # Единый regex для токенизации
         self._TOKEN_RE = re.compile(r"[\w\-_/]+|[^\s\w]", re.UNICODE)
-        
+
         # Regex для admonitions
         self.ADMON_START_RE = re.compile(r'^:::\s*(tip|note|info|warning|caution|danger)\b', re.I)
         self.ADMON_END_RE = re.compile(r'^:::\s*$')
@@ -130,10 +130,10 @@ class UniversalChunker:
     def _get_fallback_tokenizer(self):
         """Получает fallback токенизатор"""
         logger.info("Используется fallback токенизация")
-        
+
         def fallback_tokenize(text: str) -> List[str]:
             return re.findall(r"[\w\-_/]+|[^\s\w]", text)
-        
+
         return fallback_tokenize
 
     def _regex_tokenize(self, text: str) -> List[str]:
@@ -159,7 +159,7 @@ class UniversalChunker:
         current_text = []
         current_depth = 0
         start_line = 0
-        
+
         # Состояние для admonitions
         in_admon = False
         admon_buf = []
@@ -1112,17 +1112,17 @@ class UniversalChunker:
         for i, chunk_blocks in enumerate(overlapped_chunks):
             # Извлекаем heading_path
             heading_path = self._extract_heading_path(chunk_blocks)
-            
+
             # Находим глубину последнего заголовка в группе
             last_depth = 1
             for b in reversed(chunk_blocks):
                 if b.type == 'heading':
                     last_depth = b.depth
                     break
-            
+
             # Формируем текст чанка
             chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
-            
+
             # Добавляем заголовок в начало чанка, если его нет
             chunk_text = self._prepend_heading(heading_path, chunk_text, heading_depth=last_depth)
 
@@ -1151,15 +1151,15 @@ class UniversalChunker:
         """Вставляет заголовок в начало чанка как шапку с учетом глубины"""
         if not heading_path:
             return text
-        
+
         # Если текст уже начинается с '#', не дублируем
         if text.lstrip().startswith("#"):
             return text
-        
+
         # Определяем уровень заголовка
         level = 1 if heading_depth <= 1 else (2 if heading_depth == 2 else 3)
         title = heading_path[-1]
-        
+
         return f"{'#' * level} {title}\n\n{text}".strip()
 
     def _extract_partial_text(self, text: str, max_tokens: int, is_code_like: bool = False) -> str:
@@ -1183,7 +1183,7 @@ class UniversalChunker:
         spans = [m.span() for m in self._TOKEN_RE.finditer(text)]
         if not spans:
             return text
-        
+
         take = min(max_tokens, len(spans))
         start = spans[-take][0]
         return text[start:]
