@@ -24,7 +24,8 @@ class DocusaurusAdapter(SourceAdapter):
         docs_root: str,
         site_base_url: str = "https://docs-chatcenter.edna.ru",
         site_docs_prefix: str = "/docs",
-        drop_prefix_all_levels: bool = True
+        drop_prefix_all_levels: bool = True,
+        max_pages: int = None
     ):
         """
         Инициализирует адаптер Docusaurus.
@@ -34,9 +35,11 @@ class DocusaurusAdapter(SourceAdapter):
             site_base_url: Базовый URL сайта
             site_docs_prefix: Префикс для документации в URL
             drop_prefix_all_levels: Удалять числовые префиксы на всех уровнях
+            max_pages: Максимальное количество страниц для обработки
         """
         self.docs_root = Path(docs_root)
         self.site_base_url = site_base_url
+        self.max_pages = max_pages
         self.site_docs_prefix = site_docs_prefix
         self.drop_prefix_all_levels = drop_prefix_all_levels
 
@@ -60,15 +63,22 @@ class DocusaurusAdapter(SourceAdapter):
             drop_prefix_all_levels=self.drop_prefix_all_levels
         ))
         total_files = len(all_items)
-        logger.info(f"📊 Найдено {total_files} файлов для индексации")
+        
+        # Ограничиваем количество файлов если указан max_pages
+        if self.max_pages and self.max_pages < total_files:
+            all_items = all_items[:self.max_pages]
+            logger.info(f"📊 Найдено {total_files} файлов, ограничиваем до {self.max_pages} для индексации")
+        else:
+            logger.info(f"📊 Найдено {total_files} файлов для индексации")
 
         # Теперь обрабатываем файлы с прогрессом
+        actual_files = len(all_items)
         for file_idx, item in enumerate(all_items, 1):
 
             try:
                 # Логируем прогресс каждые 10 файлов или на важных этапах
-                if file_idx % 10 == 0 or file_idx <= 5 or file_idx > total_files - 5:
-                    logger.info(f"📄 Обрабатываем файл {file_idx}/{total_files}: {item.abs_path.name}")
+                if file_idx % 10 == 0 or file_idx <= 5 or file_idx > actual_files - 5:
+                    logger.info(f"📄 Обрабатываем файл {file_idx}/{actual_files}: {item.abs_path.name}")
 
                 # Читаем содержимое файла
                 content_bytes = item.abs_path.read_bytes()

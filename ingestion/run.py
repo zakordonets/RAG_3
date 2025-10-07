@@ -306,6 +306,8 @@ def main():
             logger.error("Для docusaurus источника требуется --docs-root")
             sys.exit(1)
         config["docs_root"] = args.docs_root
+        if args.max_pages:
+            config["max_pages"] = args.max_pages
 
     elif args.source == "website":
         if not args.seed_urls:

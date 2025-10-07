@@ -256,11 +256,11 @@ class QdrantWriter(PipelineStep):
             "vector": vector_dict,  # dense / named-dense
             "payload": qdrant_payload
         }
-        
+
         # Добавляем sparse векторы если есть
         if sparse_vectors:
             point_data["sparse_vectors"] = sparse_vectors
-            
+
         return PointStruct(**point_data)
 
     def _generate_point_id(self, chunk: Dict[str, Any], text: str) -> str:
@@ -446,7 +446,14 @@ class QdrantWriter(PipelineStep):
             self.create_payload_indexes()
             return
 
-        except Exception:
+        except Exception as e:
+            # Если коллекция не существует, создаем её
+            if "not found" in str(e).lower() or "does not exist" in str(e).lower():
+                logger.info(f"Коллекция {self.collection_name} не существует, создаем новую")
+            else:
+                logger.warning(f"Ошибка при проверке коллекции {self.collection_name}: {e}")
+                logger.info(f"Попытка создать коллекцию {self.collection_name} с гибридной схемой")
+            
             # Создаем коллекцию с нуля
             logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
 
