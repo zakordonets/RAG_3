@@ -155,7 +155,7 @@ class QdrantWriter(PipelineStep):
                 # Получаем контекст для логирования
                 doc_id = chunk.get("payload", {}).get("doc_id", "unknown") if isinstance(chunk, dict) else "unknown"
                 site_url = chunk.get("payload", {}).get("site_url", "unknown") if isinstance(chunk, dict) else "unknown"
-                
+
                 point = self._create_point(chunk, dense_vecs[i], sparse_results[i])
                 points.append(point)
             except Exception as e:
@@ -167,8 +167,8 @@ class QdrantWriter(PipelineStep):
             for attempt in range(3):
                 try:
                     self.client.upsert(
-                        collection_name=self.collection_name, 
-                        points=points, 
+                        collection_name=self.collection_name,
+                        points=points,
                         wait=True
                     )
                     return len(points)
