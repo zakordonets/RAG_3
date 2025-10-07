@@ -120,22 +120,20 @@ class UniversalChunker:
 
         # Единый regex для токенизации
         self._TOKEN_RE = re.compile(r"[\w\-_/]+|[^\s\w]", re.UNICODE)
+        
+        # Regex для admonitions
+        self.ADMON_START_RE = re.compile(r'^:::\s*(tip|note|info|warning|caution|danger)\b', re.I)
+        self.ADMON_END_RE = re.compile(r'^:::\s*$')
 
         logger.info(f"UniversalChunker инициализирован: max_tokens={max_tokens}, min_tokens={min_tokens}")
 
     def _get_fallback_tokenizer(self):
         """Получает fallback токенизатор"""
-        if BGE_AVAILABLE:
-            try:
-                model = BGEM3FlagModel("BAAI/bge-m3")
-                return model.tokenizer
-            except Exception as e:
-                logger.warning(f"Не удалось загрузить BGE-M3 токенизатор: {e}")
-
-        # Fallback токенизация
+        logger.info("Используется fallback токенизация")
+        
         def fallback_tokenize(text: str) -> List[str]:
             return re.findall(r"[\w\-_/]+|[^\s\w]", text)
-
+        
         return fallback_tokenize
 
     def _regex_tokenize(self, text: str) -> List[str]:
@@ -161,10 +159,41 @@ class UniversalChunker:
         current_text = []
         current_depth = 0
         start_line = 0
+        
+        # Состояние для admonitions
+        in_admon = False
+        admon_buf = []
+        admon_start = 0
         in_code_block = False
 
         for i, line in enumerate(lines):
             line_stripped = line.strip()
+
+            # Обработка admonitions
+            if self.ADMON_START_RE.match(line_stripped):
+                # Закрыть текущий блок, если открыт
+                if current_text:
+                    block_text = '\n'.join(current_text).strip()
+                    if block_text:
+                        blocks.append(Block(
+                            type=current_type, text=block_text, depth=current_depth,
+                            is_atomic=self._is_atomic_block(current_type),
+                            start_line=start_line, end_line=i-1
+                        ))
+                    current_type, current_text = 'empty', []
+                in_admon, admon_buf, admon_start = True, [line], i
+                continue
+
+            if in_admon:
+                admon_buf.append(line)
+                if self.ADMON_END_RE.match(line_stripped):
+                    # Закрыть admonition как единый блок
+                    blocks.append(Block(
+                        type='admonition', text='\n'.join(admon_buf).strip(),
+                        depth=0, is_atomic=False, start_line=admon_start, end_line=i
+                    ))
+                    in_admon, admon_buf = False, []
+                continue
 
             # Пропускаем пустые строки в начале
             if not line_stripped and not current_text:
@@ -1083,12 +1112,19 @@ class UniversalChunker:
         for i, chunk_blocks in enumerate(overlapped_chunks):
             # Извлекаем heading_path
             heading_path = self._extract_heading_path(chunk_blocks)
-
+            
+            # Находим глубину последнего заголовка в группе
+            last_depth = 1
+            for b in reversed(chunk_blocks):
+                if b.type == 'heading':
+                    last_depth = b.depth
+                    break
+            
             # Формируем текст чанка
             chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
-
+            
             # Добавляем заголовок в начало чанка, если его нет
-            chunk_text = self._prepend_heading(heading_path, chunk_text)
+            chunk_text = self._prepend_heading(heading_path, chunk_text, heading_depth=last_depth)
 
             # Создаем чанк
             chunk = Chunk(
@@ -1110,47 +1146,21 @@ class UniversalChunker:
         logger.info(f"Создано {len(final_chunks)} чанков для документа {meta.get('doc_id', 'unknown')}")
         return final_chunks
 
-    def _add_heading_to_chunk(self, chunk_text: str, heading_path: List[str], chunk_blocks: List[Block]) -> str:
-        """Добавляет заголовок в начало чанка, если его нет"""
-        if not heading_path:
-            return chunk_text
 
-        # Проверяем, есть ли уже заголовок в начале чанка
-        has_heading_at_start = False
-        for block in chunk_blocks:
-            if block.type == 'heading':
-                has_heading_at_start = True
-                break
-
-        if has_heading_at_start:
-            return chunk_text
-
-        # Добавляем последний заголовок из heading_path
-        last_heading = heading_path[-1]
-
-        # Определяем уровень заголовка (H1, H2, H3)
-        heading_level = min(len(heading_path), 3)  # Максимум H3
-        heading_prefix = '#' * heading_level
-
-        # Формируем заголовок
-        formatted_heading = f"{heading_prefix} {last_heading}"
-
-        # Добавляем в начало чанка
-        return f"{formatted_heading}\n\n{chunk_text}"
-
-    def _prepend_heading(self, heading_path: List[str], text: str) -> str:
-        """Вставляет заголовок в начало чанка как шапку"""
+    def _prepend_heading(self, heading_path: List[str], text: str, heading_depth: int = 1) -> str:
+        """Вставляет заголовок в начало чанка как шапку с учетом глубины"""
         if not heading_path:
             return text
-
-        # Берём последний заголовок (до H3), и добавляем как Markdown «шапку»
-        title = heading_path[-1]
-
+        
         # Если текст уже начинается с '#', не дублируем
         if text.lstrip().startswith("#"):
             return text
-
-        return f"{'# ' + title}\n\n{text}".strip()
+        
+        # Определяем уровень заголовка
+        level = 1 if heading_depth <= 1 else (2 if heading_depth == 2 else 3)
+        title = heading_path[-1]
+        
+        return f"{'#' * level} {title}\n\n{text}".strip()
 
     def _extract_partial_text(self, text: str, max_tokens: int, is_code_like: bool = False) -> str:
         """Извлекает частичный текст для overlap с учетом типа блока"""
@@ -1169,15 +1179,14 @@ class UniversalChunker:
                 acc += t
             return "\n".join(out)
 
-        # Обычный режим — по regex-токенам
-        toks = self._regex_tokenize(text)
-        if len(toks) <= max_tokens:
+        # Построим позиции токенов в исходной строке
+        spans = [m.span() for m in self._TOKEN_RE.finditer(text)]
+        if not spans:
             return text
-
-        # Соберём подстроку из конца по количеству токенов
-        cut = " ".join(toks[-max_tokens:])
-        # Небольшой трюк: вернуть хвост в исходном регистре, если он встречается
-        return text[-len(cut) * 2:]  # грубый, но дешёвый эвристический вариант
+        
+        take = min(max_tokens, len(spans))
+        start = spans[-take][0]
+        return text[start:]
 
 
 # Глобальный экземпляр для использования в пайплайне
