@@ -1,4 +1,4 @@
-from ingestion.utils.docusaurus_clean import clean
+from ingestion.utils.docusaurus_utils import clean
 
 
 def test_clean_admonitions_and_jsx():

@@ -1,4 +1,4 @@
-from ingestion.utils.docusaurus_links import replace_contentref
+from ingestion.utils.docusaurus_utils import replace_contentref
 
 
 def test_contentref():

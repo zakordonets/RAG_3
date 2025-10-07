@@ -96,10 +96,18 @@ class QdrantWriter(PipelineStep):
         self.stats["total_chunks"] += len(chunks)
         self.stats["processed_chunks"] += total_processed
 
+        # Логируем долю нулевых dense векторов
+        zero_ratio = 0.0
+        if self.stats["processed_chunks"] > 0:
+            zero_ratio = self.stats["zero_dense_vectors"] / self.stats["processed_chunks"]
+            if zero_ratio > 0.1:  # Если больше 10% нулевых векторов
+                logger.warning(f"⚠️ Высокая доля нулевых dense векторов: {zero_ratio:.1%}")
+
         logger.info(f"QdrantWriter завершен за {elapsed:.2f}s")
         logger.info(f"  Всего чанков: {len(chunks)}")
         logger.info(f"  Успешно обработано: {total_processed}")
         logger.info(f"  Ошибок: {len(chunks) - total_processed}")
+        logger.info(f"  Нулевых dense векторов: {self.stats['zero_dense_vectors']} ({zero_ratio:.1%})")
 
         return self.stats
 
@@ -188,15 +196,15 @@ class QdrantWriter(PipelineStep):
                         logger.error(f"Ошибка записи в Qdrant после 3 попыток: {e}")
                         logger.error(f"Не удалось записать {len(points)} точек в батч")
                         self.stats["last_upsert_points"] = 0
-                        
+
                         # Binary split для переживания "битых" точек
-                        if len(points) > 1:
-                            logger.info(f"Пробуем binary split: разбиваем {len(points)} точек пополам")
-                            mid = len(points) // 2
-                            first_half = self._process_batch([chunks[i] for i in range(mid)])
-                            second_half = self._process_batch([chunks[i] for i in range(mid, len(chunks))])
+                        if len(chunks) > 1:
+                            logger.info(f"Пробуем binary split: разбиваем {len(chunks)} чанков пополам")
+                            mid = len(chunks) // 2
+                            first_half = self._process_batch(chunks[:mid])
+                            second_half = self._process_batch(chunks[mid:])
                             return first_half + second_half
-                        
+
                         return 0
 
         return 0
@@ -423,12 +431,15 @@ class QdrantWriter(PipelineStep):
                 )
                 logger.success("✅ Добавлен sparse_vectors_config для существующей коллекции")
             
+            # Убеждаемся, что индексы есть
+            self.create_payload_indexes()
             logger.info(f"Коллекция {self.collection_name} уже существует")
             return
+            
         except Exception:
-            # Создаем коллекцию с нужной схемой
+            # Создаем коллекцию с нуля
             logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
-
+            
             # Схема векторов: named dense + named sparse
             vectors_config = {
                 "dense": VectorParams(
@@ -441,24 +452,20 @@ class QdrantWriter(PipelineStep):
                     }
                 )
             }
-
+            
             # Sparse векторы настраиваются отдельно
             sparse_cfg = {"sparse": {}} if CONFIG.use_sparse else None
-
+            
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=vectors_config,
                 sparse_vectors_config=sparse_cfg
             )
-
+            
             logger.success(f"✅ Коллекция {self.collection_name} создана с гибридной схемой")
-
+            
             # Создаем индексы payload
             self.create_payload_indexes()
-
-        except Exception as e:
-            logger.error(f"Ошибка при создании коллекции {self.collection_name}: {e}")
-            raise
 
     def get_stats(self) -> Dict[str, Any]:
         """Возвращает статистику обработки."""

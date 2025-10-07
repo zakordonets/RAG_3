@@ -86,7 +86,7 @@ def _markdown_aware_chunk(text: str, max_tokens: int = 600, overlap_tokens: int 
 
     try:
         # Используем UniversalChunker
-        chunker = UniversalChunker(max_tokens=max_tokens, min_tokens=min_tokens//2)
+        chunker = UniversalChunker(max_tokens=max_tokens, min_tokens=max_tokens//2)
         chunks = chunker.chunk(text, 'markdown', {'doc_id': 'temp'})
         # Извлекаем только текст из чанков
         chunks = [chunk.text for chunk in chunks]

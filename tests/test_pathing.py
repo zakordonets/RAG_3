@@ -1,5 +1,5 @@
 from pathlib import Path
-from ingestion.utils.docusaurus_pathing import fs_to_url, clean_segment
+from ingestion.utils.docusaurus_utils import fs_to_url, clean_segment
 
 
 def test_fs_to_url_basic():
