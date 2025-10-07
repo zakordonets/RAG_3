@@ -8,8 +8,7 @@ from loguru import logger
 
 from .base import BaseNormalizer
 from ingestion.adapters.base import PipelineStep, ParsedDoc
-from ingestion.utils.docusaurus_clean import clean
-from ingestion.utils.docusaurus_links import replace_contentref
+from ingestion.utils.docusaurus_utils import clean, replace_contentref
 
 
 class DocusaurusNormalizer(PipelineStep):

@@ -814,19 +814,19 @@ class UniversalChunker:
             # Обновляем heading_path
             if block.type == 'heading':
                 current_heading_path = self._update_heading_path(current_heading_path, block)
-            
+
             # Жёсткая граница: если текущий блок - заголовок H1/H2 и буфер не пуст и ≥ min_tokens
             if block.type == "heading" and getattr(block, "depth", 3) <= 2 and current_tokens >= self.min_tokens and current_chunk:
                 chunks.append(current_chunk)
                 current_chunk = [block]
                 current_tokens = block_tokens
                 continue
-            
+
             # Проверяем, поместится ли блок
             new_tokens = current_tokens + block_tokens
-            
+
             should_close_chunk = False
-            
+
             if new_tokens > self.max_tokens:
                 # Превышен лимит токенов
                 if current_tokens >= self.min_tokens:
@@ -838,7 +838,7 @@ class UniversalChunker:
                 # Проверяем семантическую похожесть со следующим блоком
                 next_block = blocks[i + 1]
                 similarity = self._calculate_block_similarity(block, next_block)
-                
+
                 # Жёсткая граница: если следующий блок — заголовок H1/H2 и уже набрали min_tokens,
                 # закрываем чанк независимо от похожести
                 if next_block.type == "heading" and getattr(next_block, "depth", 3) <= 2 and current_tokens >= self.min_tokens:
@@ -1021,7 +1021,7 @@ class UniversalChunker:
             # Пропускаем искусственные заголовки из _prepend_heading()
             if block.type == 'heading':
                 continue
-                
+
             block_tokens = self._count_tokens(block.text)
 
             if current_tokens + block_tokens <= overlap_tokens:

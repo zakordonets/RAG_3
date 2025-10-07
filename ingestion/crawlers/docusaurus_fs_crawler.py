@@ -6,7 +6,7 @@ import os
 from typing import Dict, Iterable, List, Optional
 
 
-from ingestion.utils.docusaurus_pathing import fs_to_url
+from ingestion.utils.docusaurus_utils import fs_to_url
 
 
 

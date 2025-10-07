@@ -3,9 +3,7 @@
 """
 
 import pytest
-from ingestion.utils.docusaurus_clean import clean
-from ingestion.utils.docusaurus_links import replace_contentref
-from ingestion.utils.docusaurus_pathing import clean_segment, fs_to_url
+from ingestion.utils.docusaurus_utils import clean, replace_contentref, clean_segment, fs_to_url
 from pathlib import Path
 
 

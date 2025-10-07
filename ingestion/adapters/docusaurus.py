@@ -8,7 +8,7 @@ from loguru import logger
 
 from .base import SourceAdapter, RawDoc
 from ingestion.crawlers.docusaurus_fs_crawler import crawl_docs
-from ingestion.utils.docusaurus_pathing import fs_to_url
+from ingestion.utils.docusaurus_utils import fs_to_url
 
 
 class DocusaurusAdapter(SourceAdapter):

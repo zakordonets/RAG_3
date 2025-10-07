@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any
 from dataclasses import dataclass
 
-from ingestion.utils.docusaurus_clean import clean
-from ingestion.utils.docusaurus_links import replace_contentref
+from ingestion.utils.docusaurus_utils import clean, replace_contentref
 from ingestion.chunking.universal_chunker import UniversalChunker
 
 
