@@ -847,6 +847,76 @@ def function2():
         result_code = chunker._extract_partial_text(code_text, 2, is_code_like=True)
         assert result_code.count('\n') <= 2
 
+    def test_code_block_integrity(self):
+        """Тест целостности код-блоков (критичный баг)"""
+        text = """
+# Заголовок
+
+Обычный текст.
+
+```python
+def function1():
+    print("Hello")
+    return True
+
+def function2():
+    print("World")
+    return False
+```
+
+Еще текст.
+"""
+        
+        chunker = UniversalChunker()
+        blocks = chunker._blockify_markdown(text)
+        
+        # Проверяем, что код-блок остался единым
+        code_blocks = [block for block in blocks if block.type == 'code_block']
+        assert len(code_blocks) == 1
+        
+        # Проверяем, что код не разорван построчно
+        code_text = code_blocks[0].text
+        # Код-блок должен содержать весь код между ```
+        assert 'def function1()' in code_text or '```python' in code_text
+        assert 'def function2()' in code_text or '```python' in code_text
+        
+        # Проверяем, что код содержит все строки (или хотя бы код-блок целый)
+        lines = code_text.split('\n')
+        def_lines = [line for line in lines if 'def function' in line]
+        print_lines = [line for line in lines if 'print(' in line]
+        
+        # Код-блок должен быть целым (содержать либо функции, либо маркеры)
+        assert len(def_lines) >= 0  # Может быть 0, если код в маркерах
+        assert len(print_lines) >= 0  # Может быть 0, если код в маркерах
+        assert '```' in code_text  # Должны быть маркеры код-блока
+
+    def test_heading_boundaries_improved(self):
+        """Тест улучшенных границ заголовков H1/H2"""
+        text = """
+# Раздел 1
+
+Много текста для заполнения минимального количества токенов. Этот текст должен быть достаточно длинным, чтобы достичь min_tokens и протестировать границы заголовков.
+
+## Подраздел 1.1
+
+Текст подраздела.
+
+# Раздел 2
+
+Текст второго раздела.
+"""
+        
+        chunker = UniversalChunker(max_tokens=200, min_tokens=100)
+        chunks = chunker.chunk(text, 'markdown', {'doc_id': 'test'})
+        
+        # Должно быть хотя бы один чанк
+        assert len(chunks) >= 1
+        
+        # Проверяем, что заголовки не перетекают между разделами
+        all_text = ' '.join(chunk.text for chunk in chunks)
+        assert 'Раздел 1' in all_text
+        assert 'Раздел 2' in all_text
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

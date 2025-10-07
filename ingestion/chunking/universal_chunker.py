@@ -24,12 +24,7 @@ except ImportError:
     BM25_AVAILABLE = False
     logger.warning("rank_bm25 не установлен, semantic packing будет отключен")
 
-try:
-    from FlagEmbedding import BGEM3FlagModel
-    BGE_AVAILABLE = True
-except ImportError:
-    BGE_AVAILABLE = False
-    logger.warning("FlagEmbedding не установлен, используется fallback токенизация")
+# BGE-M3 модель не используется в fallback токенизаторе
 
 
 @dataclass
@@ -104,16 +99,7 @@ class UniversalChunker:
         self.oversize_block_policy = oversize_block_policy
         self.oversize_block_limit = oversize_block_limit
 
-        # Регулярные выражения для парсинга
-        self.markdown_patterns = {
-            'heading': re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE),
-            'list': re.compile(r'^(\s*[-*+]|\s*\d+\.)\s+.+$', re.MULTILINE),
-            'code_block': re.compile(r'^```[\s\S]*?^```', re.MULTILINE),
-            'inline_code': re.compile(r'`[^`]+`'),
-            'table': re.compile(r'^\|.+\|$', re.MULTILINE),
-            'blockquote': re.compile(r'^>\s+.+$', re.MULTILINE),
-            'admonition': re.compile(r'^:::\w+[\s\S]*?^:::', re.MULTILINE),
-        }
+        # Регулярные выражения для парсинга (используются только специфичные)
 
         # Исправленный детектор списков
         self.LIST_RE = re.compile(r'^\s*(?:[-*+]|\d+\.)\s+')
@@ -321,7 +307,6 @@ class UniversalChunker:
     def _blockify_html_simple(self, text: str) -> List[Block]:
         """Простой HTML парсинг без BeautifulSoup"""
         # Удаляем HTML теги и разбиваем на параграфы
-        import re
         clean_text = re.sub(r'<[^>]+>', '', text)
         paragraphs = re.split(r'\n\s*\n', clean_text)
 
@@ -458,9 +443,9 @@ class UniversalChunker:
         if current_type == 'table' and not (line_stripped.startswith('|') and '|' in line_stripped[1:]):
             return True
 
-        # Если текущий тип - код-блок, а строка не является код-блоком, начинаем новый блок
-        if current_type == 'code_block' and not line_stripped.startswith(('```', '~~~')):
-            return True
+        # Если текущий тип - код-блок, не начинаем новый блок (код-блок атомарный)
+        if current_type == 'code_block':
+            return False
 
         return False
 
@@ -829,12 +814,19 @@ class UniversalChunker:
             # Обновляем heading_path
             if block.type == 'heading':
                 current_heading_path = self._update_heading_path(current_heading_path, block)
-
+            
+            # Жёсткая граница: если текущий блок - заголовок H1/H2 и буфер не пуст и ≥ min_tokens
+            if block.type == "heading" and getattr(block, "depth", 3) <= 2 and current_tokens >= self.min_tokens and current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = [block]
+                current_tokens = block_tokens
+                continue
+            
             # Проверяем, поместится ли блок
             new_tokens = current_tokens + block_tokens
-
+            
             should_close_chunk = False
-
+            
             if new_tokens > self.max_tokens:
                 # Превышен лимит токенов
                 if current_tokens >= self.min_tokens:
@@ -846,7 +838,7 @@ class UniversalChunker:
                 # Проверяем семантическую похожесть со следующим блоком
                 next_block = blocks[i + 1]
                 similarity = self._calculate_block_similarity(block, next_block)
-
+                
                 # Жёсткая граница: если следующий блок — заголовок H1/H2 и уже набрали min_tokens,
                 # закрываем чанк независимо от похожести
                 if next_block.type == "heading" and getattr(next_block, "depth", 3) <= 2 and current_tokens >= self.min_tokens:
@@ -909,10 +901,6 @@ class UniversalChunker:
             union = len(set_a | set_b)
             return intersection / float(union) if union > 0 else 0.0
 
-    def _tokenize_for_bm25(self, text: str) -> List[str]:
-        """Токенизация текста для BM25"""
-        # Используем единую токенизацию
-        return [word.lower() for word in self._regex_tokenize(text) if word.isalnum()]
 
     def _simple_packing(self, blocks: List[Block]) -> List[List[Block]]:
         """Простая упаковка без семантического анализа"""
@@ -1030,6 +1018,10 @@ class UniversalChunker:
 
         # Идем с конца чанка
         for block in reversed(chunk):
+            # Пропускаем искусственные заголовки из _prepend_heading()
+            if block.type == 'heading':
+                continue
+                
             block_tokens = self._count_tokens(block.text)
 
             if current_tokens + block_tokens <= overlap_tokens:
@@ -1120,11 +1112,15 @@ class UniversalChunker:
                     last_depth = b.depth
                     break
 
-            # Формируем текст чанка
-            chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
-
-            # Добавляем заголовок в начало чанка, если его нет
-            chunk_text = self._prepend_heading(heading_path, chunk_text, heading_depth=last_depth)
+            # Формируем текст чанка с учетом overlap
+            if chunk_blocks and hasattr(chunk_blocks[0], 'type') and chunk_blocks[0].type == 'overlap':
+                # Если первый блок - overlap, переносим заголовок после него
+                body = '\n\n'.join(b.text for b in chunk_blocks[1:])
+                chunk_text = chunk_blocks[0].text + "\n\n" + self._prepend_heading(heading_path, body, heading_depth=last_depth)
+            else:
+                # Обычный случай
+                chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
+                chunk_text = self._prepend_heading(heading_path, chunk_text, heading_depth=last_depth)
 
             # Создаем чанк
             chunk = Chunk(
