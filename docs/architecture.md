@@ -89,9 +89,7 @@
    - Обработка ContentRef ссылок
 
    **📦 Utils** (`ingestion/utils/`):
-   - `docusaurus_clean.py` - очистка MDX контента
-   - `docusaurus_links.py` - обработка ContentRef ссылок
-   - `docusaurus_pathing.py` - преобразование путей в URL
+   - `docusaurus_utils.py` - объединенные утилиты для Docusaurus (очистка MDX, обработка ContentRef, преобразование путей)
      - Guides/Manuals: заголовки, параграфы, таблицы, списки, ссылки и контекст изображений (alt/figcaption).
    - Chunker с Quality Gates:
      - Оптимальное разбиение: 60-250 токенов, сохранение целостности параграфов, автоматический выбор между семантическим и простым чанкингом.
@@ -315,13 +313,11 @@ RAG_clean/
 │   ├── state/                    # 📊 Управление состоянием
 │   │   └── state_manager.py     # Единый менеджер состояния
 │   ├── utils/                    # 📦 Утилиты
-│   │   ├── docusaurus_clean.py  # Очистка MDX контента
-│   │   ├── docusaurus_links.py  # Обработка ContentRef
-│   │   └── docusaurus_pathing.py # Преобразование путей в URL
+│   │   └── docusaurus_utils.py  # Объединенные утилиты Docusaurus
 │   ├── crawlers/                 # 🕷️ Краулеры (упрощено)
 │   │   └── docusaurus_fs_crawler.py # Файловый краулер Docusaurus
-│   ├── chunkers/                 # 🧩 Чанкеры (унифицированы)
-│   │   └── unified_chunker.py   # Единый чанкер
+│   ├── chunking/                 # 🧩 Чанкинг (унифицирован)
+│   │   └── universal_chunker.py # Универсальный чанкер
 │   ├── run.py                    # 🚀 Единый entrypoint
 │   ├── indexer.py               # 📦 Простой индексер (совместимость)
 │   └── config.yaml              # ⚙️ Конфигурация

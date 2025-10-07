@@ -2,7 +2,7 @@
 
 
 ## T1: Path Mapping Utils
-**File:** `ingestion/utils/docusaurus_pathing.py`
+**File:** `ingestion/utils/docusaurus_utils.py` (функция `fs_to_url`)
 **Implement:**
 - `clean_segment(seg: str, drop_numeric_prefix: bool=True) -> str`
 - `fs_to_url(docs_root: Path, abs_path: Path, site_base: str, docs_prefix: str, drop_prefix_all_levels: bool=True, add_trailing_slash: bool=False) -> str`
@@ -12,7 +12,7 @@
 
 
 ## T2: Cleaning Utils
-**File:** `ingestion/utils/docusaurus_clean.py`
+**File:** `ingestion/utils/docusaurus_utils.py` (функция `clean`)
 **Implement:** `clean(text: str) -> str`
 **Rules:** см. Brief → Cleaning rules.
 **Edge:** пустой результат → вернуть `""`.
@@ -20,7 +20,7 @@
 
 
 ## T3: ContentRef Resolver
-**File:** `ingestion/utils/docusaurus_links.py`
+**File:** `ingestion/utils/docusaurus_utils.py` (функция `replace_contentref`)
 **Implement:** `replace_contentref(text: str, site_base: str) -> str`
 **Example:** `<ContentRef url="/docs/x/y">Label</ContentRef>` → `Label (см. https://host/docs/x/y)`
 

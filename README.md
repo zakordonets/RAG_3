@@ -22,7 +22,7 @@
 
 - **Многоканальность**: Поддержка Telegram и готовность к другим каналам
 - **Гибридный поиск**: Комбинация dense и sparse эмбеддингов с RRF fusion (100% покрытие sparse векторами)
-- **Семантическое chunking**: Улучшенное разбиение текста на основе сходства
+- **UniversalChunker**: Универсальный структурно-осознанный чанкер с BM25 семантическим анализом
 - **GPU-ускорение**: Unified BGE-M3 embeddings с автоматическим выбором стратегии (ONNX+DirectML, BGE-M3+CPU, Hybrid)
 - **Sparse векторы**: Локальная генерация sparse эмбеддингов через BGE-M3 (без внешнего сервиса)
 - **Умная маршрутизация**: Автоматический fallback между LLM провайдерами
@@ -183,8 +183,11 @@ sources:
     site_base_url: "https://docs-chatcenter.edna.ru"
     site_docs_prefix: "/docs"
     chunk:
-      max_tokens: 300
-      overlap_tokens: 60
+      max_tokens: 600
+      min_tokens: 350
+      overlap_base: 100
+      oversize_block_policy: "split"
+      oversize_block_limit: 1200
 ```
 
 #### Добавление нового источника данных
@@ -405,15 +408,19 @@ python -m pytest tests/test_unified_integration.py -v
 
 # Тесты Docusaurus компонентов
 python -m pytest tests/test_docusaurus_* -v
+
+# Тесты UniversalChunker
+python -m pytest tests/test_universal_chunker_v2.py -v
 ```
 
 ### Покрытие тестами
 
 **✅ Полностью покрыто:**
 - Source Adapters (Docusaurus, Website)
+- UniversalChunker (37 тестов)
+- Docusaurus Utils (28 тестов, объединенные функции)
 - Pipeline DAG и шаги
 - Qdrant Writer и индексация
-- Utils функции (clean, links, pathing)
 - Docusaurus crawler
 
 **📊 Статистика:**

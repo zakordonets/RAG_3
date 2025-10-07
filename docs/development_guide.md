@@ -50,13 +50,11 @@ RAG_clean/
 │   ├── state/               # 📊 Управление состоянием
 │   │   └── state_manager.py # Единый менеджер состояния
 │   ├── utils/               # 📦 Утилиты
-│   │   ├── docusaurus_clean.py  # Очистка MDX
-│   │   ├── docusaurus_links.py  # ContentRef обработка
-│   │   └── docusaurus_pathing.py # Преобразование путей
+│   │   └── docusaurus_utils.py  # Объединенные утилиты Docusaurus
 │   ├── crawlers/            # 🕷️ Краулеры (упрощено)
 │   │   └── docusaurus_fs_crawler.py # Файловый краулер
-│   ├── chunkers/            # 🧩 Чанкеры (унифицированы)
-│   │   └── unified_chunker.py # Единый чанкер
+│   ├── chunking/            # 🧩 Чанкинг (унифицирован)
+│   │   └── universal_chunker.py # Универсальный чанкер
 │   ├── run.py               # 🚀 Единый entrypoint
 │   ├── indexer.py           # 📦 Простой индексер (совместимость)
 │   └── config.yaml          # ⚙️ Конфигурация
@@ -70,8 +68,7 @@ RAG_clean/
 │   ├── tests/               # Старые тесты
 │   └── scripts/             # Устаревшие скрипты
 └── docs/                    # 📚 Документация
-│   │   ├── adaptive_chunker.py # Адаптивный чанкер
-│   │   ├── semantic_chunker.py # Семантический чанкер
+│   │   └── universal_chunker.py # Универсальный чанкер (заменяет все старые)
 │   │   └── __init__.py     # Единый интерфейс экспорта
 │   ├── processors/         # Обработчики контента
 │   │   ├── content_processor.py # Диспетчер парсеров
@@ -1020,51 +1017,92 @@ repos:
 
 ### 1. Обзор архитектуры
 
-Система использует модульную архитектуру для работы с различными источниками данных:
+Система использует единую DAG архитектуру для работы с различными источниками данных:
 
-- **SourcesRegistry** — централизованная конфигурация источников
-- **CrawlerFactory** — фабрика для выбора подходящего краулера
-- **BaseCrawler** — абстрактный базовый класс для всех краулеров
-- **WebsiteCrawler** — для веб-сайтов
-- **LocalFolderCrawler** — для локальных папок
+- **SourceAdapter** — адаптер для получения данных из источника
+- **PipelineStep** — шаг обработки в пайплайне
+- **PipelineDAG** — направленный ациклический граф обработки
+- **StateManager** — управление состоянием документов
+- **UniversalChunker** — универсальный чанкер для всех типов контента
 
 ### 2. Добавление нового источника
 
-#### Шаг 1: Определите тип источника
+#### Шаг 1: Создайте SourceAdapter
 
 ```python
-from app.sources_registry import SourceType
+from ingestion.adapters.base import SourceAdapter, RawDoc
+from pathlib import Path
+from typing import Iterable
 
-# Выберите подходящий тип
-source_type = SourceType.DOCS_SITE  # или другой тип
+class NewSourceAdapter(SourceAdapter):
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+    
+    def iter_documents(self) -> Iterable[RawDoc]:
+        # Логика получения документов из источника
+        for doc in self._fetch_documents():
+            yield RawDoc(
+                uri=doc["url"],
+                abs_path=Path(doc["path"]) if doc.get("path") else None,
+                fetched_at=time.time(),
+                bytes=doc["content"].encode("utf-8"),
+                meta=doc["metadata"]
+            )
 ```
 
-#### Шаг 2: Создайте конфигурацию
+#### Шаг 2: Создайте Normalizer (если нужен)
 
 ```python
-from app.sources_registry import SourceConfig
+from ingestion.normalizers.base import BaseNormalizer
+from ingestion.adapters.base import PipelineStep, ParsedDoc
 
-config = SourceConfig(
-    name="my_new_source",
-    base_url="https://example.com/",
-    source_type=SourceType.DOCS_SITE,
-    strategy="jina",  # или "http", "auto"
-    use_cache=True,
-    sitemap_path="/sitemap.xml",
-    seed_urls=["https://example.com/"],
-    crawl_deny_prefixes=["https://example.com/admin/"],
-    metadata_patterns={
-        r'/docs/': {'section': 'docs', 'user_role': 'all'},
-    },
-    timeout_s=30,
-    crawl_delay_ms=1000,
+class NewSourceNormalizer(PipelineStep):
+    def process(self, doc: ParsedDoc) -> ParsedDoc:
+        # Логика нормализации для нового источника
+        return doc
+```
+
+#### Шаг 3: Обновите `ingestion/run.py`
+
+```python
+def create_new_source_dag(config: Dict[str, Any]) -> PipelineDAG:
+    return PipelineDAG([
+        Parser(),
+        NewSourceNormalizer(),
+        UnifiedChunkerStep(
+            max_tokens=config.get("chunk_max_tokens", 600),
+            min_tokens=config.get("chunk_min_tokens", 350),
+            overlap_base=config.get("chunk_overlap_base", 100),
+            oversize_block_policy=config.get("chunk_oversize_block_policy", "split"),
+            oversize_block_limit=config.get("chunk_oversize_block_limit", 1200)
+        ),
+        Embedder(),
+        QdrantWriter(collection_name=config["collection_name"])
+    ])
+
+def run_unified_indexing(source_type: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    # ... существующий код ...
+    elif source_type == "new_source":
+        adapter = NewSourceAdapter(config)
+        dag = create_new_source_dag(config)
+    # ... остальной код ...
+```
+
+#### Шаг 4: Используйте UniversalChunker
+
+```python
+from ingestion.chunking.universal_chunker import UniversalChunker
+
+chunker = UniversalChunker(
+    max_tokens=600,
+    min_tokens=350,
+    overlap_base=100,
+    oversize_block_policy="split",
+    oversize_block_limit=1200
 )
+
+chunks = chunker.chunk(text, 'markdown', metadata)
 ```
-
-#### Шаг 3: Зарегистрируйте источник
-
-```python
-from app.sources_registry import get_sources_registry
 
 registry = get_sources_registry()
 registry.register(config)
