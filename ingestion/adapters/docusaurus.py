@@ -69,7 +69,7 @@ class DocusaurusAdapter(SourceAdapter):
                 # Логируем прогресс каждые 10 файлов или на важных этапах
                 if file_idx % 10 == 0 or file_idx <= 5 or file_idx > total_files - 5:
                     logger.info(f"📄 Обрабатываем файл {file_idx}/{total_files}: {item.abs_path.name}")
-                
+
                 # Читаем содержимое файла
                 content_bytes = item.abs_path.read_bytes()
 
@@ -99,7 +99,7 @@ class DocusaurusAdapter(SourceAdapter):
             except Exception as e:
                 logger.error(f"Ошибка при обработке файла {item.abs_path}: {e}")
                 continue
-        
+
         logger.success(f"✅ Сканирование завершено: обработано {total_files} файлов")
 
         logger.info(f"Сканирование завершено. Всего файлов: {total_files}")

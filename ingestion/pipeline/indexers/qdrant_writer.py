@@ -67,9 +67,6 @@ class QdrantWriter(PipelineStep):
         logger.info(f"QdrantWriter: начинаем обработку {len(chunks)} чанков")
         start_time = time.time()
 
-        # Убеждаемся, что коллекция существует
-        self.ensure_collection()
-
         # Обрабатываем чанки батчами
         total_processed = 0
         for i in range(0, len(chunks), self.batch_size):
@@ -253,12 +250,18 @@ class QdrantWriter(PipelineStep):
         # Создаем payload
         qdrant_payload = self._create_payload(chunk, text, payload)
 
-        return PointStruct(
-            id=point_id,
-            vector=vector_dict,  # dense / named-dense
-            sparse_vectors=sparse_vectors,  # отдельный аргумент для sparse
-            payload=qdrant_payload
-        )
+        # Создаем структуру точки
+        point_data = {
+            "id": point_id,
+            "vector": vector_dict,  # dense / named-dense
+            "payload": qdrant_payload
+        }
+        
+        # Добавляем sparse векторы если есть
+        if sparse_vectors:
+            point_data["sparse_vectors"] = sparse_vectors
+            
+        return PointStruct(**point_data)
 
     def _generate_point_id(self, chunk: Dict[str, Any], text: str) -> str:
         """Генерирует ID точки для Qdrant."""
@@ -424,19 +427,23 @@ class QdrantWriter(PipelineStep):
         try:
             # Проверяем, существует ли коллекция
             info = self.client.get_collection(self.collection_name)
+            logger.info(f"Коллекция {self.collection_name} уже существует")
 
-            # Если хотим sparse, а его нет — добавим
-            if CONFIG.use_sparse and not info.config.sparse_vectors_config:
-                logger.info("Добавляем sparse_vectors_config для существующей коллекции")
-                self.client.update_collection(
-                    collection_name=self.collection_name,
-                    sparse_vectors_config={"sparse": SparseVectorParams()}  # пустой — ок
-                )
-                logger.success("✅ Добавлен sparse_vectors_config для существующей коллекции")
+            # Проверяем sparse векторы (может не быть в старых версиях Qdrant)
+            try:
+                has_sparse = hasattr(info.config, 'sparse_vectors_config') and info.config.sparse_vectors_config
+                if CONFIG.use_sparse and not has_sparse:
+                    logger.info("Добавляем sparse_vectors_config для существующей коллекции")
+                    self.client.update_collection(
+                        collection_name=self.collection_name,
+                        sparse_vectors_config={"sparse": SparseVectorParams()}  # пустой — ок
+                    )
+                    logger.success("✅ Добавлен sparse_vectors_config для существующей коллекции")
+            except AttributeError:
+                logger.warning("Версия Qdrant не поддерживает sparse_vectors_config, пропускаем")
 
             # Убеждаемся, что индексы есть
             self.create_payload_indexes()
-            logger.info(f"Коллекция {self.collection_name} уже существует")
             return
 
         except Exception:

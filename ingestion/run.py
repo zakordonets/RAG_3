@@ -148,11 +148,11 @@ def run_unified_indexing(
         else:
             raise ValueError(f"Неподдерживаемый тип источника: {source_type}")
 
-        # Создаем индексы payload
+        # Убеждаемся, что коллекция существует и создаем индексы
         writer = dag.steps[-1]  # Последний шаг - QdrantWriter
         if isinstance(writer, QdrantWriter):
-            logger.info("📋 Создание индексов payload...")
-            writer.create_payload_indexes()
+            logger.info("📋 Проверка и создание коллекции...")
+            writer.ensure_collection()
 
         # Запускаем DAG
         logger.info(f"🔄 Запуск DAG с {len(dag.steps)} шагами:")
