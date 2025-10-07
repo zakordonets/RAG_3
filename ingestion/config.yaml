@@ -42,8 +42,11 @@ sources:
 
     # Настройки чанкинга
     chunk:
-      max_tokens: 300  # Уменьшаем размер чанков для экономии памяти
-      overlap_tokens: 60
+      max_tokens: 600
+      min_tokens: 350
+      overlap_base: 100
+      oversize_block_policy: "split"  # keep|split|skip
+      oversize_block_limit: 1200
 
     # Настройки маршрутизации URL
     routing:

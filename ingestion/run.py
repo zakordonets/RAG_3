@@ -34,8 +34,10 @@ def create_docusaurus_dag(config: Dict[str, Any]) -> PipelineDAG:
         ),
         UnifiedChunkerStep(
             max_tokens=config.get("chunk_max_tokens", 600),
-            overlap_tokens=config.get("chunk_overlap_tokens", 120),
-            strategy="simple"
+            min_tokens=config.get("chunk_min_tokens", 350),
+            overlap_base=config.get("chunk_overlap_base", 100),
+            oversize_block_policy=config.get("chunk_oversize_block_policy", "split"),
+            oversize_block_limit=config.get("chunk_oversize_block_limit", 1200)
         ),
         Embedder(batch_size=config.get("batch_size", 16)),
         QdrantWriter(collection_name=config.get("collection_name", "docs_chatcenter"))
@@ -53,8 +55,10 @@ def create_website_dag(config: Dict[str, Any]) -> PipelineDAG:
         BaseNormalizer(),
         UnifiedChunkerStep(
             max_tokens=config.get("chunk_max_tokens", 600),
-            overlap_tokens=config.get("chunk_overlap_tokens", 120),
-            strategy="simple"
+            min_tokens=config.get("chunk_min_tokens", 350),
+            overlap_base=config.get("chunk_overlap_base", 100),
+            oversize_block_policy=config.get("chunk_oversize_block_policy", "split"),
+            oversize_block_limit=config.get("chunk_oversize_block_limit", 1200)
         ),
         Embedder(batch_size=config.get("batch_size", 16)),
         QdrantWriter(collection_name=config.get("collection_name", "docs_chatcenter"))
