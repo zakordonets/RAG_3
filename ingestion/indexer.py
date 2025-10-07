@@ -8,7 +8,7 @@ from qdrant_client.models import PointStruct, SparseVector
 from app.config import CONFIG
 from app.services.core.embeddings import embed_batch_optimized
 import uuid
-from ingestion.chunkers import text_hash
+from ingestion.chunking import text_hash
 
 
 client = QdrantClient(url=CONFIG.qdrant_url, api_key=CONFIG.qdrant_api_key or None)

@@ -12,7 +12,7 @@ from qdrant_client.models import PointStruct, SparseVector
 from app.config import CONFIG
 from app.services.core.embeddings import embed_batch_optimized
 from ingestion.adapters.base import PipelineStep
-from ingestion.chunkers import text_hash
+from ingestion.chunking import text_hash
 
 
 class QdrantWriter(PipelineStep):

@@ -8,7 +8,8 @@ from .universal_chunker import (
     Block,
     OversizePolicy,
     chunk_text_universal,
-    get_universal_chunker
+    get_universal_chunker,
+    text_hash
 )
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'Block',
     'OversizePolicy',
     'chunk_text_universal',
-    'get_universal_chunker'
+    'get_universal_chunker',
+    'text_hash'
 ]

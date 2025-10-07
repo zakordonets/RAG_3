@@ -12,6 +12,11 @@ from dataclasses import dataclass
 from enum import Enum
 from loguru import logger
 
+
+def text_hash(text: str) -> str:
+    """Создает хеш строки для ID."""
+    return hashlib.sha1(text.encode('utf-8')).hexdigest()
+
 try:
     from rank_bm25 import BM25Okapi
     BM25_AVAILABLE = True

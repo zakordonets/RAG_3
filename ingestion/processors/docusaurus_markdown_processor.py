@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from ingestion.utils.docusaurus_clean import clean
 from ingestion.utils.docusaurus_links import replace_contentref
-from ingestion.chunkers.unified_chunker import UnifiedChunker, ChunkingStrategy
+from ingestion.chunking.universal_chunker import UniversalChunker
 
 
 @dataclass
@@ -86,9 +86,11 @@ def _markdown_aware_chunk(text: str, max_tokens: int = 600, overlap_tokens: int 
     overlap_chars = overlap_tokens * 4
 
     try:
-        # Используем UnifiedChunker с простой стратегией
-        chunker = UnifiedChunker(default_strategy=ChunkingStrategy.SIMPLE)
-        chunks = chunker.chunk_text(text)
+        # Используем UniversalChunker
+        chunker = UniversalChunker(max_tokens=max_tokens, min_tokens=min_tokens//2)
+        chunks = chunker.chunk(text, 'markdown', {'doc_id': 'temp'})
+        # Извлекаем только текст из чанков
+        chunks = [chunk.text for chunk in chunks]
 
         # Если получили пустой результат, используем fallback
         if not chunks:
