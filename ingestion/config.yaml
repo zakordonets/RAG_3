@@ -1,0 +1,103 @@
+# Конфигурация для индексации Docusaurus документации
+# Этот файл содержит настройки по умолчанию для различных источников данных
+
+# Глобальные настройки
+global:
+  # Настройки Qdrant
+  qdrant:
+    url: "http://localhost:6333"
+    api_key: null
+    collection: "docs_chatcenter"
+
+  # Настройки эмбеддингов
+  embeddings:
+    backend: "auto"  # auto|onnx|bge|hybrid
+    device: "cpu"    # Принудительно используем CPU для экономии памяти
+    max_length_query: 512
+    max_length_doc: 512  # Уменьшаем максимальную длину документа
+    batch_size: 2   # Очень маленький батч для экономии памяти
+    use_sparse: true
+
+  # Настройки индексации
+  indexing:
+    batch_size: 16  # Очень маленький батч для экономии памяти
+    reindex_mode: "changed"  # changed|all
+
+# Источники данных
+sources:
+  # Docusaurus документация
+  docusaurus:
+    enabled: true
+    docs_root: "C:\\CC_RAG\\docs"
+    site_base_url: "https://docs-chatcenter.edna.ru"
+    site_docs_prefix: "/docs"
+    include_file_extensions: [".md", ".mdx"]
+
+    # Настройки очистки контента
+    cleaning:
+      remove_html_comments: true
+      strip_imports: true
+      strip_custom_components: true
+      strip_admonitions: true
+
+    # Настройки чанкинга
+    chunk:
+      max_tokens: 300  # Уменьшаем размер чанков для экономии памяти
+      overlap_tokens: 60
+
+    # Настройки маршрутизации URL
+    routing:
+      drop_numeric_prefix_in_first_level: true
+      add_trailing_slash: false
+
+    # Настройки индексации
+    indexing:
+      upsert: true
+      delete_missing: false
+
+# Профили конфигурации для разных сценариев
+profiles:
+  # Профиль для разработки
+  development:
+    global:
+      qdrant:
+        url: "http://localhost:6333"
+        collection: "docs_dev"
+    sources:
+      docusaurus:
+        docs_root: "C:\\CC_RAG\\docs"
+        chunk:
+          max_tokens: 300  # Меньшие чанки для разработки
+        indexing:
+          delete_missing: true  # Удаляем отсутствующие файлы в dev
+
+  # Профиль для продакшена
+  production:
+    global:
+      qdrant:
+        url: "http://qdrant:6333"
+        collection: "docs_chatcenter"
+    sources:
+      docusaurus:
+        docs_root: "C:\\CC_RAG\\docs"
+        chunk:
+          max_tokens: 600  # Стандартные чанки для продакшена
+        indexing:
+          delete_missing: false  # Не удаляем файлы в продакшене
+
+  # Профиль для тестирования
+  testing:
+    global:
+      qdrant:
+        url: "http://localhost:6333"
+        collection: "docs_test"
+    sources:
+      docusaurus:
+        docs_root: "C:\\CC_RAG\\docs"
+        chunk:
+          max_tokens: 200  # Очень маленькие чанки для тестов
+          overlap_tokens: 50
+        cleaning:
+          strip_imports: false  # Сохраняем импорты для тестов
+        indexing:
+          delete_missing: true

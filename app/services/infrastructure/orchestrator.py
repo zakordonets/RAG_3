@@ -182,7 +182,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             logger.warning(f"Reranking failed: {e}, using original candidates")
             top_docs = candidates[:6]  # Согласованно с оптимизацией
 
-        # 6. Context Optimization (Codex recommendations)
+        # 6. Context Optimization - управление размером токенов для LLM
         try:
             optimized_docs = context_optimizer.optimize_context(top_docs, normalized)
             logger.info(f"Context optimized: {len(top_docs)} -> {len(optimized_docs)} documents")

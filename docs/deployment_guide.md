@@ -27,7 +27,7 @@
 ```bash
 # Клонирование репозитория
 git clone <repository-url>
-cd RAG_2
+cd RAG_clean
 
 # Создание виртуального окружения
 python -m venv venv
@@ -89,8 +89,8 @@ python app.py
 # Инициализация Qdrant
 python scripts/init_qdrant.py
 
-# Индексация документации
-python -c "from ingestion.pipeline import crawl_and_index; crawl_and_index()"
+# Индексация документации (v4.0.0)
+python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs"
 ```
 
 ### 5. Запуск приложения
@@ -100,7 +100,7 @@ python -c "from ingestion.pipeline import crawl_and_index; crawl_and_index()"
 python wsgi.py
 
 # Terminal 2: Telegram Bot
-python adapters/telegram_polling.py
+python adapters/telegram/polling.py
 ```
 
 ## Docker развертывание

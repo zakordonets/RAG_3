@@ -74,6 +74,9 @@ class AppConfig:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_poll_interval: float = float(os.getenv("TELEGRAM_POLL_INTERVAL", "1.0"))
 
+    # API Configuration
+    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:9000")
+
     # Caching
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     cache_enabled: bool = os.getenv("CACHE_ENABLED", "true").lower() in ("1", "true", "yes")

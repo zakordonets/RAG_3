@@ -20,7 +20,7 @@ from loguru import logger
 from app.config import CONFIG
 from app.utils import write_debug_event
 from app.services.quality.quality_manager import quality_manager
-from .bot import TelegramBot
+# from .bot import TelegramBot  # Не используется в этом файле
 
 
 BOT_TOKEN = CONFIG.telegram_bot_token
@@ -116,7 +116,8 @@ def handle_message(message: dict) -> None:
             response = requests.post(
                 f"{CONFIG.api_base_url}/v1/chat/query",
                 json={
-                    "query": text,
+                    "message": text,
+                    "channel": "telegram",
                     "chat_id": chat_id
                 },
                 timeout=120

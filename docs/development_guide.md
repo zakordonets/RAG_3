@@ -4,50 +4,72 @@
 
 Данное руководство предназначено для разработчиков, которые хотят внести вклад в проект RAG-системы для edna Chat Center или адаптировать его под свои нужды.
 
-## Структура проекта
+## Структура проекта (v4.0.0)
 
 ```
-RAG_2/
+RAG_clean/
 ├── adapters/                 # Адаптеры каналов связи
-│   ├── telegram_polling.py   # Telegram long polling
-│   ├── telegram_enhanced.py  # Enhanced Telegram adapter
-│   └── rate_limiter.py       # Rate limiting utilities
+│   └── telegram/            # Telegram адаптеры
+│       ├── bot.py           # Telegram bot
+│       ├── polling.py       # Long polling
+│       └── rate_limiter.py  # Rate limiting
 ├── app/                      # Core API (Flask)
 │   ├── __init__.py          # Flask app factory
-│   ├── config.py            # Конфигурация
-│   ├── hardware/            # 🆕 Hardware management
+│   ├── config/              # Конфигурация
+│   ├── hardware/            # Hardware management
 │   │   └── gpu_manager.py   # Unified GPU manager
 │   ├── routes/              # API endpoints
 │   │   ├── chat.py          # Chat API
 │   │   ├── admin.py         # Admin API
 │   │   └── quality.py       # Quality metrics API
-│   └── services/            # 🆕 Модульная бизнес-логика
+│   └── services/            # Модульная бизнес-логика
 │       ├── core/            # Основные сервисы
 │       │   ├── embeddings.py    # BGE-M3 embeddings
 │       │   ├── llm_router.py    # LLM роутинг
 │       │   ├── query_processing.py # Обработка запросов
 │       │   └── context_optimizer.py # Оптимизация контекста
-│       ├── indexing/        # Сервисы индексации
-│       │   ├── metadata_aware_indexer.py
-│       │   └── optimized_pipeline.py
+│       ├── indexing/        # Сервисы индексации (упрощено)
 │       ├── quality/         # Сервисы качества
-│       │   ├── quality_manager.py
-│       │   └── ragas_evaluator.py
 │       ├── search/          # Сервисы поиска
-│       │   ├── retrieval.py
-│       │   └── rerank.py
 │       └── infrastructure/  # Инфраструктурные сервисы
-│           ├── connection_pool.py
-│           └── orchestrator.py
-├── ingestion/               # Парсинг и индексация
-│   ├── crawlers/           # 🆕 Объектно-ориентированные краулеры
-│   │   ├── base_crawler.py     # Базовый класс краулера
-│   │   ├── edna_docs_crawler.py # Специализированный crawler для edna docs
-│   │   ├── website_crawler.py  # Краулер веб-сайтов
-│   │   ├── local_folder_crawler.py # Краулер локальных папок
-│   │   └── crawler_factory.py  # Фабрика краулеров
-│   ├── chunkers/           # 🆕 Унифицированная система chunking
-│   │   ├── unified_chunker.py  # Основной chunker с интеллектуальным выбором
+├── ingestion/               # 🏗️ Единая архитектура индексации
+│   ├── adapters/            # 🔌 Адаптеры источников данных
+│   │   ├── base.py          # Базовые интерфейсы
+│   │   ├── docusaurus.py    # Docusaurus адаптер
+│   │   └── website.py       # Website адаптер
+│   ├── normalizers/         # 🧹 Плагины нормализации
+│   │   ├── base.py          # Базовые нормализаторы
+│   │   ├── docusaurus.py    # Docusaurus нормализация
+│   │   └── html.py          # HTML нормализация
+│   ├── pipeline/            # 🧩 Шаги пайплайна
+│   │   ├── dag.py           # Единый DAG пайплайн
+│   │   ├── chunker.py       # Шаг чанкинга
+│   │   ├── embedder.py      # Шаг эмбеддингов
+│   │   └── indexers/
+│   │       └── qdrant_writer.py # Единый писатель в Qdrant
+│   ├── state/               # 📊 Управление состоянием
+│   │   └── state_manager.py # Единый менеджер состояния
+│   ├── utils/               # 📦 Утилиты
+│   │   ├── docusaurus_clean.py  # Очистка MDX
+│   │   ├── docusaurus_links.py  # ContentRef обработка
+│   │   └── docusaurus_pathing.py # Преобразование путей
+│   ├── crawlers/            # 🕷️ Краулеры (упрощено)
+│   │   └── docusaurus_fs_crawler.py # Файловый краулер
+│   ├── chunkers/            # 🧩 Чанкеры (унифицированы)
+│   │   └── unified_chunker.py # Единый чанкер
+│   ├── run.py               # 🚀 Единый entrypoint
+│   ├── indexer.py           # 📦 Простой индексер (совместимость)
+│   └── config.yaml          # ⚙️ Конфигурация
+├── tests/                   # 🧪 Тесты
+│   ├── test_unified_*       # Тесты новой архитектуры (58 тестов)
+│   ├── test_docusaurus_*    # Тесты Docusaurus (43 теста)
+│   └── services/            # Тесты сервисов
+├── backup/                  # 📦 Устаревшие файлы
+│   ├── ingestion/           # Старые компоненты
+│   ├── services/            # Устаревшие сервисы
+│   ├── tests/               # Старые тесты
+│   └── scripts/             # Устаревшие скрипты
+└── docs/                    # 📚 Документация
 │   │   ├── adaptive_chunker.py # Адаптивный чанкер
 │   │   ├── semantic_chunker.py # Семантический чанкер
 │   │   └── __init__.py     # Единый интерфейс экспорта
@@ -97,7 +119,72 @@ pip install -r requirements.txt
 pip install pytest black flake8 mypy pre-commit
 ```
 
-### 2. Pre-commit hooks
+### 2. Единая архитектура индексации (v4.0.0)
+
+**Новая архитектура упрощает разработку и поддержку:**
+
+#### Основные принципы:
+- **Единый DAG пайплайн** для всех источников данных
+- **Source Adapters** для унификации интерфейсов
+- **Pipeline Steps** для модульной обработки
+- **Unified State Manager** для управления состоянием
+
+#### Добавление нового источника данных:
+
+1. **Создайте SourceAdapter:**
+```python
+# ingestion/adapters/my_source.py
+from .base import SourceAdapter, RawDoc
+
+class MySourceAdapter(SourceAdapter):
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+
+    def iter_documents(self) -> Iterable[RawDoc]:
+        # Логика получения документов
+        for doc in self._fetch_documents():
+            yield RawDoc(
+                uri=f"mysource://{doc.id}",
+                bytes=doc.content.encode('utf-8'),
+                meta={"source": "mysource", "type": doc.type}
+            )
+```
+
+2. **Создайте нормализаторы:**
+```python
+# ingestion/normalizers/my_source.py
+from .base import PipelineStep, ParsedDoc
+
+class MySourceNormalizer(PipelineStep):
+    def process(self, doc: ParsedDoc) -> ParsedDoc:
+        # Специфичная нормализация для вашего источника
+        doc.text = self._clean_content(doc.text)
+        return doc
+```
+
+3. **Обновите run.py:**
+```python
+# Добавьте в ingestion/run.py
+def create_my_source_dag(config: Dict[str, Any]) -> PipelineDAG:
+    return PipelineDAG([
+        Parser(),
+        MySourceNormalizer(),
+        UnifiedChunkerStep(),
+        Embedder(),
+        QdrantWriter()
+    ])
+```
+
+4. **Добавьте тесты:**
+```python
+# tests/test_my_source.py
+def test_my_source_adapter():
+    adapter = MySourceAdapter(config)
+    docs = list(adapter.iter_documents())
+    assert len(docs) > 0
+```
+
+### 3. Pre-commit hooks
 
 ```bash
 # Установка pre-commit

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app import create_app
-from app.metrics import get_metrics_collector
+from app.infrastructure.metrics import get_metrics_collector
 import os
 
 app = create_app()

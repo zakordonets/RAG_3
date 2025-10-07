@@ -4,6 +4,7 @@ import os
 import json
 import time
 import asyncio
+import sys
 
 import pytest
 import requests
@@ -18,6 +19,7 @@ os.environ.setdefault("RAGAS_EVALUATION_SAMPLE_RATE", "0")  # отключить
 from app import create_app
 from app.services.quality.quality_manager import quality_manager
 from app.services.quality.ragas_evaluator import ragas_evaluator
+from app.config import CONFIG
 from loguru import logger
 
 

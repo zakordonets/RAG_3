@@ -1,6 +1,20 @@
+"""
+LLM Router - маршрутизатор для работы с различными LLM провайдерами
+
+Модуль обеспечивает единообразный интерфейс для работы с разными LLM провайдерами
+(Yandex GPT, GPT-5, DeepSeek) с автоматическим fallback'ом при недоступности.
+
+Основные функции:
+- Генерация ответов с использованием контекста документов
+- Автоматический fallback между провайдерами
+- Форматирование ответов для Telegram
+- Обработка system-промптов и пользовательских запросов
+
+Используется в RAG-пайплайне: Context Optimization → LLM Router → Formatted Answer
+"""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, List, Optional
 import re
 import requests
 import telegramify_markdown
@@ -10,6 +24,36 @@ from app.utils import write_debug_event
 
 
 DEFAULT_LLM = CONFIG.default_llm
+
+
+def _build_messages(prompt: str, system_prompt: Optional[str] = None, content_key: str = "content") -> List[Dict[str, str]]:
+    """
+    Строит массив сообщений для LLM API.
+
+    Args:
+        prompt: Пользовательский промпт
+        system_prompt: Системный промпт (опционально)
+        content_key: Ключ для содержимого сообщения ("content" или "text")
+
+    Returns:
+        Список сообщений в формате для LLM API
+    """
+    messages = []
+
+    # Добавляем system-промпт, если он указан
+    if system_prompt:
+        messages.append({
+            "role": "system",
+            content_key: system_prompt
+        })
+
+    # Добавляем пользовательский промпт
+    messages.append({
+        "role": "user",
+        content_key: prompt
+    })
+
+    return messages
 
 
 def _escape_markdown_v2(text: str) -> str:
@@ -36,7 +80,23 @@ def _escape_markdown_v2(text: str) -> str:
     return re.sub(r"(?<!\\)([_*\[\]()~`>#+\-=|{}.!])", repl, text)
 
 
-def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | None = None, top_p: float | None = None, system_prompt: str | None = None) -> str:
+def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: Optional[float] = None, top_p: Optional[float] = None, system_prompt: Optional[str] = None) -> str:
+    """
+    Генерирует ответ через Yandex GPT API.
+
+    Args:
+        prompt: Пользовательский промпт
+        max_tokens: Максимальное количество токенов
+        temperature: Температура генерации (0.0-1.0)
+        top_p: Top-p параметр для nucleus sampling
+        system_prompt: Системный промпт
+
+    Returns:
+        Сгенерированный текст ответа
+
+    Raises:
+        Exception: При ошибках API или сети
+    """
     url = f"{CONFIG.yandex_api_url}/completion"
     logger.debug(f"Yandex URL: {url}")
     headers = {
@@ -44,25 +104,13 @@ def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | No
         "x-folder-id": CONFIG.yandex_catalog_id,
         "Content-Type": "application/json",
     }
-    # Allow deterministic overrides from callers (e.g., RAGAS evaluator)
+
+    # Параметры генерации с fallback значениями
     _temperature = 0.2 if temperature is None else float(temperature)
     _top_p = 1.0 if top_p is None else float(top_p)
 
-    # Формируем массив сообщений с поддержкой system-роли
-    messages = []
-
-    # Добавляем system-промпт, если он указан
-    if system_prompt:
-        messages.append({
-            "role": "system",
-            "text": system_prompt
-        })
-
-    # Добавляем пользовательский промпт
-    messages.append({
-        "role": "user",
-        "text": prompt
-    })
+    # Используем общую функцию для формирования messages
+    messages = _build_messages(prompt, system_prompt, content_key="text")
 
     payload = {
         "modelUri": f"gpt://{CONFIG.yandex_catalog_id}/{CONFIG.yandex_model}",
@@ -99,26 +147,29 @@ def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: float | No
     return text
 
 
-def _gpt5_complete(prompt: str, max_tokens: int = 800, system_prompt: str | None = None) -> str:
+def _gpt5_complete(prompt: str, max_tokens: int = 800, system_prompt: Optional[str] = None) -> str:
+    """
+    Генерирует ответ через GPT-5 API.
+
+    Args:
+        prompt: Пользовательский промпт
+        max_tokens: Максимальное количество токенов
+        system_prompt: Системный промпт
+
+    Returns:
+        Сгенерированный текст ответа
+
+    Raises:
+        RuntimeError: Если не настроены credentials для GPT-5
+        Exception: При ошибках API или сети
+    """
     if not CONFIG.gpt5_api_url or not CONFIG.gpt5_api_key:
-        raise RuntimeError("GPT-5 creds are not set")
+        raise RuntimeError("GPT-5 credentials are not configured")
+
     headers = {"Authorization": f"Bearer {CONFIG.gpt5_api_key}", "Content-Type": "application/json"}
 
-    # Формируем массив сообщений с поддержкой system-роли
-    messages = []
-
-    # Добавляем system-промпт, если он указан
-    if system_prompt:
-        messages.append({
-            "role": "system",
-            "content": system_prompt
-        })
-
-    # Добавляем пользовательский промпт
-    messages.append({
-        "role": "user",
-        "content": prompt
-    })
+    # Используем общую функцию для формирования messages
+    messages = _build_messages(prompt, system_prompt, content_key="content")
 
     payload = {"model": CONFIG.gpt5_model or "gpt5", "messages": messages, "max_tokens": max_tokens}
     resp = requests.post(CONFIG.gpt5_api_url, headers=headers, json=payload, timeout=60)
@@ -132,24 +183,25 @@ def _gpt5_complete(prompt: str, max_tokens: int = 800, system_prompt: str | None
     return text
 
 
-def _deepseek_complete(prompt: str, max_tokens: int = 800, system_prompt: str | None = None) -> str:
+def _deepseek_complete(prompt: str, max_tokens: int = 800, system_prompt: Optional[str] = None) -> str:
+    """
+    Генерирует ответ через DeepSeek API.
+
+    Args:
+        prompt: Пользовательский промпт
+        max_tokens: Максимальное количество токенов
+        system_prompt: Системный промпт
+
+    Returns:
+        Сгенерированный текст ответа
+
+    Raises:
+        Exception: При ошибках API или сети
+    """
     headers = {"Authorization": f"Bearer {CONFIG.deepseek_api_key}", "Content-Type": "application/json"}
 
-    # Формируем массив сообщений с поддержкой system-роли
-    messages = []
-
-    # Добавляем system-промпт, если он указан
-    if system_prompt:
-        messages.append({
-            "role": "system",
-            "content": system_prompt
-        })
-
-    # Добавляем пользовательский промпт
-    messages.append({
-        "role": "user",
-        "content": prompt
-    })
+    # Используем общую функцию для формирования messages
+    messages = _build_messages(prompt, system_prompt, content_key="content")
 
     payload = {"model": CONFIG.deepseek_model, "messages": messages, "max_tokens": max_tokens}
     resp = requests.post(CONFIG.deepseek_api_url, headers=headers, json=payload, timeout=60)
@@ -164,28 +216,49 @@ def _deepseek_complete(prompt: str, max_tokens: int = 800, system_prompt: str | 
 
 
 def _format_for_telegram(text: str) -> str:
-    """Форматирует текст через telegramify_markdown.markdownify для MarkdownV2."""
+    """
+    Форматирует текст для отображения в Telegram через MarkdownV2.
+
+    Args:
+        text: Исходный текст в Markdown формате
+
+    Returns:
+        Текст, отформатированный для Telegram MarkdownV2
+    """
     try:
         # Используем markdownify для конвертации в MarkdownV2
         out = telegramify_markdown.markdownify(text)
         if out is None:
-            logger.warning("telegramify_markdown.markdownify returned None")
+            logger.warning("telegramify_markdown.markdownify returned None, using original text")
             return text
         logger.debug("telegramify_markdown.markdownify: preview=%s", out[:120])
         return out
     except Exception as e:
         logger.warning(f"telegramify_markdown.markdownify failed: {type(e).__name__}: {e}")
 
-    # Фолбэк: возвращаем сырой текст
+    # Fallback: возвращаем исходный текст
     return text
 
 
-def generate_answer(query: str, context: list[dict], policy: dict[str, Any] | None = None) -> str:
+def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[Dict[str, Any]] = None) -> str:
     """
-    Генерирует ответ, используя провайдер LLM согласно DEFAULT_LLM и fallback-порядку.
-    - Формирует промпт с источниками (URL) и указанием добавлять "Подробнее".
-    - Порядок: DEFAULT_LLM -> GPT5 -> DEEPSEEK.
-    - Обрабатывает сетевые ошибки, возвращая следующее доступное решение.
+    Генерирует ответ на основе контекста документов с использованием LLM провайдеров.
+
+    Формирует структурированный промпт с контекстом документов и источниками,
+    затем пытается получить ответ от провайдеров в порядке fallback'а.
+
+    Args:
+        query: Пользовательский запрос
+        context: Список документов с контекстом (после оптимизации)
+        policy: Дополнительные параметры политики (не используется)
+
+    Returns:
+        Сгенерированный ответ, отформатированный для Telegram
+
+    Fallback порядок:
+        1. DEFAULT_LLM (обычно Yandex GPT)
+        2. GPT-5
+        3. DeepSeek
     """
     policy = policy or {}
     # Формируем промпт с цитатами и ссылками «Подробнее»
