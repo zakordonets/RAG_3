@@ -7,7 +7,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, SparseVector
+from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType
 
 from app.config import CONFIG
 from app.services.core.embeddings import embed_batch_optimized
@@ -137,30 +137,48 @@ class QdrantWriter(PipelineStep):
             dense_vecs = embedding_results.get('dense_vecs', [[0.0] * 1024] * len(texts))
             sparse_results = embedding_results.get('lexical_weights', [{}] * len(texts))
 
+            # Валидация размерности dense векторов
+            expected_dim = CONFIG.embedding_dim  # 1024 для BGE-M3
+            if any(len(v) != expected_dim for v in dense_vecs):
+                raise ValueError(f"dense dim mismatch: expected {expected_dim}, got {[len(v) for v in dense_vecs]}")
+
         except Exception as e:
             logger.error(f"Ошибка генерации эмбеддингов: {e}")
             # Fallback векторы
-            dense_vecs = [[0.0] * 1024] * len(texts)
+            dense_vecs = [[0.0] * CONFIG.embedding_dim] * len(texts)
             sparse_results = [{}] * len(texts)
 
         # Создаем точки для Qdrant
         points = []
         for i, chunk in enumerate(chunks):
             try:
+                # Получаем контекст для логирования
+                doc_id = chunk.get("payload", {}).get("doc_id", "unknown") if isinstance(chunk, dict) else "unknown"
+                site_url = chunk.get("payload", {}).get("site_url", "unknown") if isinstance(chunk, dict) else "unknown"
+                
                 point = self._create_point(chunk, dense_vecs[i], sparse_results[i])
                 points.append(point)
             except Exception as e:
-                logger.error(f"Ошибка создания точки для чанка {i}: {e}")
+                logger.error(f"Ошибка создания точки для чанка {i} (doc_id={doc_id}, site_url={site_url}): {e}")
                 continue
 
-        # Записываем в Qdrant
+        # Записываем в Qdrant с ретраями
         if points:
-            try:
-                self.client.upsert(collection_name=self.collection_name, points=points)
-                return len(points)
-            except Exception as e:
-                logger.error(f"Ошибка записи в Qdrant: {e}")
-                return 0
+            for attempt in range(3):
+                try:
+                    self.client.upsert(
+                        collection_name=self.collection_name, 
+                        points=points, 
+                        wait=True
+                    )
+                    return len(points)
+                except Exception as e:
+                    logger.warning(f"upsert retry {attempt+1}/3: {e}")
+                    if attempt < 2:  # Не ждем после последней попытки
+                        time.sleep(1.5 * (attempt + 1))
+                    else:
+                        logger.error(f"Ошибка записи в Qdrant после 3 попыток: {e}")
+                        return 0
 
         return 0
 
@@ -187,24 +205,28 @@ class QdrantWriter(PipelineStep):
         # Генерируем ID
         point_id = self._generate_point_id(chunk, text)
 
-        # Создаем вектор
+        # Создаем dense вектор
         vector_dict = {"dense": dense_vec}
 
-        # Добавляем sparse вектор если есть
+        # Создаем sparse вектор если есть
+        sparse_vectors = None
         if CONFIG.use_sparse and sparse_data:
             try:
                 indices, values = self._convert_sparse_data(sparse_data)
                 if indices:
-                    vector_dict["sparse"] = SparseVector(indices=indices, values=values)
+                    sparse_vectors = {"sparse": SparseVector(indices=indices, values=values)}
             except Exception as e:
-                logger.warning(f"Ошибка создания sparse вектора: {e}")
+                doc_id = payload.get("doc_id", "unknown")
+                site_url = payload.get("site_url", "unknown")
+                logger.warning(f"Ошибка создания sparse вектора (doc_id={doc_id}, site_url={site_url}): {e}")
 
         # Создаем payload
         qdrant_payload = self._create_payload(chunk, text, payload)
 
         return PointStruct(
             id=point_id,
-            vector=vector_dict,
+            vector=vector_dict,  # dense / named-dense
+            sparse_vectors=sparse_vectors,  # отдельный аргумент для sparse
             payload=qdrant_payload
         )
 
@@ -227,7 +249,20 @@ class QdrantWriter(PipelineStep):
                     hex32 = hex32.ljust(32, '0')
                 return str(uuid.UUID(hex=hex32))
 
-        # Fallback: создаем детерминистический ID из текста
+        # Fallback 1: используем стабильный ключ doc_id#chunk_index
+        if isinstance(chunk, dict) and "payload" in chunk:
+            payload = chunk["payload"]
+            doc_id = payload.get("doc_id")
+            chunk_index = payload.get("chunk_index")
+            if doc_id and chunk_index is not None:
+                stable_key = f"{doc_id}#{chunk_index}"
+                base_hash = text_hash(stable_key)
+                hex32 = base_hash.replace("-", "")[:32]
+                if len(hex32) < 32:
+                    hex32 = hex32.ljust(32, '0')
+                return str(uuid.UUID(hex=hex32))
+
+        # Fallback 2: создаем детерминистический ID из текста
         raw_hash = text_hash(text)
         hex32 = raw_hash.replace("-", "")[:32]
         # Дополняем до 32 символов если нужно
@@ -242,16 +277,28 @@ class QdrantWriter(PipelineStep):
 
         # Если это уже словарь lexical_weights
         if isinstance(sparse_data, dict):
-            # Сортируем по весам для лучшей производительности
-            sorted_items = sorted(sparse_data.items(), key=lambda x: x[1], reverse=True)
+            # Фильтруем нулевые веса и конвертируем ключи
+            valid_items = []
+            for k, v in sparse_data.items():
+                try:
+                    idx = int(k)
+                    weight = float(v) if not hasattr(v, 'item') else float(v.item())
+                    if weight != 0.0:  # Фильтруем нулевые веса
+                        valid_items.append((idx, weight))
+                except ValueError:
+                    logger.warning(f"sparse key is not int, got {k!r}; check embedder output")
+                    continue
+
+            # Сортируем по абсолютному значению веса (desc)
+            sorted_items = sorted(valid_items, key=lambda x: abs(x[1]), reverse=True)
 
             # Ограничиваем количество для производительности
             max_indices = 1000
             if len(sorted_items) > max_indices:
                 sorted_items = sorted_items[:max_indices]
 
-            indices = [int(k) for k, v in sorted_items]
-            values = [float(v) if not hasattr(v, 'item') else float(v.item()) for k, v in sorted_items]
+            indices = [idx for idx, _ in sorted_items]
+            values = [weight for _, weight in sorted_items]
 
             return indices, values
 
@@ -299,15 +346,15 @@ class QdrantWriter(PipelineStep):
     def create_payload_indexes(self) -> None:
         """Создает индексы для payload полей."""
         try:
-            # Список индексов для создания
+            # Список индексов для создания с enum типами
             indexes = [
-                {"field_name": "category", "field_schema": "keyword"},
-                {"field_name": "groups_path", "field_schema": "keyword"},
-                {"field_name": "title", "field_schema": "text"},
-                {"field_name": "source", "field_schema": "keyword"},
-                {"field_name": "content_type", "field_schema": "keyword"},
-                {"field_name": "canonical_url", "field_schema": "keyword"},
-                {"field_name": "indexed_at", "field_schema": "float"},
+                {"field_name": "category", "field_schema": PayloadSchemaType.KEYWORD},
+                {"field_name": "groups_path", "field_schema": PayloadSchemaType.KEYWORD},
+                {"field_name": "title", "field_schema": PayloadSchemaType.TEXT},
+                {"field_name": "source", "field_schema": PayloadSchemaType.KEYWORD},
+                {"field_name": "content_type", "field_schema": PayloadSchemaType.KEYWORD},
+                {"field_name": "site_url", "field_schema": PayloadSchemaType.KEYWORD},  # Исправлено: site_url вместо canonical_url
+                {"field_name": "indexed_at", "field_schema": PayloadSchemaType.FLOAT},
             ]
 
             for index_config in indexes:
