@@ -7,7 +7,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType, VectorParams, Distance, CreateCollection
+from qdrant_client.models import PointStruct, SparseVector, PayloadSchemaType, VectorParams, Distance
 
 from app.config import CONFIG
 from app.services.core.embeddings import embed_batch_optimized
@@ -40,7 +40,8 @@ class QdrantWriter(PipelineStep):
             "total_chunks": 0,
             "processed_chunks": 0,
             "failed_chunks": 0,
-            "batches_processed": 0
+            "batches_processed": 0,
+            "zero_dense_vectors": 0  # Подсчет нулевых dense векторов
         }
 
     def process(self, data: Any) -> Any:
@@ -150,6 +151,7 @@ class QdrantWriter(PipelineStep):
             # Fallback векторы
             dense_vecs = [[0.0] * CONFIG.embedding_dim] * len(texts)
             sparse_results = [{}] * len(texts)
+            self.stats["zero_dense_vectors"] += len(dense_vecs)
             logger.warning(f"Используем {len(dense_vecs)} нулевых dense векторов в качестве фолбэка")
 
         # Создаем точки для Qdrant
@@ -401,7 +403,7 @@ class QdrantWriter(PipelineStep):
         except Exception:
             # Создаем коллекцию с нужной схемой
             logger.info(f"Создаем коллекцию {self.collection_name} с гибридной схемой")
-            
+
             # Схема векторов: named dense + named sparse
             vectors_config = {
                 "dense": VectorParams(
@@ -415,23 +417,20 @@ class QdrantWriter(PipelineStep):
                 )
             }
             
-            # Добавляем sparse вектор если включен
-            if CONFIG.use_sparse:
-                vectors_config["sparse"] = VectorParams(
-                    size=CONFIG.embedding_dim,  # Размерность sparse вектора
-                    distance=Distance.DOT,
-                )
+            # Sparse векторы настраиваются отдельно
+            sparse_cfg = {"sparse": {}} if CONFIG.use_sparse else None
             
             self.client.create_collection(
                 collection_name=self.collection_name,
-                vectors_config=vectors_config
+                vectors_config=vectors_config,
+                sparse_vectors_config=sparse_cfg
             )
-            
+
             logger.success(f"✅ Коллекция {self.collection_name} создана с гибридной схемой")
-            
+
             # Создаем индексы payload
             self.create_payload_indexes()
-            
+
         except Exception as e:
             logger.error(f"Ошибка при создании коллекции {self.collection_name}: {e}")
             raise

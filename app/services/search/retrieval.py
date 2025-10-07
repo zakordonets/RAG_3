@@ -74,11 +74,11 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
     boosts = boosts or {}
     params = SearchParams(hnsw_ef=EF_SEARCH)
     qfilter = _make_filter(categories)
-    
+
     # Увеличиваем k для лучшего recall в RRF
     k_dense = int(k * 2)
     k_sparse = int(k * 2)
-    
+
     if hasattr(logger, 'debug'):
         logger.debug(f"Hybrid search: k={k}, k_dense={k_dense}, k_sparse={k_sparse}, categories={categories}, sparse_enabled={CONFIG.use_sparse}")
 
