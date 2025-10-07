@@ -41,7 +41,7 @@ def reindex():
     """
     try:
         force_full = bool((request.get_json(silent=True) or {}).get("force_full", False))
-        
+
         # Используем новую единую функцию индексации
         from app.config.app_config import CONFIG
         config = {
@@ -50,14 +50,14 @@ def reindex():
             "site_docs_prefix": CONFIG.site_docs_prefix,
             "collection_name": CONFIG.qdrant_collection
         }
-        
+
         res = run_unified_indexing(
             source_type="docusaurus",
             config=config,
             reindex_mode="full" if force_full else "changed",
             clear_collection=force_full
         )
-        
+
         return jsonify({"status": "done", "force_full": force_full, **res})
     except Exception as e:
         logger.error(f"Reindex failed: {e}")
