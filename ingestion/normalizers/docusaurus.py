@@ -90,6 +90,10 @@ class DocusaurusNormalizer(PipelineStep):
         metadata["normalizer"] = "docusaurus"
         metadata["site_base_url"] = self.site_base_url
 
+        # Сохраняем site_url из исходных метаданных
+        if "site_url" in parsed_doc.metadata:
+            metadata["site_url"] = parsed_doc.metadata["site_url"]
+
         # Обрабатываем frontmatter
         if parsed_doc.frontmatter:
             frontmatter = parsed_doc.frontmatter
@@ -173,15 +177,11 @@ class URLMapper(PipelineStep):
         if "site_url" in updated_metadata and updated_metadata["site_url"]:
             canonical_url = updated_metadata["site_url"]
         else:
-            # Строим уникальный URL на основе пути файла
-            # Используем URI документа для создания уникального пути
-            doc_uri = data.metadata.get("uri", "")
-            if doc_uri.startswith("file://"):
-                # Извлекаем путь файла из URI
-                file_path = doc_uri.replace("file://", "")
-                # Создаем относительный путь от docs_root
-                # Это будет уникальным для каждого файла
-                canonical_url = f"{self.site_base_url}{self.site_docs_prefix}/{file_path}"
+            # Строим правильный URL на основе site_url из метаданных
+            # Используем site_url который уже правильно сформирован в адаптере
+            site_url = updated_metadata.get("site_url", "")
+            if site_url:
+                canonical_url = site_url
             else:
                 # Fallback: используем базовый URL
                 canonical_url = f"{self.site_base_url}{self.site_docs_prefix}"

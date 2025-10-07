@@ -263,11 +263,8 @@ class QdrantWriter(PipelineStep):
         if isinstance(chunk, dict) and "payload" in chunk:
             chunk_id = chunk["payload"].get("chunk_id")
             if chunk_id:
-                # Преобразуем chunk_id в UUID для Qdrant
-                if "#" in chunk_id:
-                    base_hash = text_hash(chunk_id.split("#")[0])
-                else:
-                    base_hash = text_hash(chunk_id)
+                # Используем полный chunk_id (включая chunk_index) для уникальности
+                base_hash = text_hash(chunk_id)
 
                 # Создаем UUID из хеша (берем первые 32 символа)
                 hex32 = base_hash.replace("-", "")[:32]
@@ -430,7 +427,7 @@ class QdrantWriter(PipelineStep):
                 if hasattr(info.config, 'sparse_vectors_config'):
                     sparse_config = info.config.sparse_vectors_config
                     has_sparse = sparse_config is not None and len(sparse_config) > 0
-                
+
                 if CONFIG.use_sparse and not has_sparse:
                     logger.info("Добавляем sparse_vectors_config для существующей коллекции")
                     self.client.update_collection(

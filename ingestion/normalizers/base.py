@@ -182,7 +182,9 @@ class Parser(PipelineStep):
             metadata={
                 "source": raw_doc.meta.get("source", "unknown"),
                 "uri": raw_doc.uri,
-                "file_extension": raw_doc.meta.get("file_extension", "")
+                "file_extension": raw_doc.meta.get("file_extension", ""),
+                # Копируем все метаданные из raw_doc.meta
+                **raw_doc.meta
             }
         )
 

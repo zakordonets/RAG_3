@@ -89,11 +89,14 @@ python app.py
 # Инициализация Qdrant
 python scripts/init_qdrant.py
 
-# Индексация документации (v4.1.0)
+# Индексация документации (v4.2.0)
 python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs"
 
 # Полная переиндексация с очисткой коллекции
 python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --clear-collection
+
+# Индексация с ограничением количества документов (для тестирования)
+python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --max-pages 10
 ```
 
 ### 5. Запуск приложения

@@ -132,7 +132,8 @@ def run_unified_indexing(
             adapter = DocusaurusAdapter(
                 docs_root=config["docs_root"],
                 site_base_url=config.get("site_base_url", "https://docs-chatcenter.edna.ru"),
-                site_docs_prefix=config.get("site_docs_prefix", "/docs")
+                site_docs_prefix=config.get("site_docs_prefix", "/docs"),
+                max_pages=config.get("max_pages")
             )
             dag = create_docusaurus_dag(config)
 
@@ -171,16 +172,20 @@ def run_unified_indexing(
         with get_state_manager() as state_manager:
             logger.info("💾 Сохранение состояния индексации...")
 
+        # Получаем статистику от QdrantWriter
+        writer_stats = {}
+        if isinstance(writer, QdrantWriter):
+            writer_stats = writer.stats
+
         # Логируем финальную статистику
         logger.success(f"🎉 Индексация {source_type} завершена успешно!")
-        if isinstance(stats, dict):
-            logger.info(f"📊 Финальная статистика:")
-            logger.info(f"  📄 Всего чанков: {stats.get('total_chunks', 'N/A')}")
-            logger.info(f"  ✅ Обработано: {stats.get('processed_chunks', 'N/A')}")
-            logger.info(f"  ❌ Ошибок: {stats.get('failed_chunks', 'N/A')}")
-            logger.info(f"  🔢 Батчей: {stats.get('batches_processed', 'N/A')}")
-            logger.info(f"  🎯 Нулевых векторов: {stats.get('zero_dense_vectors', 'N/A')}")
-            logger.info(f"  💾 Последний upsert: {stats.get('last_upsert_points', 'N/A')} точек")
+        logger.info(f"📊 Финальная статистика:")
+        logger.info(f"  📄 Всего чанков: {writer_stats.get('total_chunks', 'N/A')}")
+        logger.info(f"  ✅ Обработано: {writer_stats.get('processed_chunks', 'N/A')}")
+        logger.info(f"  ❌ Ошибок: {writer_stats.get('failed_chunks', 'N/A')}")
+        logger.info(f"  🔢 Батчей: {writer_stats.get('batches_processed', 'N/A')}")
+        logger.info(f"  🎯 Нулевых векторов: {writer_stats.get('zero_dense_vectors', 'N/A')}")
+        logger.info(f"  💾 Последний upsert: {writer_stats.get('last_upsert_points', 'N/A')} точек")
 
         return {
             "success": True,
