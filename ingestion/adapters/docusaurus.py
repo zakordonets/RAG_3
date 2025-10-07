@@ -52,16 +52,24 @@ class DocusaurusAdapter(SourceAdapter):
         """
         logger.info(f"Начинаем сканирование Docusaurus документации в {self.docs_root}")
 
-        total_files = 0
-        for item in crawl_docs(
+        # Сначала подсчитываем общее количество файлов
+        all_items = list(crawl_docs(
             docs_root=self.docs_root,
             site_base_url=self.site_base_url,
             site_docs_prefix=self.site_docs_prefix,
             drop_prefix_all_levels=self.drop_prefix_all_levels
-        ):
-            total_files += 1
+        ))
+        total_files = len(all_items)
+        logger.info(f"📊 Найдено {total_files} файлов для индексации")
+
+        # Теперь обрабатываем файлы с прогрессом
+        for file_idx, item in enumerate(all_items, 1):
 
             try:
+                # Логируем прогресс каждые 10 файлов или на важных этапах
+                if file_idx % 10 == 0 or file_idx <= 5 or file_idx > total_files - 5:
+                    logger.info(f"📄 Обрабатываем файл {file_idx}/{total_files}: {item.abs_path.name}")
+                
                 # Читаем содержимое файла
                 content_bytes = item.abs_path.read_bytes()
 
@@ -88,12 +96,11 @@ class DocusaurusAdapter(SourceAdapter):
 
                 yield raw_doc
 
-                if total_files % 50 == 0:
-                    logger.info(f"Обработано файлов: {total_files}")
-
             except Exception as e:
                 logger.error(f"Ошибка при обработке файла {item.abs_path}: {e}")
                 continue
+        
+        logger.success(f"✅ Сканирование завершено: обработано {total_files} файлов")
 
         logger.info(f"Сканирование завершено. Всего файлов: {total_files}")
 

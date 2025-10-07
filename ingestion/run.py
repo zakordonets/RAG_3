@@ -160,14 +160,27 @@ def run_unified_indexing(
             logger.info(f"  - {step.get_step_name()}")
 
         # Получаем документы от адаптера
+        logger.info("📥 Получение документов от адаптера...")
         documents = adapter.iter_documents()
 
         # Запускаем обработку через DAG
+        logger.info("🔄 Запуск обработки через DAG...")
         stats = dag.run(documents)
 
         # Сохраняем состояние
         with get_state_manager() as state_manager:
             logger.info("💾 Сохранение состояния индексации...")
+
+        # Логируем финальную статистику
+        logger.success(f"🎉 Индексация {source_type} завершена успешно!")
+        if isinstance(stats, dict):
+            logger.info(f"📊 Финальная статистика:")
+            logger.info(f"  📄 Всего чанков: {stats.get('total_chunks', 'N/A')}")
+            logger.info(f"  ✅ Обработано: {stats.get('processed_chunks', 'N/A')}")
+            logger.info(f"  ❌ Ошибок: {stats.get('failed_chunks', 'N/A')}")
+            logger.info(f"  🔢 Батчей: {stats.get('batches_processed', 'N/A')}")
+            logger.info(f"  🎯 Нулевых векторов: {stats.get('zero_dense_vectors', 'N/A')}")
+            logger.info(f"  💾 Последний upsert: {stats.get('last_upsert_points', 'N/A')} точек")
 
         return {
             "success": True,

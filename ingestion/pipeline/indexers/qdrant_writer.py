@@ -103,11 +103,14 @@ class QdrantWriter(PipelineStep):
             if zero_ratio > 0.1:  # Если больше 10% нулевых векторов
                 logger.warning(f"⚠️ Высокая доля нулевых dense векторов: {zero_ratio:.1%}")
 
-        logger.info(f"QdrantWriter завершен за {elapsed:.2f}s")
-        logger.info(f"  Всего чанков: {len(chunks)}")
-        logger.info(f"  Успешно обработано: {total_processed}")
-        logger.info(f"  Ошибок: {len(chunks) - total_processed}")
-        logger.info(f"  Нулевых dense векторов: {self.stats['zero_dense_vectors']} ({zero_ratio:.1%})")
+        logger.success(f"🎉 QdrantWriter завершен за {elapsed:.2f}s")
+        logger.info(f"📊 Итоговая статистика:")
+        logger.info(f"  📄 Всего чанков: {len(chunks)}")
+        logger.info(f"  ✅ Успешно обработано: {total_processed}")
+        logger.info(f"  ❌ Ошибок: {len(chunks) - total_processed}")
+        logger.info(f"  🔢 Батчей обработано: {self.stats['batches_processed']}")
+        logger.info(f"  🎯 Нулевых dense векторов: {self.stats['zero_dense_vectors']} ({zero_ratio:.1%})")
+        logger.info(f"  💾 Последний upsert: {self.stats['last_upsert_points']} точек")
 
         return self.stats
 
