@@ -678,13 +678,13 @@ database:
 
 Текст второго раздела.
 """
-        
+
         chunker = UniversalChunker(max_tokens=200, min_tokens=100)
         chunks = chunker.chunk(text, 'markdown', {'doc_id': 'test'})
-        
+
         # Должно быть хотя бы один чанк
         assert len(chunks) >= 1
-        
+
         # Проверяем, что заголовки включены в чанки
         all_text = ' '.join(chunk.text for chunk in chunks)
         assert 'Раздел 1' in all_text
@@ -707,10 +707,10 @@ def function2():
 
 Дополнительный текст после кода.
 """
-        
+
         chunker = UniversalChunker(max_tokens=150, min_tokens=50)
         chunks = chunker.chunk(text, 'markdown', {'doc_id': 'test'})
-        
+
         # Проверяем, что код не разорван
         code_preserved = any('def function1()' in chunk.text and 'def function2()' in chunk.text for chunk in chunks)
         assert code_preserved
@@ -719,7 +719,7 @@ def function2():
         """Тест улучшенного разбиения больших код-блоков"""
         # Создаем большой код-блок
         large_code = "def function():\n" + "    print('line')\n" * 100
-        
+
         chunker = UniversalChunker(max_tokens=50, min_tokens=20)
         block = Block(
             type='code_block',
@@ -729,12 +729,12 @@ def function2():
             start_line=0,
             end_line=0
         )
-        
+
         split_blocks = chunker._split_code_block(block)
-        
+
         # Должно быть разбито на несколько блоков
         assert len(split_blocks) > 1
-        
+
         # Каждый блок не должен превышать max_tokens (с небольшим допуском)
         for block in split_blocks:
             assert chunker._count_tokens(block.text) <= chunker.max_tokens + 10  # Небольшой допуск
@@ -742,16 +742,16 @@ def function2():
     def test_prepend_heading(self):
         """Тест добавления заголовка в начало чанка"""
         chunker = UniversalChunker()
-        
+
         heading_path = ['Главный раздел', 'Подраздел']
         text = 'Обычный текст без заголовка.'
-        
+
         result = chunker._prepend_heading(heading_path, text)
-        
+
         # Должен быть добавлен заголовок
         assert result.startswith('# Подраздел')
         assert 'Обычный текст без заголовка.' in result
-        
+
         # Если текст уже содержит заголовок, не дублируем
         text_with_heading = '# Существующий заголовок\n\nТекст'
         result2 = chunker._prepend_heading(heading_path, text_with_heading)
@@ -760,7 +760,7 @@ def function2():
     def test_expanded_russian_abbreviations(self):
         """Тест расширенного списка русских сокращений"""
         text = "Это первое предложение. Это второе предложение т.н. Это третье предложение."
-        
+
         chunker = UniversalChunker()
         block = Block(
             type='paragraph',
@@ -770,9 +770,9 @@ def function2():
             start_line=0,
             end_line=0
         )
-        
+
         split_blocks = chunker._split_paragraph_block(block)
-        
+
         # Проверяем, что "т.н." не разорвало предложение
         all_text = ' '.join(block.text for block in split_blocks)
         assert 'т.н.' in all_text
