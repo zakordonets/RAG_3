@@ -18,7 +18,7 @@ spec:
       containers:
       - name: telegram-bot
         image: your-registry/rag-system:latest
-        command: ["python", "adapters/telegram_polling.py"]
+        command: ["python", "adapters/telegram/polling.py"]
         envFrom:
         - configMapRef:
             name: rag-config

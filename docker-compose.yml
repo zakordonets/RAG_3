@@ -100,7 +100,7 @@ services:
   telegram-bot:
     build: .
     container_name: rag-telegram-bot
-    command: python adapters/telegram_polling.py
+    command: python adapters/telegram/polling.py
     environment:
       - PYTHONPATH=/app
       - QDRANT_URL=http://qdrant:6333

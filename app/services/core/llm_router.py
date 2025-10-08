@@ -229,9 +229,17 @@ def _format_for_telegram(text: str) -> str:
         # Используем markdownify для конвертации в MarkdownV2
         out = telegramify_markdown.markdownify(text)
         if out is None:
-            logger.warning("telegramify_markdown.markdownify returned None, using original text")
-            return text
+            logger.warning("telegramify_markdown.markdownify returned None, using escape fallback")
+            return _escape_markdown_v2(text)
         logger.debug("telegramify_markdown.markdownify: preview=%s", out[:120])
+
+        # Дополнительная проверка: если markdownify не экранировал символы, применяем escape
+        if any(char in out for char in ['.', '(', ')', '[', ']', '_', '*', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '!']):
+            # Проверяем, экранированы ли символы
+            if not any(f'\\{char}' in out for char in ['.', '(', ')', '[', ']']):
+                logger.warning("telegramify_markdown.markdownify did not escape symbols, applying escape")
+                return _escape_markdown_v2(out)
+
         return out
     except Exception as e:
         logger.warning(f"telegramify_markdown.markdownify failed: {type(e).__name__}: {e}")
