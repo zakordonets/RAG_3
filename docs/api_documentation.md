@@ -45,7 +45,13 @@ API endpoints сгруппированы по функциональности:
   "sources": [
     {
       "title": "Название источника",
-      "url": "https://example.com"
+      "url": "https://example.com",
+      "auto_merged": true,
+      "merged_chunk_count": 3,
+      "chunk_span": {
+        "start": 2,
+        "end": 4
+      }
     }
   ],
   "channel": "telegram",
@@ -55,6 +61,8 @@ API endpoints сгруппированы по функциональности:
   "security_warnings": []
 }
 ```
+
+**Примечание**: С версии 4.3.0 источники могут содержать дополнительные поля `auto_merged`, `merged_chunk_count`, и `chunk_span`, которые указывают на автоматическое объединение соседних чанков документа. См. [AUTO_MERGE.md](./AUTO_MERGE.md) для подробностей.
 
 **Ошибки**:
 - `400` - Ошибка валидации или безопасности

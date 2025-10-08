@@ -48,7 +48,9 @@ def reindex():
             "docs_root": CONFIG.docs_root,
             "site_base_url": CONFIG.site_base_url,
             "site_docs_prefix": CONFIG.site_docs_prefix,
-            "collection_name": CONFIG.qdrant_collection
+            "collection_name": CONFIG.qdrant_collection,
+            "chunk_max_tokens": CONFIG.chunk_max_tokens,
+            "chunk_min_tokens": CONFIG.chunk_min_tokens
         }
 
         res = run_unified_indexing(

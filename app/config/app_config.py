@@ -47,6 +47,12 @@ class AppConfig:
     reranker_model: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
     reranker_device: str = os.getenv("RERANKER_DEVICE", "cpu")
     reranker_threads: int = int(os.getenv("RERANKER_THREADS", "12"))
+    retrieval_auto_merge_enabled: bool = os.getenv("RETRIEVAL_AUTO_MERGE_ENABLED", "true").lower() in ("1", "true", "yes")
+    retrieval_auto_merge_max_tokens: int = int(os.getenv("RETRIEVAL_AUTO_MERGE_MAX_TOKENS", "1200"))
+    retrieval_auto_merge_use_tiktoken: bool = os.getenv("RETRIEVAL_AUTO_MERGE_USE_TIKTOKEN", "true").lower() in ("1", "true", "yes")
+    retrieval_cache_maxsize: int = int(os.getenv("RETRIEVAL_CACHE_MAXSIZE", "1000"))
+    retrieval_cache_ttl: int = int(os.getenv("RETRIEVAL_CACHE_TTL", "300"))  # seconds
+    qdrant_scroll_batch_size: int = int(os.getenv("QDRANT_SCROLL_BATCH_SIZE", "64"))
 
     # GPU Configuration
     gpu_enabled: bool = os.getenv("GPU_ENABLED", "false").lower() == "true"
@@ -204,6 +210,18 @@ class AppConfig:
         # Validate chunk strategy
         if self.chunk_strategy not in ["adaptive", "simple"]:
             errors.append("chunk_strategy must be one of: adaptive, simple")
+
+        if self.retrieval_auto_merge_max_tokens <= 0:
+            errors.append("retrieval_auto_merge_max_tokens must be positive")
+
+        if self.retrieval_cache_maxsize <= 0:
+            errors.append("retrieval_cache_maxsize must be positive")
+
+        if self.retrieval_cache_ttl <= 0:
+            errors.append("retrieval_cache_ttl must be positive")
+
+        if self.qdrant_scroll_batch_size <= 0:
+            errors.append("qdrant_scroll_batch_size must be positive")
 
         # Validate adaptive thresholds
         if self.adaptive_short_threshold <= 0 or self.adaptive_long_threshold <= 0:

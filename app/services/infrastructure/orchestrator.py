@@ -7,7 +7,7 @@ from typing import Any
 from app.services.core.query_processing import process_query
 from app.services.core.embeddings import embed_unified, embed_dense_optimized, embed_sparse_optimized, embed_dense
 from app.config import CONFIG
-from app.services.search.retrieval import hybrid_search
+from app.services.search.retrieval import hybrid_search, auto_merge_neighbors
 from app.services.search.rerank import rerank
 from app.services.core.llm_router import generate_answer
 from app.services.core.context_optimizer import context_optimizer
@@ -181,6 +181,26 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         except Exception as e:
             logger.warning(f"Reranking failed: {e}, using original candidates")
             top_docs = candidates[:6]  # Согласованно с оптимизацией
+
+        # 5b. Авто-слияние соседних чанков на этапе выдачи
+        if CONFIG.retrieval_auto_merge_enabled and top_docs:
+            try:
+                max_ctx_tokens = getattr(context_optimizer, "max_context_tokens", CONFIG.retrieval_auto_merge_max_tokens)
+                reserve = getattr(context_optimizer, "reserve_for_response", 0.35)
+                available = max(1, int(max_ctx_tokens * (1 - reserve)))
+                merge_limit = min(CONFIG.retrieval_auto_merge_max_tokens, available)
+            except Exception:
+                merge_limit = CONFIG.retrieval_auto_merge_max_tokens
+
+            merged_docs = auto_merge_neighbors(top_docs, max_window_tokens=merge_limit)
+            if merged_docs != top_docs:
+                reduction = len(top_docs) - len(merged_docs)
+                efficiency = 100 * (1 - len(merged_docs) / len(top_docs)) if top_docs else 0
+                logger.debug(
+                    f"Auto-merge: {len(top_docs)} -> {len(merged_docs)} окон "
+                    f"(лимит={merge_limit} токенов, экономия={reduction} чанков, эффективность={efficiency:.1f}%)"
+                )
+            top_docs = merged_docs
 
         # 6. Context Optimization - управление размером токенов для LLM
         try:

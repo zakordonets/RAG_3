@@ -180,12 +180,15 @@ def run_unified_indexing(
         # Логируем финальную статистику
         logger.success(f"🎉 Индексация {source_type} завершена успешно!")
         logger.info(f"📊 Финальная статистика:")
-        logger.info(f"  📄 Всего чанков: {writer_stats.get('total_chunks', 'N/A')}")
-        logger.info(f"  ✅ Обработано: {writer_stats.get('processed_chunks', 'N/A')}")
-        logger.info(f"  ❌ Ошибок: {writer_stats.get('failed_chunks', 'N/A')}")
-        logger.info(f"  🔢 Батчей: {writer_stats.get('batches_processed', 'N/A')}")
+        logger.info(f"  📄 Документов обработано: {stats.get('processed_docs', 0)}/{stats.get('total_docs', 0)}")
+        logger.info(f"  ❌ Ошибок документов: {stats.get('failed_docs', 0)}")
+        logger.info(f"  📦 Всего чанков: {writer_stats.get('total_chunks', 'N/A')}")
+        logger.info(f"  ✅ Чанков обработано: {writer_stats.get('processed_chunks', 'N/A')}")
+        logger.info(f"  ❌ Чанков с ошибками: {writer_stats.get('failed_chunks', 'N/A')}")
+        logger.info(f"  🔢 Батчей обработано: {writer_stats.get('batches_processed', 'N/A')}")
         logger.info(f"  🎯 Нулевых векторов: {writer_stats.get('zero_dense_vectors', 'N/A')}")
         logger.info(f"  💾 Последний upsert: {writer_stats.get('last_upsert_points', 'N/A')} точек")
+        logger.info(f"  ⏱️  Время выполнения: {stats.get('total_time', 0):.2f}s")
 
         return {
             "success": True,
@@ -256,15 +259,22 @@ def main():
     parser.add_argument(
         "--chunk-max-tokens",
         type=int,
-        default=600,
+        default=CONFIG.chunk_max_tokens,
         help="Максимальное количество токенов в чанке"
     )
 
     parser.add_argument(
-        "--chunk-overlap-tokens",
+        "--chunk-min-tokens",
         type=int,
-        default=120,
-        help="Перекрытие между чанками в токенах"
+        default=CONFIG.chunk_min_tokens,
+        help="Минимальное количество токенов в чанке"
+    )
+
+    parser.add_argument(
+        "--chunk-overlap-base",
+        type=int,
+        default=100,
+        help="Базовое перекрытие между чанками в токенах"
     )
 
     parser.add_argument(
@@ -301,7 +311,8 @@ def main():
         "collection_name": args.collection_name,
         "batch_size": args.batch_size,
         "chunk_max_tokens": args.chunk_max_tokens,
-        "chunk_overlap_tokens": args.chunk_overlap_tokens,
+        "chunk_min_tokens": args.chunk_min_tokens,
+        "chunk_overlap_base": args.chunk_overlap_base,
         "reindex_mode": args.reindex_mode
     }
 

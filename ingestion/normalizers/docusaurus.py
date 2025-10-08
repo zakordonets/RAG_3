@@ -72,12 +72,13 @@ class DocusaurusNormalizer(PipelineStep):
 
     def _apply_docusaurus_rules(self, text: str) -> str:
         """Применяет Docusaurus-специфичные правила очистки."""
-        # 1. Очистка JSX, imports, admonitions
-        cleaned_text = clean(text)
-
-        # 2. Замена ContentRef на абсолютные ссылки
+        # 1. Замена ContentRef на абсолютные ссылки (ПЕРЕД очисткой JSX)
+        # Важно: делаем это ДО очистки, чтобы сохранить семантические связи между документами
         if self.site_base_url:
-            cleaned_text = replace_contentref(cleaned_text, self.site_base_url)
+            text = replace_contentref(text, self.site_base_url)
+
+        # 2. Очистка JSX, imports, admonitions
+        cleaned_text = clean(text)
 
         return cleaned_text
 

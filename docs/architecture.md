@@ -49,6 +49,13 @@
    - Fusion: RRF (Reciprocal Rank Fusion) поверх отдельных результатов dense и sparse.
    - Metadata-boost: учет `page_type` (API/FAQ/guide/release_notes), свежести `release_notes` и формы вопроса (вопросительные — boost FAQ).
    - Реранкинг (второй шаг): bge-reranker-v2-m3 по top-N (например, N=30 → топ-10).
+   - **Auto-Merge** (v4.3.0): Автоматическое объединение соседних чанков одного документа после rerank:
+     - Интеллектуальное расширение контекстных окон в рамках token budget
+     - TTL-кеширование документов (maxsize=1000, ttl=300s)
+     - Точная оценка токенов через tiktoken (fallback: эвристика len//4)
+     - Динамическая адаптация под context optimizer
+     - Метаданные слияния: auto_merged, merged_chunk_indices, chunk_span
+     - Документация: [AUTO_MERGE.md](./AUTO_MERGE.md)
    - Ресурсы: Hybrid CPU+GPU инференс (DirectML для dense, CPU для sparse, 12 потоков, 48 GB RAM). Параллелизм ограничиваем по числу потоков.
 
 5) Generation Layer

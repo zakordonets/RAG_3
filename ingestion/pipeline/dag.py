@@ -51,18 +51,22 @@ class PipelineDAG:
         for step in self.steps:
             logger.info(f"  - {step.get_step_name()}")
 
+        # Материализуем итератор в список для подсчета общего количества
+        logger.info("📊 Подготовка документов...")
+        raw_docs = list(raw_docs_iterable)
+        total_docs = len(raw_docs)
+        logger.info(f"📄 Найдено {total_docs} документов для обработки")
+
         # Сбрасываем статистику
         self.stats = {
-            "total_docs": 0,
+            "total_docs": total_docs,
             "processed_docs": 0,
             "failed_docs": 0,
             "step_times": {step.get_step_name(): 0.0 for step in self.steps}
         }
 
         try:
-            for raw_doc in raw_docs_iterable:
-                self.stats["total_docs"] += 1
-
+            for idx, raw_doc in enumerate(raw_docs, 1):
                 try:
                     # Проходим через все шаги пайплайна
                     data = raw_doc
@@ -78,9 +82,10 @@ class PipelineDAG:
 
                     self.stats["processed_docs"] += 1
 
-                    # Логируем прогресс
-                    if self.stats["processed_docs"] % 50 == 0:
-                        logger.info(f"Обработано документов: {self.stats['processed_docs']}")
+                    # Логируем прогресс с информативным выводом
+                    if idx % 10 == 0 or idx == total_docs:
+                        progress_pct = (idx / total_docs * 100) if total_docs > 0 else 0
+                        logger.info(f"📄 Обработано {idx}/{total_docs} документов ({progress_pct:.1f}%)")
 
                 except Exception as e:
                     self.stats["failed_docs"] += 1

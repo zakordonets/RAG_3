@@ -123,7 +123,8 @@ def _process_batch(chunks: list[dict]) -> int:
             return {}
         cleaned = dict(payload)
         # Drop potentially large or duplicate fields
-        for k in ["content", "html", "text", "raw", "raw_content"]:
+        # NOTE: 'text' field is kept as it's used by retrieval, reranking, and LLM services
+        for k in ["content", "html", "raw", "raw_content"]:
             if k in cleaned:
                 cleaned.pop(k, None)
         # Remove None values

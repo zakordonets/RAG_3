@@ -140,7 +140,6 @@ class UnifiedChunkerStep(PipelineStep):
         # Создаем payload
         payload = {
             "chunk_id": chunk_id,
-            "chunk_text": chunk_text,
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
             "doc_id": doc_id,
@@ -183,7 +182,6 @@ class UnifiedChunkerStep(PipelineStep):
         # Создаем payload
         payload = {
             "chunk_id": chunk_id,
-            "chunk_text": chunk_text,
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
             "doc_id": doc_id,

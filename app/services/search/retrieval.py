@@ -1,9 +1,52 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, TypedDict
+from copy import deepcopy
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, Filter, SparseVector, SearchParams, NamedSparseVector, FieldCondition, MatchValue
 from app.config import CONFIG
+from loguru import logger
+
+# Optional tiktoken import
+try:
+    import tiktoken
+    _tokenizer = tiktoken.get_encoding("cl100k_base")
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+    logger.debug("tiktoken not available, using heuristic token estimation (len//4)")
+
+# Optional cachetools import
+try:
+    from cachetools import TTLCache
+    CACHETOOLS_AVAILABLE = True
+except ImportError:
+    CACHETOOLS_AVAILABLE = False
+    logger.debug("cachetools not available, using simple dict cache (no TTL)")
+
+
+# TypedDict для payload структур
+class ChunkPayload(TypedDict, total=False):
+    """Типизация payload для чанков документа."""
+    doc_id: str
+    chunk_index: int
+    text: str
+    chunk_id: str
+    content_length: int
+    auto_merged: bool
+    merged_chunk_indices: list[int]
+    merged_chunk_count: int
+    chunk_span: dict[str, int]
+    merged_chunk_ids: list[str]
+
+
+class DocumentHit(TypedDict, total=False):
+    """Типизация результата поиска."""
+    id: str
+    score: float
+    payload: ChunkPayload
+    rrf_score: float
+    boosted_score: float
 
 
 COLLECTION = CONFIG.qdrant_collection
@@ -14,6 +57,17 @@ W_SPARSE = CONFIG.hybrid_sparse_weight
 
 client = QdrantClient(url=CONFIG.qdrant_url, api_key=CONFIG.qdrant_api_key or None)
 
+# Cache для документов - TTL если доступен cachetools, иначе простой dict
+if CACHETOOLS_AVAILABLE:
+    _doc_chunk_cache: Any = TTLCache(
+        maxsize=CONFIG.retrieval_cache_maxsize,
+        ttl=CONFIG.retrieval_cache_ttl
+    )
+    logger.info(f"Using TTL cache (maxsize={CONFIG.retrieval_cache_maxsize}, ttl={CONFIG.retrieval_cache_ttl}s)")
+else:
+    _doc_chunk_cache: Any = {}
+    logger.warning("Using simple dict cache without TTL (memory may grow over time)")
+
 
 def _make_filter(categories: list[str] | None) -> Filter | None:
     """Создает фильтр по категориям для разделения АРМ."""
@@ -22,6 +76,16 @@ def _make_filter(categories: list[str] | None) -> Filter | None:
     return Filter(
         must=[FieldCondition(key="category", match=MatchValue(value=c)) for c in categories]
     )
+
+
+def clear_chunk_cache():
+    """Очистка кеша чанков документов."""
+    global _doc_chunk_cache
+    if CACHETOOLS_AVAILABLE:
+        _doc_chunk_cache.clear()
+    else:
+        _doc_chunk_cache = {}
+    logger.info("Document chunk cache cleared")
 
 
 def rrf_fuse(dense_hits: list[dict], sparse_hits: list[dict]) -> list[dict]:
@@ -148,7 +212,7 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
             s *= float(boosts[page_type])
 
         # 2. Тип документа на основе URL структуры
-        url = (payload.get("url") or payload.get("site_url") or "").lower()
+        url = (payload.get("url") or payload.get("canonical_url") or payload.get("site_url") or "").lower()
         title = (payload.get("title") or "").lower()
 
         # Обзорная документация (высокий приоритет)
@@ -212,3 +276,234 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
     if hasattr(logger, 'debug'):
         logger.debug(f"Final results: {len(fused[:k])} items")
     return fused[:k]
+
+
+def _estimate_tokens(text: str) -> int:
+    """
+    Оценка количества токенов в тексте.
+    Использует tiktoken для точной оценки, если доступен,
+    иначе fallback на эвристику len//4.
+    """
+    if not text:
+        return 0
+
+    if TIKTOKEN_AVAILABLE and CONFIG.retrieval_auto_merge_use_tiktoken:
+        try:
+            return len(_tokenizer.encode(text))
+        except Exception as e:
+            logger.warning(f"tiktoken encoding failed: {e}, falling back to heuristic")
+
+    # Fallback: эвристика для русского/английского текста
+    tokens = len(text) // 4
+    return tokens if tokens > 0 else 1
+
+
+def _fetch_doc_chunks(doc_id: str, fetch_fn: Callable[[str], list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
+    """
+    Получает все чанки документа по doc_id.
+
+    Args:
+        doc_id: Идентификатор документа
+        fetch_fn: Опциональная функция для инжекции (для тестирования)
+
+    Returns:
+        Список чанков документа, отсортированный по chunk_index
+    """
+    if not doc_id:
+        return []
+
+    if fetch_fn is not None:
+        return fetch_fn(doc_id)
+
+    if doc_id in _doc_chunk_cache:
+        return _doc_chunk_cache[doc_id]
+
+    qfilter = Filter(must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))])
+    offset = None
+    collected: list[Any] = []
+
+    try:
+        while True:
+            batch, offset = client.scroll(
+                collection_name=COLLECTION,
+                scroll_filter=qfilter,
+                with_payload=True,
+                with_vectors=False,
+                limit=CONFIG.qdrant_scroll_batch_size,
+                offset=offset,
+            )
+            if not batch:
+                break
+            collected.extend(batch)
+            if offset is None:
+                break
+    except Exception as e:
+        logger.warning(f"Failed to scroll chunks for doc_id={doc_id}: {e}")
+        return []
+
+    chunks: list[dict[str, Any]] = []
+    for rec in collected:
+        payload = getattr(rec, "payload", {}) or {}
+        chunks.append({
+            "id": getattr(rec, "id", None),
+            "payload": payload
+        })
+
+    chunks.sort(key=lambda x: x["payload"].get("chunk_index", 0))
+    _doc_chunk_cache[doc_id] = chunks
+    return chunks
+
+
+def _build_merged_doc(base_doc: dict, doc_chunks: list[dict[str, Any]], indices: list[int]) -> dict:
+    merged = dict(base_doc)
+    payload = deepcopy(base_doc.get("payload", {}) or {})
+
+    texts = []
+    chunk_indices = []
+    chunk_ids = []
+
+    for idx in indices:
+        chunk_payload = doc_chunks[idx]["payload"] or {}
+        text = chunk_payload.get("text", "")
+        if text:
+            texts.append(text.strip())
+        chunk_index = chunk_payload.get("chunk_index")
+        if chunk_index is not None:
+            chunk_indices.append(chunk_index)
+        chunk_id = chunk_payload.get("chunk_id")
+        if chunk_id:
+            chunk_ids.append(chunk_id)
+
+    merged_text = "\n\n".join(t for t in texts if t).strip()
+    if merged_text:
+        payload["text"] = merged_text
+        payload["content_length"] = len(merged_text)
+
+    payload["auto_merged"] = True
+    payload["merged_chunk_indices"] = chunk_indices
+    payload["merged_chunk_count"] = len(indices)
+    payload["chunk_span"] = {
+        "start": chunk_indices[0] if chunk_indices else payload.get("chunk_index"),
+        "end": chunk_indices[-1] if chunk_indices else payload.get("chunk_index"),
+    }
+
+    if chunk_ids:
+        payload["merged_chunk_ids"] = chunk_ids
+
+    merged["payload"] = payload
+    return merged
+
+
+def auto_merge_neighbors(hits: list[dict], max_window_tokens: int | None = None, fetch_fn: Callable[[str], list[dict[str, Any]]] | None = None) -> list[dict]:
+    if not hits:
+        return []
+
+    if not CONFIG.retrieval_auto_merge_enabled:
+        return hits
+
+    max_tokens = max_window_tokens or CONFIG.retrieval_auto_merge_max_tokens
+    if max_tokens <= 0:
+        return hits
+
+    doc_hits: dict[str, list[tuple[int, dict]]] = {}
+    for doc in hits:
+        payload = doc.get("payload", {}) or {}
+        doc_id = payload.get("doc_id")
+        chunk_index = payload.get("chunk_index")
+        if doc_id is None or chunk_index is None:
+            continue
+        doc_hits.setdefault(doc_id, []).append((chunk_index, doc))
+
+    window_map: dict[tuple[str, int], tuple[tuple[str, tuple[int, ...]], dict]] = {}
+
+    for doc_id, items in doc_hits.items():
+        doc_chunks = _fetch_doc_chunks(doc_id, fetch_fn)
+        if not doc_chunks:
+            for chunk_index, doc in items:
+                key = (doc_id, (chunk_index,))
+                window_map[(doc_id, chunk_index)] = (key, doc)
+            continue
+
+        positions = {
+            chunk["payload"].get("chunk_index"): idx
+            for idx, chunk in enumerate(doc_chunks)
+        }
+        covered: set[int] = set()
+
+        for chunk_index, doc in sorted(items, key=lambda x: x[0]):
+            pos = positions.get(chunk_index)
+            if pos is None:
+                key = (doc_id, (chunk_index,))
+                window_map[(doc_id, chunk_index)] = (key, doc)
+                continue
+
+            if pos in covered and (doc_id, chunk_index) in window_map:
+                continue
+
+            start = end = pos
+            tokens_used = _estimate_tokens(doc_chunks[pos]["payload"].get("text", ""))
+
+            while True:
+                expanded = False
+                if start > 0 and (start - 1) not in covered:
+                    candidate_text = doc_chunks[start - 1]["payload"].get("text", "")
+                    candidate_tokens = _estimate_tokens(candidate_text)
+                    if tokens_used + candidate_tokens <= max_tokens:
+                        start -= 1
+                        tokens_used += candidate_tokens
+                        expanded = True
+                if end + 1 < len(doc_chunks) and (end + 1) not in covered:
+                    candidate_text = doc_chunks[end + 1]["payload"].get("text", "")
+                    candidate_tokens = _estimate_tokens(candidate_text)
+                    if tokens_used + candidate_tokens <= max_tokens:
+                        end += 1
+                        tokens_used += candidate_tokens
+                        expanded = True
+                if not expanded:
+                    break
+
+            indices = list(range(start, end + 1))
+            covered.update(indices)
+
+            merged_indices = [
+                doc_chunks[i]["payload"].get("chunk_index")
+                for i in indices
+            ]
+
+            if len(merged_indices) > 1:
+                merged_doc = _build_merged_doc(doc, doc_chunks, indices)
+            else:
+                merged_doc = doc
+
+            window_key = (doc_id, tuple(merged_indices))
+            for idx in merged_indices:
+                window_map[(doc_id, idx)] = (window_key, merged_doc)
+
+    result: list[dict] = []
+    seen_windows: set[tuple[str, tuple[int, ...]]] = set()
+
+    for doc in hits:
+        payload = doc.get("payload", {}) or {}
+        doc_id = payload.get("doc_id")
+        chunk_index = payload.get("chunk_index")
+
+        if doc_id is None or chunk_index is None:
+            result.append(doc)
+            continue
+
+        mapping = window_map.get((doc_id, chunk_index))
+        if not mapping:
+            window_key = (doc_id, (chunk_index,))
+            if window_key in seen_windows:
+                continue
+            result.append(doc)
+            seen_windows.add(window_key)
+            continue
+
+        window_key, merged_doc = mapping
+        if window_key in seen_windows:
+            continue
+        result.append(merged_doc)
+        seen_windows.add(window_key)
+
+    return result
