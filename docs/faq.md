@@ -184,24 +184,12 @@ python adapters/telegram_polling.py
 
 ### Ошибка "Telegram formatting error"
 
-**Причина**: Проблемы с MarkdownV2 форматированием.
+**Причина**: В HTML остаются неподдерживаемые теги или превышена длина сообщения.
 
 **Решение**:
-1. Проверьте синтаксис Markdown:
-   ```python
-   # Экранируйте специальные символы
-   text = text.replace('_', '\\_')
-   text = text.replace('*', '\\*')
-   ```
-
-2. Используйте fallback режим:
-   ```python
-   # Отправка без форматирования
-   requests.post(API_URL + "/sendMessage", json={
-       "chat_id": chat_id,
-       "text": answer  # Без parse_mode
-   })
-   ```
+1. Проверьте Markdown ответа — адаптер конвертирует его в HTML, поэтому некорректные конструкции попадут в лог.
+2. Ознакомьтесь с логами `TelegramAdapter`: там выводятся длины сообщений, количество частей и первые 300 символов HTML.
+3. При необходимости сократите ответ или обновите allow-list тегов через `TELEGRAM_HTML_ALLOWLIST`.
 
 ### Медленная индексация
 

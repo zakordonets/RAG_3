@@ -1,0 +1,30 @@
+from adapters.telegram_adapter import render_html, split_for_telegram
+
+
+def test_render_html_renders_markdown_and_sources():
+    markdown = (
+        "### Заголовок\n\n"
+        "Текст с <скобками> и ссылкой без whitelista [ссылка](https://evil.example).\n\n"
+        "```\nprint('ok')\n```"
+    )
+    sources = [{"title": "Док", "url": "https://doc.example"}]
+
+    html = render_html(markdown, sources)
+
+    assert "<b>Заголовок</b><br>" in html
+    assert "&lt;скобками&gt;" in html
+    assert "<pre><code>print('ok')</code></pre>" in html
+    assert "Источники" in html
+    assert '<a href="https://doc.example"' in html
+    assert "https://evil.example" not in html
+    assert "<p>" not in html
+
+
+def test_split_for_telegram_respects_limit():
+    segment = "Секция" * 20
+    long_html = "<br>".join([segment] * 120)
+
+    parts = split_for_telegram(long_html, limit=4096)
+
+    assert len(parts) >= 2
+    assert all(len(part) <= 4096 for part in parts)

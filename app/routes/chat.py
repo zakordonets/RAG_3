@@ -45,6 +45,9 @@ def chat_query():
           properties:
             answer:
               type: string
+              deprecated: true
+            answer_markdown:
+              type: string
             sources:
               type: array
               items:
@@ -54,6 +57,8 @@ def chat_query():
                     type: string
                   url:
                     type: string
+            meta:
+              type: object
             channel:
               type: string
             chat_id:

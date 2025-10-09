@@ -12,53 +12,16 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import time
-import json
 import requests
 from loguru import logger
-import telegramify_markdown
-
 from app.config import CONFIG
 from app.utils import write_debug_event
+from adapters.telegram_adapter import render_html, split_for_telegram, send as send_html
 
 
 BOT_TOKEN = CONFIG.telegram_bot_token
 POLL_INTERVAL = CONFIG.telegram_poll_interval
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
-
-def _escape_markdown_v2(text: str) -> str:
-    """Escape special characters for Telegram MarkdownV2.
-    Escapes: _ * [ ] ( ) ~ ` > # + - = | { } . ! and backslash.
-    """
-    if not text:
-        return ""
-    # Escape backslash first
-    text = text.replace("\\", "\\\\")
-    # Escape special characters
-    specials = r"_ * [ ] ( ) ~ ` > # + - = | { } . !".split()
-    for ch in specials:
-        text = text.replace(ch, f"\\{ch}")
-    return text
-
-
-def _to_markdown_v2(text: str) -> str:
-    """Convert/escape text to Telegram-safe MarkdownV2.
-    Tries telegramify_markdown (markdownify/convert) then falls back to escaping.
-    """
-    try:
-        fn = getattr(telegramify_markdown, "markdownify", None)
-        if callable(fn):
-            out = fn(text)
-            if out:
-                return out
-        fn2 = getattr(telegramify_markdown, "convert", None)
-        if callable(fn2):
-            out = fn2(text)
-            if out:
-                return out
-    except Exception as e:
-        logger.warning(f"telegramify_markdown failed: {type(e).__name__}: {e}")
-    return _escape_markdown_v2(text)
 
 
 def create_feedback_keyboard(interaction_id: str) -> dict:
@@ -117,41 +80,24 @@ def handle_callback_query(callback_query: dict) -> None:
 
 
 def send_telegram_message(chat_id: str, answer_data: dict) -> None:
-    """Send a formatted message to Telegram using MarkdownV2 (safely escaped)."""
+    """Send a formatted message to Telegram using HTML render pipeline."""
     try:
-        answer = answer_data.get("answer", "") or ""
+        answer_markdown = (
+            answer_data.get("answer_markdown")
+            or answer_data.get("answer")
+            or ""
+        )
         sources = answer_data.get("sources", []) or []
         interaction_id = answer_data.get("interaction_id", "") or ""
+        reply_markup = answer_data.get("reply_markup")
 
-        # Build readable Markdown message, then convert to safe MarkdownV2
-        message_text = answer
+        html_text = render_html(answer_markdown, sources)
+        parts = split_for_telegram(html_text)
 
-        if sources:
-            message_text += "\n\n**Источники:**\n"
-            for i, source in enumerate(sources[:3], 1):
-                url = source.get("url", "")
-                title = source.get("title", "Источник")
-                message_text += f"{i}. [{title}]({url})\n"
+        if interaction_id and not reply_markup:
+            reply_markup = create_feedback_keyboard(interaction_id)
 
-        # Escape/convert to Telegram MarkdownV2
-        safe_text = _to_markdown_v2(message_text)
-
-        payload: dict = {
-            "chat_id": chat_id,
-            "text": safe_text,
-            "parse_mode": "MarkdownV2",
-        }
-
-        if interaction_id:
-            payload["reply_markup"] = json.dumps(create_feedback_keyboard(interaction_id))
-
-        resp = requests.post(f"{API_URL}/sendMessage", json=payload, timeout=30)
-        if resp.status_code != 200:
-            logger.error(
-                f"Failed to send message to chat {chat_id}: {resp.status_code} - {resp.text}"
-            )
-        else:
-            logger.debug(f"Message sent to chat {chat_id}")
+        send_html(chat_id, parts, reply_markup=reply_markup)
 
     except Exception as e:
         logger.error(f"Error sending Telegram message: {e}")

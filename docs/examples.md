@@ -327,24 +327,15 @@ class ChatCenterBot:
         try:
             response = self.api.ask(message, chat_id, "telegram")
 
-            # Отправляем ответ
+            from adapters.telegram_adapter import render_html  # импортируйте один раз в реальном коде
+
+            html = render_html(response.answer_markdown, response.sources)
+
             await update.message.reply_text(
-                response.answer,
-                parse_mode='MarkdownV2',
+                html,
+                parse_mode='HTML',
                 disable_web_page_preview=True
             )
-
-            # Отправляем источники, если есть
-            if response.sources:
-                sources_text = "\n📚 *Источники:*\n"
-                for source in response.sources[:3]:  # Показываем только первые 3
-                    sources_text += f"• [{source['title']}]({source['url']})\n"
-
-                await update.message.reply_text(
-                    sources_text,
-                    parse_mode='Markdown',
-                    disable_web_page_preview=True
-                )
 
         except Exception as e:
             error_message = f"❌ Произошла ошибка при обработке запроса:\n{str(e)}"

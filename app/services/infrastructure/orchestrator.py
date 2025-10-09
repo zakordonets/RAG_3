@@ -204,7 +204,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
 
         # 6. Context Optimization - управление размером токенов для LLM
         try:
-            optimized_docs = context_optimizer.optimize_context(top_docs, normalized)
+            optimized_docs = context_optimizer.optimize_context(normalized, top_docs)
             logger.info(f"Context optimized: {len(top_docs)} -> {len(optimized_docs)} documents")
         except Exception as e:
             logger.warning(f"Context optimization failed: {e}, using original documents")
@@ -213,7 +213,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         # 7. LLM Generation
         try:
             llm_start = time.time()
-            answer = generate_answer(normalized, optimized_docs, policy={})
+            answer_payload = generate_answer(normalized, optimized_docs, policy={})
             llm_duration = time.time() - llm_start
             logger.info(f"LLM generation in {llm_duration:.2f}s")
             get_metrics_collector().record_llm_duration("default", llm_duration)
@@ -229,19 +229,6 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 "chat_id": chat_id
             }
 
-        # 8. Extract sources
-        sources = []
-        try:
-            for d in optimized_docs:
-                pl = d.get("payload", {}) or {}
-                if pl.get("url"):
-                    sources.append({
-                        "title": pl.get("title", "Документация"),
-                        "url": pl.get("url")
-                    })
-        except Exception as e:
-            logger.warning(f"Source extraction failed: {e}")
-
         total_time = time.time() - start
         logger.info(f"Total processing time: {total_time:.2f}s")
 
@@ -256,7 +243,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             try:
                 # Подготавливаем данные для quality evaluation
                 contexts = [doc.get("payload", {}).get("text", "") for doc in top_docs]
-                source_urls = [source.get("url", "") for source in sources]
+                source_urls = [source.get("url", "") for source in answer_payload.get("sources", [])]
 
                 # Запускаем RAGAS оценку в фоне через ThreadPoolExecutor
                 import concurrent.futures
@@ -272,7 +259,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                         # Запускаем оценку
                         result = loop.run_until_complete(quality_manager.evaluate_interaction(
                             query=normalized,
-                            response=answer,
+                            response=answer_payload.get("answer_markdown", ""),
                             contexts=contexts,
                             sources=source_urls
                         ))
@@ -292,9 +279,15 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Failed to start quality interaction: {e}")
 
+        answer_markdown = answer_payload.get("answer_markdown", "")
+        sources = answer_payload.get("sources", [])
+        meta = answer_payload.get("meta", {})
+
         return {
-            "answer": answer,
+            "answer": answer_markdown,  # временная совместимость с клиентами
+            "answer_markdown": answer_markdown,
             "sources": sources,
+            "meta": meta,
             "channel": channel,
             "chat_id": chat_id,
             "processing_time": total_time,

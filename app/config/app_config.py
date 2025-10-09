@@ -64,6 +64,7 @@ class AppConfig:
 
     # LLMs
     default_llm: str = os.getenv("DEFAULT_LLM", "YANDEX").upper()
+    core_outputs_format: str = os.getenv("CORE_OUTPUTS_FORMAT", "markdown")
     deepseek_api_url: str = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions")
     deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
@@ -79,6 +80,8 @@ class AppConfig:
     # Telegram
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_poll_interval: float = float(os.getenv("TELEGRAM_POLL_INTERVAL", "1.0"))
+    connectors_telegram_format: str = os.getenv("CONNECTORS_TELEGRAM_FORMAT", "HTML")
+    telegram_html_allowlist: str = os.getenv("TELEGRAM_HTML_ALLOWLIST", "")
 
     # API Configuration
     api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:9000")

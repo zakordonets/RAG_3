@@ -21,11 +21,6 @@ def load_llm_router(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         requests_stub.post = _raise_post  # type: ignore[attr-defined]
         stubs["requests"] = requests_stub
 
-    if "telegramify_markdown" not in sys.modules:
-        telegramify_stub = ModuleType("telegramify_markdown")
-        telegramify_stub.markdownify = lambda text: text  # type: ignore[attr-defined]
-        stubs["telegramify_markdown"] = telegramify_stub
-
     if "loguru" not in sys.modules:
         loguru_stub = ModuleType("loguru")
 
@@ -45,6 +40,7 @@ def load_llm_router(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     config_stub = ModuleType("app.config")
     config_stub.CONFIG = SimpleNamespace(  # type: ignore[attr-defined]
         default_llm="YANDEX",
+        core_outputs_format="markdown",
         yandex_api_url="https://example.com",
         yandex_catalog_id="catalog",
         yandex_api_key="key",
@@ -56,12 +52,14 @@ def load_llm_router(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         gpt5_api_url="https://gpt5",
         gpt5_api_key="",
         gpt5_model="model",
+        connectors_telegram_format="HTML",
+        telegram_html_allowlist="",
     )
     stubs["app.config"] = config_stub
 
-    log_utils_stub = ModuleType("app.log_utils")
-    log_utils_stub.write_debug_event = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
-    stubs["app.log_utils"] = log_utils_stub
+    utils_stub = ModuleType("app.utils")
+    utils_stub.write_debug_event = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+    stubs["app.utils"] = utils_stub
 
     for name, module in stubs.items():
         monkeypatch.setitem(sys.modules, name, module)
@@ -91,13 +89,9 @@ def test_generate_answer_omits_null_url(monkeypatch):
         captured_prompt["prompt"] = prompt
         return "stubbed response"
 
-    def fake_format_for_telegram(text: str) -> str:
-        return text
-
     monkeypatch.setattr(llm_router, "_yandex_complete", fake_yandex_complete)
     monkeypatch.setattr(llm_router, "_deepseek_complete", fake_deepseek_complete)
     monkeypatch.setattr(llm_router, "_gpt5_complete", fake_gpt5_complete)
-    monkeypatch.setattr(llm_router, "_format_for_telegram", fake_format_for_telegram)
     monkeypatch.setattr(llm_router, "DEFAULT_LLM", "YANDEX")
 
     context = [
@@ -111,9 +105,27 @@ def test_generate_answer_omits_null_url(monkeypatch):
 
     result = llm_router.generate_answer("Вопрос?", context)
 
-    # Если мок не сработал, проверяем, что функция вернула сообщение об ошибке
-    assert result is not None
-    assert isinstance(result, str)
-    # Проверяем, что URL не отображается как None в промпте (если он был захвачен)
+    assert isinstance(result, dict)
+    assert result["answer_markdown"] == "stubbed response"
+    assert result["sources"] == []
+    assert result["meta"]["provider"] == "YANDEX"
+
     if "prompt" in captured_prompt:
-        assert "🔗 None" not in captured_prompt["prompt"]
+        assert "None" not in captured_prompt["prompt"]
+
+
+def test_apply_url_whitelist_filters_links(monkeypatch):
+    llm_router = load_llm_router(monkeypatch)
+
+    sources = [{"title": "Ok", "url": "https://allowed.example.com/path"}]
+    text = (
+        "Смотрите [док](https://allowed.example.com/path) и [фейк](https://bad.example.com). "
+        "Также есть https://evil.example.com"
+    )
+
+    sanitized = llm_router.apply_url_whitelist(text, sources)
+
+    assert "https://allowed.example.com/path" in sanitized
+    assert "https://bad.example.com" not in sanitized
+    assert "https://evil.example.com" not in sanitized
+    assert "[фейк]" not in sanitized

@@ -74,10 +74,12 @@ Content-Type: application/json
 
 #### Response Fields
 
-- `answer` (string): Сгенерированный ответ с MarkdownV2 форматированием
+- `answer` (string): Сгенерированный ответ (устаревший ключ, будет удалён)
+- `answer_markdown` (string): Ответ ядра в Markdown
 - `sources` (array): Список источников информации
   - `title` (string): Заголовок источника
   - `url` (string): URL документации
+- `meta` (object): Метаданные генерации (LLM, режим, параметры)
 - `channel` (string): Канал, с которого пришел запрос
 - `chat_id` (string): ID чата
 
@@ -413,7 +415,7 @@ wrk -t12 -c400 -d30s -s post.lua http://localhost:9000/v1/chat/query
 - Admin API for health checks and reindexing
 - Hybrid search with dense and sparse embeddings
 - LLM routing with fallback support
-- MarkdownV2 formatting for Telegram
+- HTML-адаптер для Telegram с санитайзером
 
 ### Planned Features
 - Web interface

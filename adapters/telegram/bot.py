@@ -8,11 +8,10 @@ import time
 import requests
 from typing import Dict, Any, Optional
 from loguru import logger
-import telegramify_markdown
-
 from app.config import CONFIG
 from .rate_limiter import RateLimiter
 from app.infrastructure import get_metrics_collector
+from adapters.telegram_adapter import render_html, split_for_telegram, send as send_html
 
 
 class TelegramBot:
@@ -60,14 +59,14 @@ class TelegramBot:
         logger.info(f"Poll interval: {poll_interval}s")
         logger.info(f"Timeout: {timeout}s")
 
-    def send_message(self, chat_id: str, text: str, parse_mode: str = "MarkdownV2") -> bool:
+    def send_message(self, chat_id: str, text: str, reply_markup: Optional[Dict[str, Any]] = None) -> bool:
         """
         Отправляет сообщение в Telegram.
 
         Args:
             chat_id: ID чата
             text: Текст сообщения
-            parse_mode: Режим парсинга (MarkdownV2, HTML)
+            reply_markup: Объект клавиатуры
 
         Returns:
             True если сообщение отправлено успешно
@@ -78,30 +77,12 @@ class TelegramBot:
                 logger.warning(f"Rate limit exceeded for user {chat_id}")
                 return False
 
-            # Форматируем текст для Telegram
-            if parse_mode == "MarkdownV2":
-                formatted_text = telegramify_markdown.convert(text)
-            else:
-                formatted_text = text
-
-            # Отправляем сообщение
-            response = requests.post(
-                f"{self.api_url}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": formatted_text,
-                    "parse_mode": parse_mode
-                },
-                timeout=self.timeout
-            )
-
-            if response.status_code == 200:
-                self.metrics.increment_counter("telegram_messages_sent_total")
-                logger.debug(f"Message sent to {chat_id}")
-                return True
-            else:
-                logger.error(f"Failed to send message to {chat_id}: {response.status_code} - {response.text}")
-                return False
+            html_text = render_html(text or "", [])
+            parts = split_for_telegram(html_text)
+            send_html(chat_id, parts, reply_markup=reply_markup)
+            self.metrics.increment_counter("telegram_messages_sent_total")
+            logger.debug(f"Message sent to {chat_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Error sending message to {chat_id}: {e}")
@@ -119,19 +100,16 @@ class TelegramBot:
             True если сообщение отправлено успешно
         """
         try:
-            # Формируем текст ответа
-            text = answer.get("answer", "")
-            sources = answer.get("sources", [])
+            answer_markdown = answer.get("answer_markdown") or answer.get("answer") or ""
+            sources = answer.get("sources", []) or []
+            reply_markup = answer.get("reply_markup")
 
-            if sources:
-                text += "\n\n**Источники:**\n"
-                for i, source in enumerate(sources[:3], 1):  # Ограничиваем 3 источниками
-                    url = source.get("url", "")
-                    title = source.get("title", "Без названия")
-                    text += f"{i}. [{title}]({url})\n"
-
-            # Отправляем сообщение
-            return self.send_message(chat_id, text)
+            html_text = render_html(answer_markdown, sources)
+            parts = split_for_telegram(html_text)
+            send_html(chat_id, parts, reply_markup=reply_markup)
+            self.metrics.increment_counter("telegram_messages_sent_total")
+            logger.debug(f"Rich answer sent to {chat_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Error sending rich answer to {chat_id}: {e}")
