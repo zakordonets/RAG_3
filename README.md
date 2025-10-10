@@ -1013,13 +1013,27 @@ MIT License
 ## 📞 Поддержка
 
 ### Документация
-- **Основная документация**: [docs/](docs/)
-- **Автотесты и CI/CD**: [docs/autotests_integration_report.md](docs/autotests_integration_report.md)
-- **Phase 2 RAGAS Quality System**: [docs/phase2_ragas_quality_system.md](docs/phase2_ragas_quality_system.md)
-- **API Документация**: [OpenAPI/Swagger](docs/api_documentation.md)
-- **RAGAS Quality System (Legacy)**: [docs/ragas_quality_system.md](docs/ragas_quality_system.md)
-- **GPU настройка (Linux)**: [ROCm](docs/gpu_setup.md)
-- **GPU настройка (Windows)**: [DirectML](docs/gpu_setup_windows.md)
+
+> **📖 Полная документация: [docs/README.md](docs/README.md)**
+
+**Быстрый старт:**
+- 🚀 [Quickstart Guide](docs/quickstart.md) - Первые шаги за 5 минут
+- 💡 [Примеры](docs/examples.md) - Практические примеры кода
+- ❓ [FAQ](docs/faq.md) - Часто задаваемые вопросы
+
+**Ключевые документы:**
+- 🏗️ [Architecture](docs/architecture.md) - Архитектура системы (v4.3.0)
+- 📋 [Technical Specification](docs/technical_specification.md) - Техническая спецификация
+- 🔧 [API Reference](docs/api_reference.md) - Справочник API
+
+**Руководства:**
+- 🛠️ [Development Guide](docs/development_guide.md) - Для разработчиков
+- 🚀 [Deployment Guide](docs/deployment_guide.md) - Для администраторов
+- 🔄 [Reindexing Guide](docs/reindexing-guide.md) - Управление индексацией
+
+**Качество и мониторинг:**
+- 📊 [Monitoring Setup](docs/monitoring_setup.md) - Prometheus + Grafana
+- 🎯 [RAGAS Quality System](docs/ragas_quality_system.md) - Оценка качества
 
 ### Интерактивные инструменты
 - **API документация**: http://localhost:9000/apidocs

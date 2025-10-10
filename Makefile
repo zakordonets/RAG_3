@@ -43,7 +43,7 @@ test-fast: ## Запустить только быстрые тесты
 
 test-pipeline: ## Запустить тесты pipeline
 	@echo "$(GREEN)Запуск тестов pipeline...$(NC)"
-	python -m pytest tests/test_end_to_end_pipeline.py -v
+	python -m pytest tests/test_unified_pipeline.py -v
 
 test-quality: ## Запустить тесты системы качества
 	@echo "$(GREEN)Запуск тестов системы качества...$(NC)"
@@ -55,11 +55,11 @@ test-loading: ## Запустить тесты загрузки данных
 
 test-metadata: ## Запустить тесты метаданных
 	@echo "$(GREEN)Запуск тестов метаданных...$(NC)"
-	python -m pytest tests/test_data_loading_validation.py -v
+	python -m pytest tests/test_indexing_quality.py -v
 
 test-all-loading: ## Запустить все тесты загрузки и метаданных
 	@echo "$(GREEN)Запуск всех тестов загрузки...$(NC)"
-	python -m pytest tests/test_universal_loader.py tests/test_data_loading_validation.py -v
+	python -m pytest tests/test_universal_loader.py tests/test_indexing_quality.py -v
 
 test-coverage: ## Запустить тесты с покрытием кода
 	@echo "$(GREEN)Запуск тестов с покрытием...$(NC)"
@@ -109,22 +109,26 @@ check-services: ## Проверить статус сервисов
 	@echo "Qdrant: $$(python -c "from qdrant_client import QdrantClient; c=QdrantClient('localhost'); print('✅ OK' if c.get_collections() else '❌ Ошибка')" 2>/dev/null || echo "❌ Недоступен")"
 
 # Команды для индексации
-reindex: ## Полная переиндексация
+reindex: ## Полная переиндексация через ingestion pipeline
 	@echo "$(GREEN)Запуск полной переиндексации...$(NC)"
-	python scripts/indexer.py reindex --strategy=jina --no-cache
+	python -m ingestion.run --source-type docusaurus --reindex-mode full --clear-collection
 
-reindex-test: ## Тестовая переиндексация (несколько страниц)
-	@echo "$(GREEN)Запуск тестовой переиндексации...$(NC)"
-	python scripts/indexer.py reindex --strategy=jina --no-cache --max-pages=5
+reindex-incremental: ## Инкрементальная переиндексация
+	@echo "$(GREEN)Запуск инкрементальной переиндексации...$(NC)"
+	python -m ingestion.run --source-type docusaurus --reindex-mode changed
 
 # Команды для отладки
 debug-collection: ## Отладка коллекции Qdrant
 	@echo "$(GREEN)Отладка коллекции...$(NC)"
-	python scripts/debug_collection_content.py
+	python scripts/check_file_indexed.py
 
-debug-pipeline: ## Отладка pipeline
+debug-pipeline: ## Отладка unified pipeline
 	@echo "$(GREEN)Отладка pipeline...$(NC)"
-	python -m pytest tests/test_end_to_end_pipeline.py -v
+	python -m pytest tests/test_unified_pipeline.py -v
+
+debug-retrieval: ## Отладка поиска по URL
+	@echo "$(GREEN)Отладка retrieval...$(NC)"
+	python scripts/test_retrieval_for_url.py
 
 # Показать информацию о проекте
 info: ## Показать информацию о проекте

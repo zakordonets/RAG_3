@@ -1,621 +1,736 @@
-# Документация по индексации и структуре данных
+# Indexing & Data Structure Guide
 
-## Обзор системы индексации
+Детальное руководство по системе индексации и структурам данных RAG-системы.
 
-RAG-система edna Chat Center использует многоуровневую архитектуру индексации для обработки и хранения документации. Система поддерживает различные источники данных, автоматическое извлечение метаданных и гибридный поиск с использованием dense и sparse векторов.
+**Версия**: 4.3.1
+**Дата обновления**: 9 октября 2024
+**Статус**: Production Ready
 
-**🎉 v4.2.0 - Критические исправления индексации завершены!**
-- Исправлена схема коллекции для sparse векторов (sparse_vectors_config)
-- Sparse векторы вынесены в отдельный параметр sparse_vectors
-- Гибридный поиск dense + sparse работает корректно
-- Автоматическое создание коллекций с правильной схемой
-- Исправлена генерация doc_id: каждый документ получает уникальный URL
-- Исправлена передача метаданных: site_url корректно передается через пайплайн
-- Исправлена финальная статистика: отображаются реальные значения
-- Исправлен параметр --max-pages: корректно ограничивает количество документов
+---
+
+## 📖 Содержание
+
+- [Обзор](#обзор)
+- [Архитектура](#архитектура-индексации)
+- [Data Structures](#data-structures)
+  - [Qdrant Schema](#qdrant-schema)
+  - [Metadata Structure](#система-метаданных)
+- [Chunking System](#система-chunking)
+- [Indexing Pipeline](#pipeline-индексации)
+- [Performance](#оптимизации-производительности)
+- [Management](#управление-индексацией)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Обзор
+
+Система индексации обрабатывает документацию через унифицированный DAG pipeline с:
+
+- ✅ **Гибридные векторы** - Dense (BGE-M3 1024d) + Sparse (keyword matching)
+- ✅ **Rich metadata** - 20+ полей для оптимизации поиска
+- ✅ **Adaptive chunking** - Размер чанков зависит от типа контента
+- ✅ **Production-ready** - Batch processing, caching, monitoring
+
+### Ключевые возможности
+
+| Компонент | Технология | Статус |
+|-----------|------------|--------|
+| **Vector DB** | Qdrant 1.7+ | ✅ Production |
+| **Embeddings** | BGE-M3 (dense + sparse) | ✅ Production |
+| **Chunking** | Universal + Adaptive | ✅ Production |
+| **Pipeline** | DAG architecture | ✅ Production |
+| **Metadata** | Enhanced 20+ fields | ✅ Production |
+
+### Связанная документация
+
+- 📦 [Adding Data Sources](adding_data_sources.md) - Добавление источников данных
+- 🏗️ [Architecture](architecture.md) - Общая архитектура системы
+- 🔧 [Technical Specification](technical_specification.md) - Техническая спецификация
+
+---
 
 ## Архитектура индексации
 
-### 1. Компоненты системы
+### DAG Pipeline
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Data Sources  │    │  Universal      │    │   Chunking      │
-│   (edna docs,   │───▶│  Loader         │───▶│   Engine        │
-│    API, etc.)   │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │                       │
-                                ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Metadata      │    │   Embeddings    │    │   Qdrant        │
-│   Processing    │◀───│   Generation    │◀───│   Storage       │
-│                 │    │   (BGE-M3)      │    │   (Vectors)     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+Data Source (Docusaurus, Website)
+    ↓ SourceAdapter.iter_documents()
+RawDoc (uri, bytes, meta)
+    ↓ Parser
+ParsedDoc (text, url, title)
+    ↓ Normalizer
+Normalized Text
+    ↓ UniversalChunker
+Chunks (text + metadata)
+    ↓ Embedder (BGE-M3)
+Chunks + Vectors (dense + sparse)
+    ↓ QdrantWriter
+Qdrant Collection (indexed)
 ```
 
-### 2. Основные модули
+### Ключевые компоненты
 
-- **`ingestion/universal_loader.py`** - Универсальный загрузчик контента
-- **`ingestion/parsers.py`** - Парсеры для различных форматов
-- **`ingestion/chunker.py`** - Система разбиения текста на чанки
-- **`ingestion/semantic_chunker.py`** - Семантическое разбиение
-- **`app/services/metadata_aware_indexer.py`** - Индексатор с метаданными
-- **`app/services/optimized_pipeline.py`** - Оптимизированный pipeline
-- **`scripts/indexer.py`** - Production модуль управления
+| Компонент | Модуль | Назначение |
+|-----------|--------|------------|
+| **SourceAdapter** | `ingestion/adapters/` | Извлечение документов |
+| **Normalizers** | `ingestion/normalizers/` | Очистка и нормализация |
+| **UniversalChunker** | `ingestion/chunking/` | Разбиение на чанки |
+| **Embedder** | `ingestion/pipeline/embedder.py` | Генерация векторов |
+| **QdrantWriter** | `ingestion/pipeline/indexers/` | Запись в Qdrant |
+| **PipelineDAG** | `ingestion/pipeline/dag.py` | Оркестрация |
 
-## Источники данных
+**Подробнее**: См. [adding_data_sources.md](adding_data_sources.md) для деталей DAG архитектуры.
 
-### 1. Поддерживаемые источники
+---
 
-#### edna Docs (основной)
-- **URL**: `https://docs-chatcenter.edna.ru/`
-- **Стратегия**: Jina Reader (рекомендуется)
-- **Формат**: Docusaurus + Markdown
-- **Типы страниц**: API, гайды, FAQ, релиз-ноты
+## Data Structures
 
-#### Другие источники
-- HTML страницы (generic)
-- Markdown файлы
-- API документация
-- FAQ страницы
+### Qdrant Schema
 
-### 2. Стратегии загрузки
+#### Collection Configuration
 
-#### Jina Reader (рекомендуется)
 ```python
-# Автоматическое извлечение структурированных данных
-{
-    "title": "Заголовок страницы",
-    "url_source": "https://docs-chatcenter.edna.ru/...",
-    "content_length": 2456,
-    "language_detected": "Russian",
-    "published_time": "2024-07-24T10:30:00Z",
-    "images": 3,
-    "links": 12,
-    "content": "Markdown контент..."
+from qdrant_client.models import VectorParams, Distance, SparseVectorParams
+
+collection_config = {
+    "vectors_config": {
+        # Dense vector (BGE-M3)
+        "dense": VectorParams(
+            size=1024,
+            distance=Distance.COSINE
+        )
+    },
+    # Sparse vectors (keyword matching)
+    "sparse_vectors_config": {
+        "sparse": SparseVectorParams()
+    },
+    # HNSW index configuration
+    "hnsw_config": {
+        "m": 16,                      # Связей на узел
+        "ef_construct": 100,          # Качество построения
+        "ef_search": 50,              # Качество поиска
+        "full_scan_threshold": 10000  # Порог полного сканирования
+    }
 }
 ```
 
-#### HTML Docusaurus
+**Параметры**:
+- **m**: Количество двунаправленных связей (trade-off память/качество)
+- **ef_construct**: Глубина поиска при построении (выше = медленнее build, лучше recall)
+- **ef_search**: Глубина поиска запросов (выше = медленнее search, лучше precision)
+
+#### Point Structure
+
 ```python
-# Парсинг HTML структуры
+# Точка в Qdrant
 {
-    "title": "Заголовок из <h1>",
-    "breadcrumbs": ["Документация", "Агент"],
-    "content": "Основной текст статьи",
-    "navigation": "Структура навигации"
+    "id": "abc123-chunk-0",  # Уникальный ID
+    "vector": {
+        "dense": [0.1, 0.2, ..., 0.9],  # 1024 float
+        "sparse": {                      # Отдельный параметр!
+            "indices": [1, 42, 567],
+            "values": [0.8, 0.6, 0.4]
+        }
+    },
+    "payload": {
+        # См. Metadata Structure ниже
+    }
 }
 ```
 
-#### Generic HTML
-```python
-# Базовый HTML парсинг
-{
-    "title": "Заголовок из <title>",
-    "content": "Текст из <body>",
-    "metadata": "Мета-теги"
-}
-```
+**Критично**: Sparse векторы передаются через `sparse_vectors` parameter, НЕ в `vector`!
 
-## Система chunking
+---
 
-### 1. Стратегии разбиения
-
-#### Простой chunker (по умолчанию)
-- **Размер**: 60-250 токенов (настраивается)
-- **Стратегия**: По абзацам с интеллектуальным объединением
-- **Оптимизация**: 50-80% от максимального размера
-- **Качество**: Дедупликация, фильтрация коротких чанков
-
-#### Семантический chunker
-- **Модель**: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-- **Порог сходства**: 0.7
-- **Перекрытие**: 50 токенов (опционально)
-- **Преимущества**: Сохранение семантической целостности
-
-### 2. Адаптивный chunking
-
-```python
-def get_optimal_chunk_size(page_type: str, complexity: float) -> int:
-    """Адаптивный размер чанка на основе типа страницы"""
-    base_size = 250  # токенов
-
-    if page_type == "api":
-        return min(base_size * 1.5, 1200)  # API docs длиннее
-    elif page_type == "guide":
-        return min(base_size * 1.2, 1000)  # Гайды с контекстом
-    elif page_type == "faq":
-        return min(base_size * 0.8, 600)   # FAQ короче
-
-    if complexity > 0.8:
-        return min(base_size * 0.9, 800)   # Сложный контент
-    elif complexity < 0.3:
-        return min(base_size * 1.3, 1000)  # Простой контент
-
-    return base_size
-```
-
-### 3. Quality Gates
-
-- **Минимальный размер**: 60 токенов
-- **Дедупликация**: SHA-256 хэши
-- **Фильтрация**: Пустые и мусорные чанки
-- **Валидация**: Проверка целостности
+---
 
 ## Система метаданных
 
-### 1. Enhanced Metadata
+### Payload Structure
+
+Полная структура метаданных, сохраняемых в Qdrant payload:
 
 ```python
-@dataclass
-class EnhancedMetadata:
-    # Базовые метаданные
-    url: str
-    page_type: str  # api, guide, faq, release_notes
-    title: str
-    source: str = "docs-site"
-    language: str = "ru"
+payload = {
+    # === Базовые поля (обязательные) ===
+    "url": str,              # URL документа
+    "title": str,            # Заголовок страницы
+    "text": str,             # Текст чанка
+    "page_type": str,        # guide | api | faq | release_notes
+    "source": str,           # docs-site | api-docs | blog
+    "language": str,         # ru | en
 
-    # Структурная информация
-    section: Optional[str] = None
-    subsection: Optional[str] = None
-    chunk_index: int = 0
+    # === Структура документа ===
+    "doc_id": str,           # Уникальный ID документа
+    "chunk_id": str,         # Уникальный ID чанка
+    "chunk_index": int,      # Порядковый номер чанка
+    "heading_path": List[str],  # Иерархия заголовков
 
-    # Анализ контента
-    token_count: int = 0
-    complexity_score: float = 0.0      # 0.0-1.0
-    semantic_density: float = 0.0      # 0.0-1.0
-    readability_score: float = 0.0     # 0.0-1.0
+    # === Анализ контента ===
+    "token_count": int,      # Количество токенов
+    "content_length": int,   # Длина в символах
+    "complexity_score": float,  # 0.0-1.0
+    "semantic_density": float,  # 0.0-1.0 (опционально)
 
-    # Технические метаданные
-    content_length: int = 0
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    # === Оптимизация поиска ===
+    "boost_factor": float,   # 1.0-2.0 (множитель релевантности)
+    "search_priority": float,  # 0.0-1.0
 
-    # Семантическая информация
-    keywords: List[str] = None
-    topics: List[str] = None
-    entities: List[str] = None
-
-    # Оптимизация поиска
-    search_priority: float = 1.0
-    boost_factor: float = 1.0
-    semantic_tags: List[str] = None
+    # === Временные метки ===
+    "created_at": str,       # ISO 8601
+    "updated_at": str,       # ISO 8601 (опционально)
+    "indexed_at": float      # Unix timestamp
+}
 ```
 
-### 2. Извлечение метаданных
+### Извлечение метаданных
 
-#### Из URL
+#### Из URL паттернов
+
 ```python
-def extract_url_metadata(url: str) -> Dict[str, str]:
-    """Извлечение метаданных из URL паттернов"""
-    patterns = {
-        r'/docs/start/': {'section': 'start', 'user_role': 'all', 'page_type': 'guide'},
-        r'/docs/agent/': {'section': 'agent', 'user_role': 'agent', 'page_type': 'guide'},
-        r'/docs/supervisor/': {'section': 'supervisor', 'user_role': 'supervisor', 'page_type': 'guide'},
-        r'/docs/admin/': {'section': 'admin', 'user_role': 'admin', 'page_type': 'guide'},
-        r'/docs/api/': {'section': 'api', 'user_role': 'integrator', 'page_type': 'api-reference'},
-        r'/blog/': {'section': 'changelog', 'user_role': 'all', 'page_type': 'release-notes'},
-        r'/faq': {'section': 'faq', 'user_role': 'all', 'page_type': 'faq'},
-    }
+# URL → metadata mapping
+url_patterns = {
+    r'/docs/start/':      {'section': 'start', 'page_type': 'guide'},
+    r'/docs/agent/':      {'section': 'agent', 'page_type': 'guide'},
+    r'/docs/supervisor/': {'section': 'supervisor', 'page_type': 'guide'},
+    r'/docs/admin/':      {'section': 'admin', 'page_type': 'guide'},
+    r'/docs/api/':        {'section': 'api', 'page_type': 'api'},
+    r'/blog/':            {'section': 'changelog', 'page_type': 'release_notes'},
+    r'/faq':              {'section': 'faq', 'page_type': 'faq'}
+}
 ```
 
-#### Из контента
-```python
-def calculate_complexity_score(text: str) -> float:
-    """Расчет сложности контента"""
-    avg_sentence_length = len(text.split()) / max(len(text.split('.')), 1)
-    technical_terms = len(re.findall(r'\b[A-Z]{2,}\b|\b\w+\.(py|js|ts|sql|api|sdk)\b', text))
-    code_blocks = len(re.findall(r'```|`[^`]+`', text))
+#### Анализ контента
 
-    complexity = min(1.0, (avg_sentence_length / 20) + (technical_terms / 100) + (code_blocks / 10))
-    return round(complexity, 3)
+**Complexity Score** (сложность текста):
+```python
+def calculate_complexity(text: str) -> float:
+    """0.0 (простой) → 1.0 (сложный)"""
+    avg_sentence_len = len(text.split()) / max(len(text.split('.')), 1)
+    technical_terms = len(re.findall(r'\b[A-Z]{2,}\b', text))
+    code_blocks = len(re.findall(r'```', text))
+
+    complexity = (
+        (avg_sentence_len / 20) * 0.4 +
+        (technical_terms / 100) * 0.3 +
+        (code_blocks / 10) * 0.3
+    )
+    return min(1.0, complexity)
 ```
 
-### 3. Boost Factor
-
+**Boost Factor** (приоритет в поиске):
 ```python
-def calculate_boost_factor(metadata: EnhancedMetadata) -> float:
-    """Динамический boost на основе метаданных"""
+def calculate_boost(metadata: dict) -> float:
+    """1.0 (нормальный) → 2.0 (высокий приоритет)"""
     boost = 1.0
 
-    # Boost по типу страницы
-    if metadata.page_type == "guide": boost *= 1.2
-    elif metadata.page_type == "api": boost *= 1.1
-    elif metadata.page_type == "faq": boost *= 1.3
+    # По типу страницы
+    if metadata["page_type"] == "faq":   boost *= 1.3
+    if metadata["page_type"] == "guide": boost *= 1.2
 
-    # Boost по качеству контента
-    if metadata.semantic_density > 0.6: boost *= 1.2
-    if metadata.complexity_score > 0.5: boost *= 1.1
-
-    # Boost для getting started
-    if '/docs/start/' in metadata.url: boost *= 1.4
+    # По секции
+    if "start" in metadata.get("section", ""): boost *= 1.4
 
     return round(boost, 2)
 ```
 
-## Схема Qdrant
+---
 
-### 1. Структура коллекции
+## Система Chunking
 
-```python
-# Коллекция: chatcenter_docs
-{
-    "vectors_config": {
-        "dense": VectorParams(size=1024, distance=Distance.COSINE),
-        "sparse": SparseVectorParams()
-    },
-    "hnsw_config": {
-        "m": 16,
-        "ef_construct": 100,
-        "ef_search": 50,
-        "full_scan_threshold": 10000
-    }
-}
-```
+### UniversalChunker
 
-### 2. Named Vectors
-
-#### Dense Vector
-- **Размерность**: 1024
-- **Модель**: BAAI/bge-m3
-- **Расстояние**: COSINE
-- **Использование**: Семантический поиск
-
-#### Sparse Vector
-- **Формат**: SparseVector(indices, values)
-- **Модель**: BAAI/bge-m3 sparse
-- **Использование**: Лексический поиск
-- **Оптимизация**: Топ-1000 весов
-
-### 3. Payload структура
+**Модуль**: `ingestion/chunking/universal_chunker.py`
 
 ```python
-{
-    # Базовые метаданные
-    "url": "https://docs-chatcenter.edna.ru/docs/agent/routing",
-    "page_type": "guide",
-    "title": "Настройка маршрутизации",
-    "source": "docs-site",
-    "language": "ru",
-    "section": "agent",
-    "chunk_index": 0,
+from ingestion.chunking.universal_chunker import UniversalChunker
 
-    # Анализ контента
-    "content_length": 1250,
-    "token_count": 180,
-    "complexity_score": 0.65,
-    "semantic_density": 0.72,
-    "readability_score": 0.58,
+chunker = UniversalChunker(
+    max_tokens=300,            # Оптимизировано для точности ответов
+    min_tokens=150,            # Фокус на одной теме
+    overlap_base=50,           # Адаптивное перекрытие
+    oversize_block_policy="split",  # Разбиение больших блоков
+    oversize_block_limit=600   # Лимит для принудительного split
+)
 
-    # Оптимизация поиска
-    "boost_factor": 1.44,
-    "search_priority": 1.0,
-    "search_strategy": {"sparse_weight": 0.5, "dense_weight": 0.5},
-
-    # Семантическая информация
-    "keywords": ["маршрутизация", "агент", "настройка"],
-    "semantic_tags": ["type:guide", "complexity:medium", "content:dense"],
-
-    # Технические метаданные
-    "hash": "uuid-4-format",
-    "indexed_via": "jina",
-    "indexed_at": 1703123456.789,
-    "created_at": "2024-07-24T10:30:00Z",
-    "updated_at": "2024-12-20T15:45:00Z"
-}
+# Чанкинг
+chunks = chunker.chunk(
+    text="Текст документа...",
+    content_type="markdown",   # markdown | html | text
+    metadata={"url": "...", "title": "..."}
+)
 ```
+
+### Параметры Chunking (Production)
+
+| Параметр | Значение | Обоснование |
+|----------|----------|-------------|
+| `max_tokens` | **300** | Предотвращение смешивания разных тем |
+| `min_tokens` | **150** | Достаточно для семантического понимания |
+| `overlap_base` | **50** | Сохранение контекста между чанками |
+| `oversize_block_policy` | split | Разбиение больших code/table блоков |
+| `oversize_block_limit` | 600 | Максимум перед принудительным split |
+
+### Почему 150-300, а не больше?
+
+**Проблема с большими чанками** (350-600 токенов):
+- ❌ Информация из разных подразделов сливалась
+- ❌ LLM генерировал некорректные ответы
+- ❌ Контекст из нерелевантных частей чанка
+
+**Преимущества меньших чанков** (150-300 токенов):
+- ✅ Один чанк = одна конкретная тема
+- ✅ Точные, фокусированные ответы
+- ✅ Лучшая релевантность retrieval
+
+**См. детали**: [ADR-002](adr-002-adaptive-chunking.md) - почему практика отличается от теории
+
+### Типичные размеры по типам
+
+| Тип контента | Типичный размер | Почему |
+|--------------|-----------------|--------|
+| **Параграф guide** | 150-250 токенов | Одна мысль/концепция |
+| **FAQ answer** | 100-200 токенов | Короткий ответ |
+| **Code block** | 100-400 токенов | Сохранение целостности |
+| **API endpoint** | 200-350 токенов | Описание + примеры |
+
+### Quality Gates
+
+Автоматическая фильтрация:
+- ✅ Минимальный размер: 50 токенов (discard smaller)
+- ✅ Дедупликация: по content hash
+- ✅ Валидация: проверка metadata completeness
+- ✅ Фильтрация: пустых и мусорных чанков
+
+---
 
 ## Pipeline индексации
 
-### 1. Основной pipeline
+### Unified DAG Pipeline (v4.3+)
+
+**Модуль**: `ingestion/run.py`
 
 ```python
-def crawl_and_index(
-    incremental: bool = True,
-    strategy: str = "jina",
-    use_cache: bool = True,
-    reindex_mode: str = "auto",
-    max_pages: int = None
-) -> dict[str, Any]:
-    """Полный цикл индексации"""
+from ingestion.run import run_unified_indexing
 
-    # 1. Краулинг
-    pages = crawl_with_sitemap_progress(
-        strategy=strategy,
-        use_cache=use_cache,
-        max_pages=max_pages
-    )
-
-    # 2. Обработка страниц
-    all_chunks = []
-    for page in pages:
-        # Универсальная загрузка
-        loaded_data = load_content_universal(
-            url=page["url"],
-            content=page.get("text") or page.get("html"),
-            strategy=strategy
-        )
-
-        # Chunking
-        chunks_text = chunk_text(loaded_data.get('content', ''))
-
-        # Создание чанков с метаданными
-        for i, chunk_text_content in enumerate(chunks_text):
-            chunk = {
-                "text": chunk_text_content,
-                "payload": {
-                    "url": page["url"],
-                    "title": loaded_data.get('title', 'Untitled'),
-                    "page_type": loaded_data.get('page_type', 'guide'),
-                    "chunk_index": i,
-                    **loaded_data  # Все метаданные
-                }
-            }
-            all_chunks.append(chunk)
-
-    # 3. Индексация с enhanced metadata
-    metadata_indexer = MetadataAwareIndexer()
-    indexed_count = metadata_indexer.index_chunks_with_metadata(all_chunks)
-
-    return {"pages": len(pages), "chunks": indexed_count}
-```
-
-### 2. Оптимизированный pipeline
-
-```python
-def run_optimized_indexing(
-    source_name: str = "edna_docs",
-    max_pages: Optional[int] = None,
-    chunk_strategy: str = "adaptive"
-) -> Dict[str, Any]:
-    """Оптимизированный pipeline с новой архитектурой"""
-
-    pipeline = OptimizedPipeline()
-
-    # Получение источника данных
-    source = plugin_manager.get_source(source_name, source_config)
-
-    # Загрузка страниц
-    crawl_result = source.fetch_pages(max_pages)
-
-    # Обработка в чанки
-    chunks = pipeline._process_pages_to_chunks(
-        crawl_result.pages,
-        chunk_strategy
-    )
-
-    # Индексация с метаданными
-    indexed_count = pipeline.indexer.index_chunks_with_metadata(chunks)
-
-    return {
-        "success": True,
-        "pages": crawl_result.successful_pages,
-        "chunks": indexed_count,
-        "duration": time.time() - start_time
+# Запуск индексации
+result = run_unified_indexing(
+    source_type="docusaurus",
+    config={
+        "collection_name": "edna_docs",
+        "docs_root": "/path/to/docs",
+        "chunk_max_tokens": 600,
+        "chunk_min_tokens": 350
     }
+)
+
+print(f"Indexed {result['chunks_count']} chunks from {result['docs_count']} documents")
 ```
 
-### 3. Генерация эмбеддингов
+### Pipeline Steps
+
+| Шаг | Компонент | Вход | Выход |
+|-----|-----------|------|-------|
+| 1 | **SourceAdapter** | Config | RawDoc(uri, bytes, meta) |
+| 2 | **Parser** | RawDoc | ParsedDoc(text, url, title) |
+| 3 | **Normalizer** | ParsedDoc | Normalized ParsedDoc |
+| 4 | **UniversalChunker** | ParsedDoc | List[Chunk] |
+| 5 | **Embedder** | List[Chunk] | Chunks + Vectors |
+| 6 | **QdrantWriter** | Chunks + Vectors | Indexed count |
+
+### Генерация Embeddings
+
+**Модуль**: `ingestion/pipeline/embedder.py`
 
 ```python
-def embed_batch_optimized(
-    texts: List[str],
-    max_length: int = 1024,
-    return_dense: bool = True,
-    return_sparse: bool = True,
-    context: str = "document"
-) -> Dict[str, Any]:
-    """Оптимизированная генерация эмбеддингов"""
+from ingestion.pipeline.embedder import Embedder
 
-    # Определение оптимального batch size
-    batch_size = get_optimal_batch_size("unified")
+embedder = Embedder()
 
-    # Генерация dense эмбеддингов
-    if return_dense:
-        dense_vecs = generate_dense_embeddings(texts, batch_size)
+# Обработка чанков
+chunks_with_embeddings = []
+for chunk in chunks:
+    # Dense embedding (BGE-M3)
+    dense_vec = embedder.embed_dense(chunk.text)
 
-    # Генерация sparse эмбеддингов
-    if return_sparse:
-        sparse_results = generate_sparse_embeddings(texts, batch_size)
+    # Sparse embedding (BGE-M3 sparse)
+    sparse_vec = embedder.embed_sparse(chunk.text)
 
-    return {
-        "dense_vecs": dense_vecs,
-        "lexical_weights": sparse_results
-    }
+    chunks_with_embeddings.append({
+        "text": chunk.text,
+        "dense_vector": dense_vec,     # List[float] 1024 dim
+        "sparse_vector": sparse_vec,   # {"indices": [...], "values": [...]}
+        "metadata": chunk.metadata
+    })
 ```
+
+**Производительность**:
+- Dense batch size: 16-32 texts
+- Sparse batch size: 8-16 texts
+- Total time: ~5-10 сек на batch
+
+### Запись в Qdrant
+
+**Модуль**: `ingestion/pipeline/indexers/qdrant_writer.py`
+
+```python
+from ingestion.pipeline.indexers.qdrant_writer import QdrantWriter
+
+writer = QdrantWriter(collection_name="edna_docs")
+
+# Batch upsert
+result = writer.upsert_points(
+    points=[
+        {
+            "id": chunk_id,
+            "vector": {"dense": dense_vec},  # Named vector
+            "sparse_vectors": {"sparse": sparse_vec},  # Отдельный параметр!
+            "payload": metadata
+        }
+        for chunk_id, dense_vec, sparse_vec, metadata in batch
+    ]
+)
+
+print(f"Upserted {result.count} points")
+```
+
+**Важно**: Sparse векторы передаются через `sparse_vectors` parameter!
+
+---
 
 ## Управление индексацией
 
-### 1. Production модуль
+### CLI Commands
+
+**Основной entrypoint**: `ingestion/run.py`
 
 ```bash
-# Проверка статуса
-python scripts/indexer.py status
-
 # Полная переиндексация
-python scripts/indexer.py reindex --mode full
+python -m ingestion.run \
+  --source-type docusaurus \
+  --config ingestion/config.yaml \
+  --reindex all
 
-# Инкрементальное обновление
-python scripts/indexer.py reindex --mode incremental
+# Инкрементальная индексация (только changed)
+python -m ingestion.run \
+  --source-type docusaurus \
+  --config ingestion/config.yaml \
+  --reindex changed
 
-# Использование кеша
-python scripts/indexer.py reindex --mode cache_only
-
-# Очистка кеша страниц
-python scripts/indexer.py clear-cache --confirm
-
-# Инициализация коллекции
-python scripts/indexer.py init
-
-# Пересоздание коллекции
-python scripts/indexer.py init --recreate
+# Ограничение количества страниц (для тестов)
+python -m ingestion.run \
+  --source-type docusaurus \
+  --config ingestion/config.yaml \
+  --max-pages 10
 ```
 
-### 2. Управление кэшем
-
-Система автоматически сохраняет загруженные страницы в кэш для ускорения последующих индексаций. Кэш сохраняется между запусками и не очищается автоматически.
+### Инициализация Qdrant
 
 ```bash
-# Проверка содержимого кэша
-ls cache/crawl/pages/  # Просмотр закешированных страниц
+# Создать коллекцию с правильной схемой
+python scripts/init_qdrant.py
 
-# Очистка кэша (требует подтверждения)
-python scripts/indexer.py clear-cache --confirm
+# Пересоздать (удалить + создать)
+python scripts/init_qdrant.py --recreate
 
-# Индексация с очисткой устаревших записей из кэша
-python scripts/indexer.py reindex --mode full --cleanup-cache
-
-# Индексация только из кэша (без загрузки новых страниц)
-python scripts/indexer.py reindex --mode cache_only
+# Очистить все точки
+python scripts/clear_collection.py --collection edna_docs
 ```
 
-**Важные моменты:**
-- Кэш сохраняется между запусками системы
-- При `max_pages` ограничении кэш не очищается автоматически
-- Очистка кэша требуется только при изменении структуры сайта
-- Используйте `cache_only` для быстрого тестирования на закешированных данных
+### Конфигурация
 
-### 3. Конфигурация
+**Файл**: `ingestion/config.yaml`
 
+```yaml
+source_type: docusaurus
+
+# Source configuration
+source:
+  docs_root: "C:/path/to/docs"
+  base_url: "https://docs-chatcenter.edna.ru"
+
+# Chunking parameters
+chunking:
+  max_tokens: 600
+  min_tokens: 350
+  overlap_base: 100
+  oversize_block_policy: split
+  oversize_block_limit: 1200
+
+# Qdrant settings
+qdrant:
+  collection_name: edna_docs
+  url: http://localhost:6333
+  batch_size: 100
+
+# Performance
+performance:
+  embedding_batch_size: 16
+  max_workers: 4
+```
+
+### Мониторинг индексации
+
+**Проверка статуса коллекции**:
 ```python
-# Основные параметры
-CHUNK_MIN_TOKENS = 60
-CHUNK_MAX_TOKENS = 250
-EMBEDDING_DIM = 1024
-EMBEDDING_BATCH_SIZE = 16
-EMBEDDING_MAX_LENGTH_DOC = 1024
+from qdrant_client import QdrantClient
 
-# Qdrant настройки
-QDRANT_HNSW_M = 16
-QDRANT_HNSW_EF_CONSTRUCT = 100
-QDRANT_HNSW_EF_SEARCH = 50
-QDRANT_HNSW_FULL_SCAN_THRESHOLD = 10000
+client = QdrantClient(url="http://localhost:6333")
+info = client.get_collection("edna_docs")
 
-# Эмбеддинги
-EMBEDDINGS_BACKEND = "auto"  # auto, onnx, bge, hybrid
-EMBEDDING_DEVICE = "auto"    # auto, cpu, cuda, directml
-USE_SPARSE = True
+print(f"Points: {info.points_count}")
+print(f"Vectors: {info.config.params.vectors}")
+print(f"Sparse: {info.config.params.sparse_vectors}")
 ```
 
-### 4. Мониторинг
+**Статистика метаданных**:
+```bash
+# Проверка distribution по page_type
+python scripts/check_text_field.py
 
-```python
-def get_collection_metadata_stats() -> Dict[str, Any]:
-    """Статистика коллекции"""
-    return {
-        "total_documents": collection_info.points_count,
-        "sparse_coverage": 100.0,  # Процент покрытия sparse векторами
-        "page_type_distribution": {
-            "guide": 150,
-            "api": 45,
-            "faq": 23,
-            "release_notes": 12
-        },
-        "avg_complexity_score": 0.65,
-        "avg_semantic_density": 0.72,
-        "avg_boost_factor": 1.15,
-        "metadata_enabled": True
-    }
+# Анализ конкретного документа
+python scripts/check_file_indexed.py --url "https://docs..."
+
+# Full-text search для отладки
+python scripts/check_full_text.py --query "маршрутизация"
 ```
+
+---
 
 ## Оптимизации производительности
 
-### 1. Батчевая обработка
+### Batch Processing
 
-- **Dense эмбеддинги**: 16-32 текста за раз
-- **Sparse эмбеддинги**: 8-16 текстов за раз
-- **Индексация**: 100-500 точек за раз
+| Операция | Batch Size | Время | Оптимизация |
+|----------|------------|-------|-------------|
+| **Dense embeddings** | 16-32 | 5-10 сек | GPU если доступен |
+| **Sparse embeddings** | 8-16 | 3-5 сек | CPU оптимизирован |
+| **Qdrant upsert** | 100-500 | 1-2 сек | Parallel requests |
 
-### 2. Кеширование
+### Caching Strategy
 
-- **Redis**: Эмбеддинги и результаты поиска
-- **In-memory fallback**: При недоступности Redis
-- **Crawl cache**: Кеширование загруженных страниц
+**Crawl Cache** (файловая):
+- Локация: `cache/crawl/`
+- Формат: JSON files
+- Retention: Не очищается автоматически
+- Размер: ~100KB на страницу
 
-### 3. GPU ускорение
+```bash
+# Просмотр кэша
+ls -lh cache/crawl/*.json
 
-- **ONNX + DirectML**: Windows/AMD GPU
-- **CUDA**: NVIDIA GPU
-- **CPU fallback**: Автоматический fallback
+# Очистка
+rm -rf cache/crawl/*
+```
 
-### 4. Адаптивные стратегии
+**Redis Cache** (опционально):
+- Embeddings cache (TTL: 24h)
+- Search results cache (TTL: 1h)
+- In-memory fallback при недоступности
+
+### GPU Acceleration
+
+| Тип GPU | Технология | Ускорение |
+|---------|------------|-----------|
+| **NVIDIA** | CUDA | 10-20x vs CPU |
+| **AMD/Intel** | DirectML + ONNX | 5-10x vs CPU |
+| **CPU** | Fallback | Baseline |
+
+**Настройка**:
+```bash
+# .env
+EMBEDDING_DEVICE=cuda        # cuda | directml | cpu | auto
+EMBEDDINGS_BACKEND=onnx      # onnx | bge | hybrid
+```
+
+### Adaptive Search Weights
+
+Веса dense/sparse адаптируются под тип контента:
 
 ```python
-def get_search_strategy(metadata: EnhancedMetadata) -> Dict[str, float]:
-    """Адаптивная стратегия поиска"""
-    if metadata.page_type == "api":
-        return {"sparse_weight": 0.7, "dense_weight": 0.3}  # API - точное совпадение
-    elif metadata.complexity_score > 0.7:
-        return {"sparse_weight": 0.3, "dense_weight": 0.7}  # Сложный контент - семантика
-    else:
-        return {"sparse_weight": 0.5, "dense_weight": 0.5}  # Сбалансированный подход
+# Для API документации - приоритет keyword matching
+{"sparse_weight": 0.7, "dense_weight": 0.3}
+
+# Для сложных guides - приоритет semantic
+{"sparse_weight": 0.3, "dense_weight": 0.7}
+
+# Для FAQ - сбалансированный подход
+{"sparse_weight": 0.5, "dense_weight": 0.5}
 ```
+
+---
 
 ## Troubleshooting
 
-### 1. Частые проблемы
+### 1. "Sparse vectors error"
 
-#### Пустые чанки
+**Симптомы**:
 ```python
-# Проверка качества chunking
-if not chunks_text:
-    logger.warning(f"Не удалось создать чанки для {url}")
-    continue
+ValueError: Cannot pass both vector and sparse_vectors
 ```
 
-#### Ошибки эмбеддингов
+**Причина**: Неправильная передача sparse векторов в Qdrant
+
+**Решение**:
 ```python
-# Fallback стратегии
-try:
-    embeddings = generate_embeddings(texts)
-except Exception as e:
-    logger.warning(f"Ошибка эмбеддингов: {e}")
-    # Fallback к простому chunking
-    chunks = _chunk_text_simple(text, min_tokens, max_tokens)
+# ❌ Неправильно
+point = {
+    "vector": {
+        "dense": dense_vec,
+        "sparse": sparse_vec  # ОШИБКА!
+    }
+}
+
+# ✅ Правильно
+point = {
+    "vector": {"dense": dense_vec},
+    "sparse_vectors": {"sparse": sparse_vec}  # Отдельный параметр
+}
 ```
 
-#### Проблемы с Qdrant
-```python
-# Проверка подключения
-try:
-    collection_info = client.get_collection(collection_name)
-except Exception as e:
-    logger.error(f"Ошибка подключения к Qdrant: {e}")
-    return {"error": "Qdrant недоступен"}
+### 2. "Empty chunks"
+
+**Симптомы**: Некоторые документы не разбиваются на чанки
+
+**Причины**:
+- Документ слишком короткий (< min_tokens)
+- Парсер не извлек текст
+- Текст только whitespace
+
+**Диагностика**:
+```bash
+# Проверьте parsed текст
+python scripts/check_file_indexed.py --url "https://problem-doc-url"
+
+# Проверьте логи
+grep "пропущен\|skipped" logs/app.log
 ```
 
-### 2. Диагностика
+**Решение**:
+- Проверьте parser для данного типа страниц
+- Уменьшите `min_tokens` в конфигурации
+- Добавьте специфичный normalizer
+
+### 3. "Embeddings generation timeout"
+
+**Симптомы**: Pipeline зависает на embeddings
+
+**Причины**:
+- Слишком большой batch
+- Нет GPU, медленный CPU
+- Модель не загружена
+
+**Решение**:
+```bash
+# Уменьшите batch size в config.yaml
+performance:
+  embedding_batch_size: 8  # было 16
+
+# Или используйте ONNX для ускорения
+EMBEDDINGS_BACKEND=onnx
+EMBEDDING_DEVICE=directml  # для AMD/Intel GPU
+```
+
+### 4. "Qdrant connection refused"
+
+**Симптомы**: Не удается подключиться к Qdrant
+
+**Диагностика**:
+```bash
+# Проверьте, что Qdrant запущен
+curl http://localhost:6333/collections
+
+# Проверьте Docker
+docker ps | grep qdrant
+
+# Проверьте порт
+netstat -an | grep 6333
+```
+
+**Решение**:
+```bash
+# Запустите Qdrant
+docker run -d -p 6333:6333 qdrant/qdrant
+
+# Или через docker-compose
+docker-compose up -d qdrant
+```
+
+### 5. "Duplicate points"
+
+**Симптомы**: Одинаковые документы индексируются несколько раз
+
+**Причина**: ID генерируется не уникально
+
+**Решение**:
+```python
+# Убедитесь, что используется уникальный ID
+chunk_id = f"{doc_id}-chunk-{chunk_index}"
+
+# Или используйте upsert вместо insert
+writer.upsert_points(...)  # Обновит существующие
+```
+
+### Диагностические скрипты
 
 ```bash
-# Проверка статуса системы
-python scripts/indexer.py status
+# Полный анализ коллекции
+python scripts/deep_analysis.py
 
-# Тестовая переиндексация
-python scripts/indexer.py reindex --mode full --max-pages 5
+# Проверка конкретного URL
+python scripts/check_file_indexed.py --url "https://docs..."
 
-# Проверка метаданных
-pytest tests/test_data_validation.py -v
+# Проверка full-text поиска
+python scripts/check_full_text.py --query "ваш запрос"
+
+# Тестирование retrieval
+python scripts/test_retrieval_for_url.py --url "https://docs..."
+
+# Валидация pipeline
+pytest tests/test_unified_pipeline.py -v
 ```
 
-### 3. Логирование
+### Логирование
 
+**Уровни для индексации**:
 ```python
-# Детальное логирование процесса
-logger.info(f"Обработано {len(chunks)} чанков")
-logger.debug(f"Chunk {i}: {len(chunk_text)} токенов")
-logger.warning(f"Пропущен чанк: {reason}")
+# DEBUG - детали каждого шага
+logger.debug(f"Processing document: {url}")
+logger.debug(f"Created {len(chunks)} chunks")
+
+# INFO - общий прогресс
+logger.info(f"Indexed {count} documents")
+
+# WARNING - пропущенные документы
+logger.warning(f"Skipped {url}: {reason}")
+
+# ERROR - критические ошибки
+logger.error(f"Failed to index {url}: {error}")
 ```
 
-## Заключение
+---
 
-Система индексации edna Chat Center представляет собой комплексное решение для обработки и хранения документации с поддержкой:
+## 📚 Связанная документация
 
-- **Множественных источников данных** с универсальным загрузчиком
-- **Интеллектуального chunking** с семантическим анализом
-- **Богатых метаданных** для оптимизации поиска
-- **Гибридного поиска** с dense и sparse векторами
-- **Production-ready управления** через единый модуль
-- **Мониторинга и диагностики** состояния системы
+- [Adding Data Sources](adding_data_sources.md) - Добавление новых источников
+- [Architecture](architecture.md) - Архитектура системы
+- [Technical Specification](technical_specification.md) - Техническая спецификация
+- [Development Guide](development_guide.md) - Руководство разработчика
 
-Архитектура обеспечивает высокую производительность, масштабируемость и качество поиска при работе с технической документацией.
+### Полезные скрипты
+
+| Скрипт | Назначение |
+|--------|------------|
+| `scripts/init_qdrant.py` | Инициализация Qdrant коллекции |
+| `scripts/clear_collection.py` | Очистка коллекции |
+| `scripts/check_file_indexed.py` | Проверка индексации URL |
+| `scripts/deep_analysis.py` | Глубокий анализ коллекции |
+| `scripts/pipeline_text_flow.py` | Отладка pipeline |
+
+---
+
+**Версия документа**: 4.3.1
+**Последнее обновление**: 9 октября 2024
+**Статус**: Production Ready
