@@ -357,7 +357,7 @@ client.search(
 - **`POST /v1/admin/security/user/<user_id>/block`** — блокировка пользователя
 
 #### Quality System
-- **`POST /v1/quality/feedback`** — сохранение пользовательского фидбека
+- **`POST /v1/admin/quality/feedback`** — сохранение пользовательского фидбека
 - **`GET /v1/quality/analytics`** — аналитика качества ответов
 - **`GET /v1/quality/trends`** — тренды качества
 

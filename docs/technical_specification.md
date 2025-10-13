@@ -211,9 +211,11 @@ jobs:
 
 ```python
 # Пример использования
-from adapters.telegram_polling import run_polling_loop
+from adapters.telegram.polling import run_polling_loop
 run_polling_loop(api_base="http://localhost:9000")
 ```
+
+> Примечание. Исторический модуль `adapters/telegram/bot.py` оставлен только для обратной совместимости и не используется в продакшене.
 
 #### Web Adapter (планируется)
 - **Технология**: WebSocket + REST API

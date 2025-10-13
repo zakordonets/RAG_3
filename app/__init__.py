@@ -3,7 +3,14 @@ from __future__ import annotations
 import os
 from flask import Flask
 from flask_cors import CORS
-from flasgger import Swagger
+from loguru import logger
+
+try:
+    from flasgger import Swagger
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    Swagger = None
+    logger.warning("Flasgger not installed; Swagger UI will be disabled.")
+
 from .config import CONFIG
 from .utils.logging_config import configure_logging  # Включаем простое логирование
 
@@ -42,7 +49,7 @@ def create_app() -> Flask:
         "swagger_ui": True,
         "specs_route": "/apidocs"
     }
-    
+
     swagger_template = {
         "swagger": "2.0",
         "info": {
@@ -75,6 +82,9 @@ def create_app() -> Flask:
         ]
     }
 
-    Swagger(app, config=swagger_config, template=swagger_template)
+    if Swagger is not None:
+        Swagger(app, config=swagger_config, template=swagger_template)
+    else:
+        logger.info("Skipping Swagger initialization (flasgger module unavailable).")
 
     return app

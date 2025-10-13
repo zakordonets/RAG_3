@@ -36,13 +36,21 @@ class UnifiedQualityManager:
         self._initialized = True
         logger.info("Quality manager initialized")
 
+    def generate_interaction_id(self) -> str:
+        """Generate unique interaction ID (exposed for orchestrator)."""
+        return self._generate_interaction_id()
+
+    def _generate_interaction_id(self) -> str:
+        return f"interaction_{uuid.uuid4().hex[:8]}_{int(datetime.utcnow().timestamp())}"
+
     async def evaluate_interaction(
         self,
         query: str,
         response: str,
         contexts: List[str],
-        sources: List[str]
-    ) -> str:
+        sources: List[str],
+        interaction_id: Optional[str] = None
+    ) -> Optional[str]:
         """
         Evaluate interaction and save to database
 
@@ -52,7 +60,7 @@ class UnifiedQualityManager:
         if not CONFIG.enable_ragas_evaluation:
             return None
 
-        interaction_id = f"interaction_{uuid.uuid4().hex[:8]}_{int(datetime.utcnow().timestamp())}"
+        interaction_id = interaction_id or self._generate_interaction_id()
 
         try:
             # RAGAS evaluation

@@ -142,7 +142,7 @@ export PYTHONPATH=/path/to/your/project:$PYTHONPATH
 
 # Или запустите из корневой директории
 cd /path/to/your/project
-python adapters/telegram_polling.py
+python adapters/telegram/polling.py
 ```
 
 ### Ошибка "Qdrant connection failed"
@@ -190,6 +190,73 @@ python adapters/telegram_polling.py
 1. Проверьте Markdown ответа — адаптер конвертирует его в HTML, поэтому некорректные конструкции попадут в лог.
 2. Ознакомьтесь с логами `TelegramAdapter`: там выводятся длины сообщений, количество частей и первые 300 символов HTML.
 3. При необходимости сократите ответ или обновите allow-list тегов через `TELEGRAM_HTML_ALLOWLIST`.
+
+### Ошибка "Telegram Bot 409 Conflict"
+
+**Причина**: Ошибка 409 возникает когда несколько экземпляров бота пытаются одновременно получать обновления через long polling, или когда установлен webhook.
+
+**Симптомы**:
+```
+ERROR | __main__:get_updates:193 - Failed to get updates: 409
+```
+
+**Автоматическое решение**:
+Бот теперь автоматически определяет и исправляет эту проблему при запуске. Если проблема возникла во время работы:
+
+```bash
+# Windows (PowerShell)
+.\fix_telegram_409.ps1
+
+# Windows (CMD)
+fix_telegram_409.bat
+
+# Linux/macOS
+python scripts/fix_telegram_409.py
+```
+
+**Ручное решение**:
+
+1. **Остановите все экземпляры бота**:
+   ```bash
+   # Windows
+   Get-Process python | Where-Object {$_.CommandLine -like "*telegram*"} | Stop-Process
+
+   # Linux/macOS
+   ps aux | grep telegram | grep -v grep | awk '{print $2}' | xargs kill
+   ```
+
+2. **Остановите Docker контейнеры** (если используете):
+   ```bash
+   docker-compose down
+   ```
+
+3. **Удалите webhook**:
+   ```python
+   import requests
+   BOT_TOKEN = "your_token"
+   requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook",
+                 json={"drop_pending_updates": True})
+   ```
+
+4. **Подождите 1-2 минуты** и запустите бота снова
+
+**Предотвращение**:
+- Убедитесь, что запущен только один экземпляр бота
+- Используйте polling ИЛИ webhook, но не оба одновременно
+- При использовании Docker Compose установите `replicas: 1` для telegram-bot сервиса
+- При использовании Kubernetes установите `replicas: 1` в deployment
+
+**Отладка**:
+```bash
+# Проверка запущенных Python процессов
+Get-Process python
+
+# Проверка Docker контейнеров
+docker ps | grep telegram
+
+# Проверка webhook статуса
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
+```
 
 ### Медленная индексация
 

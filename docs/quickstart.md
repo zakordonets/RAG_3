@@ -218,7 +218,7 @@ source venv/bin/activate  # Linux/macOS
 # или venv\Scripts\activate  # Windows
 
 # Запустить Telegram polling
-python adapters/telegram/telegram_polling.py
+python adapters/telegram/polling.py
 ```
 
 **Ожидаемый вывод:**
@@ -367,6 +367,88 @@ curl https://api.telegram.org/bot<YOUR_TOKEN>/getMe
 # Проверить Flask API
 curl http://localhost:9000/v1/admin/health
 ```
+
+## Troubleshooting
+
+### Ошибка "Telegram Bot 409 Conflict"
+
+Если вы видите в логах:
+```
+ERROR | __main__:get_updates:193 - Failed to get updates: 409
+```
+
+**Причина**: Несколько экземпляров бота пытаются одновременно получать обновления, или установлен webhook.
+
+**Решение**:
+```bash
+# Windows (PowerShell)
+.\fix_telegram_409.ps1
+
+# Windows (CMD)
+fix_telegram_409.bat
+
+# Linux/macOS
+python scripts/fix_telegram_409.py
+```
+
+После исправления бот автоматически будет предотвращать эту проблему при запуске.
+
+### Бот не отвечает
+
+1. **Проверьте статус Flask API**:
+   ```bash
+   curl http://localhost:9000/v1/admin/health
+   ```
+
+2. **Проверьте логи бота**:
+   ```bash
+   # Если запущен через скрипт
+   tail -f logs/app.log
+
+   # Если запущен через Docker
+   docker-compose logs -f telegram-bot
+   ```
+
+3. **Проверьте Qdrant**:
+   ```bash
+   curl http://localhost:6333/collections
+   ```
+
+### Медленные ответы
+
+1. **Включите кэширование** (если не включено):
+   ```bash
+   CACHE_ENABLED=true
+   ```
+
+2. **Увеличьте количество workers**:
+   ```bash
+   gunicorn --workers 4 --threads 2 wsgi:app
+   ```
+
+3. **Используйте GPU** (если доступно):
+   ```bash
+   RERANKER_DEVICE=cuda
+   ```
+
+### Проблемы с индексацией
+
+1. **Проверьте коллекцию в Qdrant**:
+   ```bash
+   python scripts/deep_analysis.py
+   ```
+
+2. **Переиндексируйте данные**:
+   ```bash
+   python ingestion/run.py --force
+   ```
+
+3. **Проверьте логи индексации**:
+   ```bash
+   tail -f logs/reindex.log
+   ```
+
+Подробнее в [FAQ](faq.md#проблемы-и-решения).
 
 ## Полезные команды
 

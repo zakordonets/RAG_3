@@ -145,7 +145,7 @@ services:
 
   telegram-bot:
     build: .
-    command: python adapters/telegram_polling.py
+    command: python adapters/telegram/polling.py
     environment:
       - QDRANT_URL=http://qdrant:6333
       - YANDEX_API_KEY=${YANDEX_API_KEY}
@@ -274,7 +274,7 @@ services:
 
   telegram-bot:
     build: .
-    command: python adapters/telegram_polling.py
+    command: python adapters/telegram/polling.py
     environment:
       - QDRANT_URL=http://qdrant:6333
       - YANDEX_API_KEY=${YANDEX_API_KEY}

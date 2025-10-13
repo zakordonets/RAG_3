@@ -347,6 +347,8 @@ def send(chat_id: str, html_parts: List[str], reply_markup: Optional[dict] = Non
         f"reply_markup={'yes' if reply_markup else 'no'}"
     )
 
+    total_parts = len(html_parts)
+
     for index, part in enumerate(html_parts, start=1):
         payload: dict = {
             "chat_id": chat_id,
@@ -354,7 +356,7 @@ def send(chat_id: str, html_parts: List[str], reply_markup: Optional[dict] = Non
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
         }
-        if reply_markup:
+        if reply_markup and index == total_parts:
             payload["reply_markup"] = reply_markup
 
         try:

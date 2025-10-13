@@ -244,6 +244,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 # Подготавливаем данные для quality evaluation
                 contexts = [doc.get("payload", {}).get("text", "") for doc in top_docs]
                 source_urls = [source.get("url", "") for source in answer_payload.get("sources", [])]
+                interaction_id = quality_manager.generate_interaction_id()
 
                 # Запускаем RAGAS оценку в фоне через ThreadPoolExecutor
                 import concurrent.futures
@@ -261,7 +262,8 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                             query=normalized,
                             response=answer_payload.get("answer_markdown", ""),
                             contexts=contexts,
-                            sources=source_urls
+                            sources=source_urls,
+                            interaction_id=interaction_id
                         ))
                         return result
                     except Exception as e:
@@ -274,7 +276,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_ragas_evaluation)
                     # Не ждем результат - это должно быть неблокирующим
-                    logger.info("RAGAS evaluation started in background")
+                    logger.info(f"RAGAS evaluation started in background (interaction_id={interaction_id})")
 
             except Exception as e:
                 logger.warning(f"Failed to start quality interaction: {e}")

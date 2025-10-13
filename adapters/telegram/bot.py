@@ -14,9 +14,33 @@ from app.infrastructure import get_metrics_collector
 from adapters.telegram_adapter import render_html, split_for_telegram, send as send_html
 
 
+def create_feedback_keyboard(interaction_id: str) -> dict:
+    """Build inline keyboard with feedback buttons."""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "👍", "callback_data": f"feedback_positive_{interaction_id}"},
+                {"text": "👎", "callback_data": f"feedback_negative_{interaction_id}"},
+            ]
+        ]
+    }
+
+
+def extract_interaction_id(callback_data: str) -> Optional[str]:
+    """Extract interaction ID from callback payload."""
+    prefixes = ("feedback_positive_", "feedback_negative_")
+    for prefix in prefixes:
+        if callback_data.startswith(prefix):
+            suffix = callback_data[len(prefix):]
+            return suffix or None
+    return None
+
+
 class TelegramBot:
     """
     Основной Telegram бот с rate limiting и форматированием.
+
+    Deprecated: prefer ``adapters.telegram.polling`` for production deployments.
     """
 
     def __init__(
@@ -103,9 +127,14 @@ class TelegramBot:
             answer_markdown = answer.get("answer_markdown") or answer.get("answer") or ""
             sources = answer.get("sources", []) or []
             reply_markup = answer.get("reply_markup")
+            interaction_id = answer.get("interaction_id") or ""
 
             html_text = render_html(answer_markdown, sources)
             parts = split_for_telegram(html_text)
+
+            if interaction_id and not reply_markup:
+                reply_markup = create_feedback_keyboard(str(interaction_id))
+
             send_html(chat_id, parts, reply_markup=reply_markup)
             self.metrics.increment_counter("telegram_messages_sent_total")
             logger.debug(f"Rich answer sent to {chat_id}")
@@ -175,7 +204,8 @@ class TelegramBot:
             response = requests.post(
                 f"{self.api_base}/v1/chat/query",
                 json={
-                    "query": text,
+                    "message": text,
+                    "channel": "telegram",
                     "chat_id": chat_id
                 },
                 timeout=self.timeout
@@ -226,25 +256,31 @@ class TelegramBot:
         """
         try:
             callback_data = callback_query.get("data", "")
-            chat_id = callback_query["message"]["chat"]["id"]
-            message_id = callback_query["message"]["message_id"]
+            chat = callback_query.get("message", {}).get("chat", {})
+            chat_id = chat.get("id")
+
+            if not callback_data or chat_id is None:
+                return
 
             if callback_data.startswith("feedback_"):
-                # Отправляем feedback в RAG API
-                feedback_type = "positive" if "positive" in callback_data else "negative"
-                interaction_id = callback_data.split("_")[-1]
+                # ���������� feedback � RAG API
+                feedback_type = "positive" if callback_data.startswith("feedback_positive_") else "negative"
+                interaction_id = extract_interaction_id(callback_data)
+                if not interaction_id:
+                    logger.warning(f"Callback without interaction_id: {callback_data!r}")
+                    return
 
                 requests.post(
-                    f"{self.api_base}/v1/quality/feedback",
+                    f"{self.api_base}/v1/admin/quality/feedback",
                     json={
                         "interaction_id": interaction_id,
-                        "feedback": feedback_type,
+                        "feedback_type": feedback_type,
                         "chat_id": chat_id
                     },
                     timeout=self.timeout
                 )
 
-                # Отвечаем на callback query
+                # �������� �� callback query
                 requests.post(
                     f"{self.api_url}/answerCallbackQuery",
                     json={
