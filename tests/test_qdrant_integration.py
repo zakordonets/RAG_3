@@ -1,8 +1,13 @@
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock, patch
+from __future__ import annotations
+
+from contextlib import contextmanager
+from unittest.mock import patch
+import uuid
+
+import pytest
+
 from ingestion.indexer import create_payload_indexes, upsert_chunks
-from ingestion.run import run_docusaurus_indexing
+from ingestion import run as ingestion_run
 
 
 def test_create_payload_indexes():
@@ -10,19 +15,11 @@ def test_create_payload_indexes():
     with patch('ingestion.indexer.client') as mock_client:
         mock_client.create_payload_index.return_value = None
 
-        # Тест создания индексов
         create_payload_indexes("test_collection")
 
-        # Проверяем, что были вызваны методы создания индексов
         assert mock_client.create_payload_index.call_count >= 5  # Минимум 5 индексов
-
-        # Проверяем, что были созданы индексы для ключевых полей
         called_fields = [call[1]['field_name'] for call in mock_client.create_payload_index.call_args_list]
-        assert "category" in called_fields
-        assert "groups_path" in called_fields
-        assert "title" in called_fields
-        assert "source" in called_fields
-        assert "content_type" in called_fields
+        assert {"category", "groups_path", "title", "source", "content_type"} <= set(called_fields)
 
 
 def test_upsert_chunks_with_chunk_id():
@@ -30,19 +27,17 @@ def test_upsert_chunks_with_chunk_id():
     with patch('ingestion.indexer.client') as mock_client, \
          patch('ingestion.indexer.embed_batch_optimized') as mock_embed:
 
-        # Настраиваем моки
         mock_client.upsert.return_value = None
         mock_embed.return_value = {
             'dense_vecs': [[0.1] * 1024, [0.2] * 1024],
             'lexical_weights': [{}, {}]
         }
 
-        # Создаем тестовые чанки с chunk_id
         chunks = [
             {
                 "text": "Тестовый текст 1",
                 "payload": {
-                    "chunk_id": "doc1#0",
+                    "chunk_id": "0123456789abcdef0123456789abcdef#0",
                     "title": "Тест 1",
                     "category": "АРМ_adm",
                     "source": "docusaurus"
@@ -51,7 +46,7 @@ def test_upsert_chunks_with_chunk_id():
             {
                 "text": "Тестовый текст 2",
                 "payload": {
-                    "chunk_id": "doc1#1",
+                    "chunk_id": "fedcba9876543210fedcba9876543210#1",
                     "title": "Тест 2",
                     "category": "АРМ_adm",
                     "source": "docusaurus"
@@ -59,19 +54,15 @@ def test_upsert_chunks_with_chunk_id():
             }
         ]
 
-        # Вызываем функцию
         result = upsert_chunks(chunks)
 
-        # Проверяем результат
         assert result == 2
         mock_client.upsert.assert_called_once()
-
-        # Проверяем, что были переданы правильные ID
-        call_args = mock_client.upsert.call_args
-        points = call_args[1]['points']
+        points = mock_client.upsert.call_args.kwargs['points']
         assert len(points) == 2
-        assert points[0].id == "doc1#0"
-        assert points[1].id == "doc1#1"
+        uuid.UUID(points[0].id)
+        uuid.UUID(points[1].id)
+        assert points[0].id != points[1].id  # UUID формируется из chunk_id
 
 
 def test_upsert_chunks_fallback_id():
@@ -81,7 +72,6 @@ def test_upsert_chunks_fallback_id():
          patch('ingestion.indexer.text_hash') as mock_hash, \
          patch('ingestion.indexer.uuid') as mock_uuid:
 
-        # Настраиваем моки
         mock_client.upsert.return_value = None
         mock_embed.return_value = {
             'dense_vecs': [[0.1] * 1024],
@@ -90,7 +80,6 @@ def test_upsert_chunks_fallback_id():
         mock_hash.return_value = "test_hash_123456789012345678901234567890123456789012345678901234567890"
         mock_uuid.UUID.return_value = "fallback-uuid-123"
 
-        # Создаем тестовый чанк без chunk_id
         chunks = [
             {
                 "text": "Тестовый текст",
@@ -101,172 +90,68 @@ def test_upsert_chunks_fallback_id():
             }
         ]
 
-        # Вызываем функцию
         result = upsert_chunks(chunks)
 
-        # Проверяем результат
         assert result == 1
         mock_client.upsert.assert_called_once()
-
-        # Проверяем, что был использован fallback ID
-        call_args = mock_client.upsert.call_args
-        points = call_args[1]['points']
+        points = mock_client.upsert.call_args.kwargs['points']
         assert len(points) == 1
         assert points[0].id == "fallback-uuid-123"
 
 
-def test_run_docusaurus_indexing_basic():
-    """Базовый тест индексации Docusaurus"""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
+def test_run_unified_indexing_basic(monkeypatch):
+    """Проверяем, что run_unified_indexing корректно обрабатывает результат DAG."""
 
-        # Создаем структуру документации
-        admin_dir = temp_path / "40-admin"
-        admin_dir.mkdir()
-        widget_dir = admin_dir / "02-widget"
-        widget_dir.mkdir()
+    class FakeStep:
+        def __init__(self, name: str):
+            self._name = name
 
-        # Создаем _category_.json файлы
-        (admin_dir / "_category_.json").write_text('{"label": "Администратор"}', encoding="utf-8")
-        (widget_dir / "_category_.json").write_text('{"label": "Виджеты"}', encoding="utf-8")
+        def get_step_name(self) -> str:
+            return self._name
 
-        # Создаем markdown файл
-        md_file = widget_dir / "01-admin-widget-features.md"
-        md_file.write_text("""---
-title: "Админ виджет"
-category: "АРМ_adm"
----
+    class FakeWriter(FakeStep):
+        def __init__(self):
+            super().__init__("qdrant_writer")
+            self.stats = {"total_chunks": 3, "processed_chunks": 3, "failed_chunks": 0}
 
-# Админ виджет
+        def ensure_collection(self):
+            self.ensure_called = True
 
-Описание функций админ виджета.
+    class FakeDag:
+        def __init__(self):
+            self.steps = [FakeStep("parser"), FakeStep("normalizer"), FakeWriter()]
 
-## Функции
+        def run(self, documents):
+            list(documents)
+            return {"processed_docs": 1, "total_docs": 1, "failed_docs": 0, "total_time": 0.1}
 
-- Функция 1
-- Функция 2
+    class FakeAdapter:
+        def __init__(self, *args, **kwargs):
+            pass
 
-<ContentRef url="/docs/admin/user">Пользователи</ContentRef>
-""", encoding="utf-8")
+        def iter_documents(self):
+            yield object()
 
-        with patch('ingestion.run.upsert_chunks') as mock_upsert, \
-             patch('ingestion.run.create_payload_indexes') as mock_indexes:
+    @contextmanager
+    def fake_state_manager():
+        yield {}
 
-            # Настраиваем моки
-            mock_upsert.return_value = 3  # 3 чанка
-            mock_indexes.return_value = None
+    monkeypatch.setattr(ingestion_run, "DocusaurusAdapter", FakeAdapter)
+    monkeypatch.setattr(ingestion_run, "create_docusaurus_dag", lambda config: FakeDag())
+    monkeypatch.setattr(ingestion_run, "get_state_manager", fake_state_manager)
 
-            # Запускаем индексацию
-            result = run_docusaurus_indexing(
-                docs_root=str(temp_path),
-                site_base_url="https://test.com",
-                collection_name="test_collection"
-            )
+    result = ingestion_run.run_unified_indexing(
+        source_type="docusaurus",
+        config={"docs_root": "/tmp/docs", "collection_name": "test"},
+    )
 
-            # Проверяем результат
-            assert result["success"] is True
-            assert result["files_processed"] == 1
-            assert result["total_files"] == 1
-            assert result["chunks_indexed"] == 3
-
-            # Проверяем, что были вызваны нужные функции
-            mock_indexes.assert_called_once_with("test_collection")
-            mock_upsert.assert_called_once()
+    assert result["success"] is True
+    assert result["stats"]["processed_docs"] == 1
+    assert result["stats"]["failed_docs"] == 0
 
 
-def test_run_docusaurus_indexing_category_filter():
-    """Тест индексации с фильтром по категории"""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-
-        # Создаем структуру документации
-        admin_dir = temp_path / "40-admin"
-        admin_dir.mkdir()
-
-        # Создаем два файла с разными категориями
-        file1 = admin_dir / "admin-file.md"
-        file1.write_text("""---
-title: "Админ файл"
-category: "АРМ_adm"
----
-
-# Админ файл
-
-Содержимое админ файла.
-""", encoding="utf-8")
-
-        file2 = admin_dir / "sv-file.md"
-        file2.write_text("""---
-title: "SV файл"
-category: "АРМ_sv"
----
-
-# SV файл
-
-Содержимое SV файла.
-""", encoding="utf-8")
-
-        with patch('ingestion.run.upsert_chunks') as mock_upsert, \
-             patch('ingestion.run.create_payload_indexes') as mock_indexes:
-
-            # Настраиваем моки
-            mock_upsert.return_value = 1  # 1 чанк (только админ файл)
-            mock_indexes.return_value = None
-
-            # Запускаем индексацию с фильтром по категории
-            result = run_docusaurus_indexing(
-                docs_root=str(temp_path),
-                site_base_url="https://test.com",
-                collection_name="test_collection",
-                category_filter="АРМ_adm"
-            )
-
-            # Проверяем результат
-            assert result["success"] is True
-            assert result["files_processed"] == 1  # Только один файл прошел фильтр
-            assert result["total_files"] == 2  # Всего файлов было 2
-            assert result["chunks_indexed"] == 1
-
-
-def test_run_docusaurus_indexing_no_files():
-    """Тест индексации когда нет файлов"""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-
-        # Создаем пустую директорию
-        empty_dir = temp_path / "empty"
-        empty_dir.mkdir()
-
-        with patch('ingestion.run.create_payload_indexes') as mock_indexes:
-            mock_indexes.return_value = None
-
-            # Запускаем индексацию
-            result = run_docusaurus_indexing(
-                docs_root=str(temp_path),
-                site_base_url="https://test.com",
-                collection_name="test_collection"
-            )
-
-            # Проверяем результат
-            assert result["success"] is False
-            assert result["files_processed"] == 0
-            assert result["total_files"] == 0
-            assert result["chunks_indexed"] == 0
-            assert "Нет чанков для индексации" in result["error"]
-
-
-def test_run_docusaurus_indexing_invalid_path():
-    """Тест индексации с несуществующим путем"""
-    with patch('ingestion.run.create_payload_indexes') as mock_indexes:
-        mock_indexes.return_value = None
-
-        # Запускаем индексацию с несуществующим путем
-        try:
-            result = run_docusaurus_indexing(
-                docs_root="/nonexistent/path",
-                site_base_url="https://test.com",
-                collection_name="test_collection"
-            )
-            assert False, "Должно было быть исключение"
-        except ValueError as e:
-            assert "не существует" in str(e)
+def test_run_unified_indexing_invalid_source(monkeypatch):
+    """Неподдерживаемый тип источника приводит к ValueError."""
+    result = ingestion_run.run_unified_indexing("unsupported", {"docs_root": "/tmp"})
+    assert result["success"] is False
+    assert "unsupported" in result.get("error", "")

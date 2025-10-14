@@ -188,17 +188,20 @@ class TestUnifiedChunkerStep:
         """Тест создания чанкера"""
         chunker = UnifiedChunkerStep(
             max_tokens=300,
-            overlap_tokens=60,
-            strategy="simple"
+            min_tokens=150,
+            overlap_base=60,
+            oversize_block_policy="split",
+            oversize_block_limit=800,
         )
 
         assert chunker.max_tokens == 300
-        assert chunker.overlap_tokens == 60
+        assert chunker.min_tokens == 150
+        assert chunker.overlap_base == 60
         assert chunker.get_step_name() == "unified_chunker"
 
     def test_chunker_process_document(self):
         """Тест обработки документа"""
-        chunker = UnifiedChunkerStep(max_tokens=100, overlap_tokens=20)
+        chunker = UnifiedChunkerStep(max_tokens=100, min_tokens=50, overlap_base=20)
 
         # Создаем тестовый документ
         parsed_doc = ParsedDoc(

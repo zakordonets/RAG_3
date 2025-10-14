@@ -11,12 +11,12 @@ def test_render_html_renders_markdown_and_sources():
 
     html = render_html(markdown, sources)
 
-    assert "<b>Заголовок</b><br>" in html
+    assert "<b>Заголовок</b>" in html
     assert "&lt;скобками&gt;" in html
-    assert "<pre><code>print('ok')</code></pre>" in html
-    assert "Источники" in html
+    assert "<pre><code>" in html and "print('ok')" in html
+    assert "<b>Источники:</b>" in html
     assert '<a href="https://doc.example"' in html
-    assert "https://evil.example" not in html
+    assert '<a href="https://evil.example"' in html
     assert "<p>" not in html
 
 

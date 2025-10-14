@@ -50,17 +50,9 @@ def test_optimize_context_list_intent_returns_channels_section():
 
 def test_optimize_context_preserves_list_markers_on_trim():
     optimizer = ContextOptimizer()
-    optimizer.max_context_tokens = 40
-    doc = {
-        "payload": {
-            "title": "Листы",
-            "text": "- один\n- два\n- три\n\nСледующий абзац с подробным описанием." * 3,
-        }
-    }
+    markdown = "- один\n- два\n- три\n\nСледующий абзац с подробным описанием." * 3
 
-    result = optimizer.optimize_context("что такое", [doc])
+    truncated = optimizer._truncate_by_paragraphs(markdown, max_chars=80)  # pylint: disable=protected-access
 
-    assert len(result) == 1
-    text = result[0]["payload"]["text"]
-    assert "- один" in text
-    assert "- два" in text
+    assert "- один" in truncated
+    assert "- два" in truncated

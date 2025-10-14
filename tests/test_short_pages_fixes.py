@@ -1,195 +1,85 @@
 #!/usr/bin/env python3
 """
-Тесты для исправления критических регрессий в рефакторинге.
+Юнит-тесты для сценариев с очень коротким контентом в новом ingestion пайплайне.
+
+После миграции на Parser/BaseNormalizer/UniversalChunker необходимо убедиться,
+что обработка коротких документов остаётся безопасной и не приводит к
+исключениям. Тесты проверяют Markdown, HTML и текстовые кейсы.
 """
 
-import pytest
-from ingestion.processors.base import ProcessedPage
-from ingestion.processors.content_processor import ContentProcessor
-from ingestion.processors.content_processor import ContentProcessor
-from ingestion.processors.html_parser import HTMLParser
+from __future__ import annotations
+
 from bs4 import BeautifulSoup
 
+from ingestion.adapters.base import ParsedDoc, RawDoc
+from ingestion.normalizers.base import BaseNormalizer, Parser
+from ingestion.pipeline.chunker import UnifiedChunkerStep
 
-class TestShortPagesFixes:
-    """Тесты исправлений для коротких страниц и регрессий."""
 
-    def test_processed_page_short_content_no_error(self):
-        """Тест: ProcessedPage не выбрасывает ValueError для короткого контента."""
-        # Короткий контент (менее 10 символов)
-        page = ProcessedPage(
-            url="https://example.com/short",
-            title="Short Page",
-            content="Hi",  # 2 символа
-            page_type="guide",
-            metadata={}
+class TestShortContentProcessing:
+    """Проверяем устойчивость пайплайна к короткому или пустому содержимому."""
+
+    def setup_method(self) -> None:
+        self.parser = Parser()
+        self.normalizer = BaseNormalizer()
+        self.chunker = UnifiedChunkerStep(max_tokens=128, min_tokens=32, overlap_base=16)
+
+    def test_parser_handles_very_short_markdown(self):
+        raw = RawDoc(uri="file:///tmp/short.md", bytes=b"# T\n\nHi", meta={"source": "test"})
+        parsed = self.parser.process(raw)
+        assert parsed.format == "markdown"
+        assert parsed.text == "# T\n\nHi"
+
+    def test_parser_handles_empty_text(self):
+        raw = RawDoc(uri="file:///tmp/empty.md", bytes=b"", meta={"source": "test"})
+        parsed = self.parser.process(raw)
+        assert parsed.format in {"text", "markdown"}
+        assert parsed.text == ""
+
+    def test_base_normalizer_does_not_strip_everything(self):
+        parsed = ParsedDoc(text="  Hello  ", format="text", metadata={"source": "test"})
+        normalized = self.normalizer.process(parsed)
+        assert normalized.text == "Hello"
+        assert normalized.metadata["normalized"] is True
+
+    def test_chunker_returns_empty_list_for_blank_text(self):
+        parsed = ParsedDoc(
+            text="",
+            format="markdown",
+            metadata={"canonical_url": "https://example.com/blank"},
         )
+        assert self.chunker.process(parsed) == []
 
-        # Должен создаться без ошибки
-        assert page.content == "Hi"
-        assert page.title == "Short Page"
-
-    def test_processed_page_empty_content_no_error(self):
-        """Тест: ProcessedPage не выбрасывает ValueError для пустого контента."""
-        page = ProcessedPage(
-            url="https://example.com/empty",
-            title="Empty Page",
-            content="",  # Пустой контент
-            page_type="guide",
-            metadata={}
+    def test_chunker_creates_single_chunk_for_short_text(self):
+        parsed = ParsedDoc(
+            text="Короткий текст без структуры.",
+            format="text",
+            metadata={"canonical_url": "https://example.com/short", "source": "test"},
         )
+        chunks = self.chunker.process(parsed)
+        assert len(chunks) == 1
+        chunk = chunks[0]
+        assert chunk["payload"]["chunk_index"] == 0
+        assert chunk["payload"]["chunking_strategy"] in {"universal", "fallback"}
 
-        # Должен создаться без ошибки
-        assert page.content == ""
-        assert page.title == "Empty Page"
+    def test_html_parsing_with_short_content(self):
+        html = "<html><body><h1>H</h1><p>Hi</p></body></html>"
+        soup = BeautifulSoup(html, "html.parser")
+        text = soup.get_text(separator="\n", strip=True)
+        parsed = ParsedDoc(
+            text=text,
+            format="html",
+            metadata={"canonical_url": "https://example.com/html", "source": "test"},
+        )
+        chunks = self.chunker.process(parsed)
+        assert len(chunks) == 1
+        assert "H" in chunks[0]["text"]
 
-    def test_content_processor_short_jina_content(self):
-        """Тест: ContentProcessor обрабатывает короткий Jina контент."""
-        processor = ContentProcessor()
-
-        # Короткий Jina контент
-        short_jina = """Title: FAQ
-URL Source: https://example.com/faq
-Markdown Content:
-
-# FAQ
-Q&A"""
-
-        result = processor.process(short_jina, "https://example.com/faq", "auto")
-
-        # Должен обработаться без ошибки
-        assert result.url == "https://example.com/faq"
-        # Контент может быть пустым из-за обработки, но структура должна быть правильной
-        assert result.content is not None
-        # page_type может быть 'stub' для короткого контента
-        assert result.page_type in ["faq", "stub"]
-
-    def test_content_processor_with_leading_whitespace(self):
-        """Тест: ContentProcessor корректно обрабатывает контент с лидирующими пробелами."""
-        processor = ContentProcessor()
-
-        # Jina контент с лидирующими пробелами и БОМ
-        jina_with_whitespace = """\ufeff   \n
-Title: Test Page
-URL Source: https://example.com/test
-Markdown Content:
-
-# Test Page
-Content here."""
-
-        result = processor.process(jina_with_whitespace, "https://example.com/test", "auto")
-
-        # Должен правильно определить тип как Jina
-        assert result.url == "https://example.com/test"
-        # Контент может быть пустым из-за обработки, но структура должна быть правильной
-        assert result.content is not None
-        # page_type может быть 'stub' для короткого контента
-        assert result.page_type in ["guide", "stub"]
-
-    def test_content_processor_with_bom(self):
-        """Тест: ContentProcessor корректно обрабатывает контент с БОМ."""
-        processor = ContentProcessor()
-
-        # HTML контент с БОМ
-        html_with_bom = """\ufeff<!DOCTYPE html>
-<html>
-<head><title>Test</title></head>
-<body><h1>Test Page</h1></body>
-</html>"""
-
-        result = processor.process(html_with_bom, "https://example.com/test", "auto")
-
-        # Должен правильно определить тип как HTML
-        assert result.url == "https://example.com/test"
-        assert "Test Page" in result.content
-
-    def test_migration_wrapper_correct_args(self):
-        """Тест: ContentProcessor правильно обрабатывает Jina контент."""
-        # Тест Jina парсера
-        jina_content = """Title: Test
-URL Source: https://example.com/test
-Markdown Content:
-
-# Test
-Content here."""
-
-        processor = ContentProcessor()
-        processed = processor.process(jina_content, "https://example.com/test", "jina")
-
-        # Должен правильно обработать Jina контент
-        assert processed.title is not None
-        assert processed.content is not None
-        # page_type может быть 'stub' для короткого контента
-        assert processed.page_type in ["guide", "stub"]
-
-    def test_extract_main_text_correct_args(self):
-        """Тест: HTMLParser правильно извлекает текст."""
-        html_content = """<!DOCTYPE html>
-<html>
-<body>
-<div class="theme-doc-markdown">
-<h1>Test Page</h1>
-<p>Test content here.</p>
-</div>
-</body>
-</html>"""
-
-        html_parser = HTMLParser()
-        processed = html_parser.parse("https://example.com/test", html_content)
-
-        # Должен правильно извлечь текст
-        assert "Test Page" in processed.content
-        assert "Test content here" in processed.content
-
-    def test_pipeline_error_handling_simulation(self):
-        """Тест: симуляция обработки ошибок в пайплайне."""
-        processor = ContentProcessor()
-
-        # Тест с проблемным контентом, который может вызвать ошибку
-        problematic_content = "Invalid content that might cause parsing errors"
-
-        # Должен обработаться без исключения (fallback к HTML парсеру)
-        try:
-            result = processor.process(problematic_content, "https://example.com/problem", "auto")
-            # Если дошли сюда, значит ошибка была обработана
-            assert result is not None
-            assert result.url == "https://example.com/problem"
-        except Exception as e:
-            pytest.fail(f"Processor should handle problematic content gracefully, but raised: {e}")
-
-    def test_very_short_content_processing(self):
-        """Тест: обработка очень короткого контента."""
-        processor = ContentProcessor()
-
-        # Очень короткий контент
-        very_short = "Hi"
-
-        result = processor.process(very_short, "https://example.com/short", "auto")
-
-        # Должен обработаться без ошибки
-        assert result.url == "https://example.com/short"
-        # Контент может быть обработан и изменен
-        assert result.content is not None
-        assert result.title is not None  # Должен быть извлечен из URL
-
-    def test_jina_metadata_preservation(self):
-        """Тест: сохранение Jina метаданных при правильном порядке аргументов."""
-        jina_content = """Title: API Documentation
-URL Source: https://docs.example.com/api
-Content Length: 1500
-Markdown Content:
-
-# API Documentation
-
-## Endpoints
-
-**Permissions:** ADMIN, USER"""
-
-        processor = ContentProcessor()
-        processed = processor.process(jina_content, "https://docs.example.com/api", "jina")
-
-        # Проверяем, что метаданные сохранились
-        assert processed.title is not None
-        assert processed.content is not None
-        # page_type может быть 'stub' для короткого контента
-        assert processed.page_type in ["api", "stub"]
+    def test_pipeline_chain_on_short_markdown(self):
+        """Полный мини-пайплайн: RawDoc -> Parser -> Normalizer -> Chunker."""
+        raw = RawDoc(uri="file:///tmp/doc.md", bytes=b"# H\nMini", meta={"source": "test"})
+        parsed = self.parser.process(raw)
+        normalized = self.normalizer.process(parsed)
+        chunks = self.chunker.process(normalized)
+        assert len(chunks) == 1
+        assert chunks[0]["payload"]["doc_id"]

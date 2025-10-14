@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.core.embeddings import embed_unified, embed_dense, embed_sparse_optimized
 from app.services.search.retrieval import hybrid_search
-from app.services.indexing.metadata_aware_indexer import MetadataAwareIndexer
+from ingestion.indexer import client as qdrant_client
 from app.config import CONFIG
 
 
@@ -122,11 +122,8 @@ class TestRAGSystemComprehensive:
 
     def test_collection_status(self):
         """Тест статуса коллекции Qdrant"""
-        indexer = MetadataAwareIndexer()
-
-        # Получаем информацию о коллекции
         collection_name = getattr(CONFIG, 'qdrant_collection', 'chatcenter_docs')
-        info = indexer.client.get_collection(collection_name)
+        info = qdrant_client.get_collection(collection_name)
 
         assert info.status == "green", f"Статус коллекции должен быть green, получен: {info.status}"
         assert info.points_count > 0, "Коллекция должна содержать точки"
@@ -182,16 +179,16 @@ class TestRAGSystemComprehensive:
                 assert isinstance(payload, dict), f"Payload должен быть словарем в результате {i}"
 
                 # Проверяем обязательные поля в payload
-                assert 'url' in payload, f"Payload должен содержать url в результате {i}"
+                assert ('url' in payload) or ('canonical_url' in payload), f"Payload должен содержать url или canonical_url в результате {i}"
                 assert 'title' in payload, f"Payload должен содержать title в результате {i}"
                 assert 'text' in payload, f"Payload должен содержать text в результате {i}"
 
-                url = payload['url']
-                title = payload['title']
+                url = payload.get('url') or payload.get('canonical_url')
+                title = payload.get('title') or payload.get('canonical_url')
                 text = payload['text']
 
                 assert url is not None and url != "", f"URL не должен быть пустым в результате {i}"
-                assert title is not None and title != "", f"Title не должен быть пустым в результате {i}"
+                assert title, f"Title не должен быть пустым в результате {i}"
                 assert text is not None and text != "", f"Text не должен быть пустым в результате {i}"
 
                 assert len(text) > 5, f"Text должен содержать достаточно текста в результате {i}"
@@ -222,27 +219,29 @@ class TestRAGSystemComprehensive:
             payload = result['payload']
 
             # Проверяем обязательные поля (адаптируем под текущую структуру)
-            required_fields = [
-                'url', 'title', 'text', 'page_type',
-                'chunk_index'
-            ]
+            required_fields = ['title', 'text', 'chunk_index']
 
             for field in required_fields:
                 assert field in payload, f"Поле '{field}' отсутствует в результате {i}"
                 assert payload[field] is not None, f"Поле '{field}' не должно быть None в результате {i}"
                 assert payload[field] != "", f"Поле '{field}' не должно быть пустым в результате {i}"
 
+            url_value = payload.get('url') or payload.get('canonical_url')
+            assert url_value, f"URL не должен быть пустым в результате {i}"
+
             # Проверяем типы данных
-            assert isinstance(payload['url'], str), f"URL должен быть строкой в результате {i}"
+            assert isinstance(url_value, str), f"URL должен быть строкой в результате {i}"
             assert isinstance(payload['title'], str), f"Title должен быть строкой в результате {i}"
             assert isinstance(payload['text'], str), f"Text должен быть строкой в результате {i}"
-            assert isinstance(payload['page_type'], str), f"Page type должен быть строкой в результате {i}"
+            page_type = payload.get('page_type') or payload.get('content_type')
+            assert page_type, f"Page type должен быть задан в результате {i}"
+            assert isinstance(page_type, str), f"Page type должен быть строкой в результате {i}"
             assert isinstance(payload['chunk_index'], int), f"Chunk index должен быть числом в результате {i}"
 
             # Проверяем логические ограничения
             assert payload['chunk_index'] >= 0, f"Chunk index должен быть >= 0 в результате {i}"
 
-            print(f"  ✅ Метаданные результата {i+1}: {payload['page_type']}, chunk {payload['chunk_index']}")
+            print(f"  ✅ Метаданные результата {i+1}: {page_type}, chunk {payload['chunk_index']}")
 
         print(f"✅ Все метаданные корректны для {len(results)} результатов")
 

@@ -81,6 +81,7 @@ async def test_ragas_evaluator_basic(monkeypatch):
         assert 0.0 <= float(scores[k]) <= 1.0
 
 
+@pytest.mark.asyncio
 async def test_quality_manager():
     """Тест Quality Manager"""
     logger.info("🧪 Testing Quality Manager...")
