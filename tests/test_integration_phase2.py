@@ -22,6 +22,8 @@ from app.services.quality.ragas_evaluator import ragas_evaluator
 from app.config import CONFIG
 from loguru import logger
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture(scope="module")
 def app_client():

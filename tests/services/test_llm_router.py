@@ -5,6 +5,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 project_root = pathlib.Path(__file__).resolve().parents[2]
 module_path = project_root / "app" / "services" / "core" / "llm_router.py"
 

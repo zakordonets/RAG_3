@@ -6,6 +6,8 @@ import pytest
 from ingestion.utils.docusaurus_utils import clean, replace_contentref, clean_segment, fs_to_url
 from pathlib import Path
 
+pytestmark = pytest.mark.unit
+
 
 class TestDocusaurusClean:
     """Тесты для docusaurus_clean.py"""

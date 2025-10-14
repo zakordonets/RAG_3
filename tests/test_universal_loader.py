@@ -24,6 +24,8 @@ from ingestion.pipeline.chunker import UnifiedChunkerStep
 from ingestion.processors.docusaurus_markdown_processor import process_markdown
 from app.config.sources_config import extract_url_metadata
 
+pytestmark = pytest.mark.integration
+
 
 class TestParserDetection:
     """Проверяем, что Parser корректно определяет формат документа."""

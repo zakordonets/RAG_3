@@ -15,6 +15,8 @@ from app.services.search.retrieval import hybrid_search
 from ingestion.indexer import client as qdrant_client
 from app.config import CONFIG
 
+pytestmark = [pytest.mark.e2e, pytest.mark.slow]
+
 
 class TestRAGSystemComprehensive:
     """Комплексное тестирование RAG системы"""

@@ -10,6 +10,8 @@ from typing import List, Any
 from ingestion.pipeline.dag import PipelineDAG
 from ingestion.adapters.base import RawDoc, PipelineStep
 
+pytestmark = pytest.mark.unit
+
 
 class TestPipelineDAG:
     """Тесты для PipelineDAG"""

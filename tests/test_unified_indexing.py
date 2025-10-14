@@ -12,6 +12,8 @@ from ingestion.pipeline.chunker import UnifiedChunkerStep
 from ingestion.pipeline.embedder import Embedder
 from ingestion.adapters.base import ParsedDoc
 
+pytestmark = pytest.mark.integration
+
 
 class TestQdrantWriter:
     """Тесты для единого QdrantWriter"""

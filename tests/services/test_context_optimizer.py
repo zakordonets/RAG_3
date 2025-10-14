@@ -1,7 +1,11 @@
+import pytest
+
 from app.services.core.context_optimizer import (
     ContextOptimizer,
     extract_markdown_section,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def test_extract_markdown_section_returns_channels_block():

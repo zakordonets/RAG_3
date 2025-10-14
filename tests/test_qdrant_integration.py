@@ -9,6 +9,8 @@ import pytest
 from ingestion.indexer import create_payload_indexes, upsert_chunks
 from ingestion import run as ingestion_run
 
+pytestmark = pytest.mark.integration
+
 
 def test_create_payload_indexes():
     """Тест создания индексов payload"""

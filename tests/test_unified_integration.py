@@ -14,6 +14,8 @@ from ingestion.adapters.website import WebsiteAdapter
 from ingestion.pipeline.dag import PipelineDAG
 from ingestion.state.state_manager import StateManager, DocumentState
 
+pytestmark = pytest.mark.integration
+
 
 class TestUnifiedPipelineIntegration:
     """Интеграционные тесты единого пайплайна"""

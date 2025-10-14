@@ -1,4 +1,8 @@
+import pytest
+
 from adapters.telegram_adapter import render_html, split_for_telegram
+
+pytestmark = pytest.mark.unit
 
 
 def test_render_html_renders_markdown_and_sources():

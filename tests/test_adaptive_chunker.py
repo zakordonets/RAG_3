@@ -7,11 +7,15 @@ Legacy-модуль AdaptiveChunker был удалён вместе с рефа
 (короткие/длинные документы, структурный парсинг Markdown) работают штатно.
 """
 
+import pytest
+
 from ingestion.chunking.universal_chunker import (
     Block,
     OversizePolicy,
     UniversalChunker,
 )
+
+pytestmark = pytest.mark.unit
 
 
 class TestUniversalChunkerCompatibility:

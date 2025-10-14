@@ -13,6 +13,8 @@ from ingestion.adapters.docusaurus import DocusaurusAdapter
 from ingestion.adapters.website import WebsiteAdapter
 from ingestion.pipeline.dag import PipelineDAG
 
+pytestmark = pytest.mark.unit
+
 
 class TestRawDoc:
     """Тесты для RawDoc dataclass"""

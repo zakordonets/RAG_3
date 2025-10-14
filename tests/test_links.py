@@ -1,4 +1,8 @@
+import pytest
+
 from ingestion.utils.docusaurus_utils import replace_contentref
+
+pytestmark = pytest.mark.unit
 
 
 def test_contentref():

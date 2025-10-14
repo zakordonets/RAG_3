@@ -12,6 +12,8 @@ import pytest
 from app.config import CONFIG
 from app.services.search.retrieval import auto_merge_neighbors, _estimate_tokens
 
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
 
 def _fake_fetch_factory(mapping: dict[str, list[dict]]) -> Callable[[str], list[dict]]:
     def _fetch(doc_id: str) -> list[dict]:

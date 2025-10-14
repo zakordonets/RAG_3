@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
+import pytest
 from bs4 import BeautifulSoup
 
 from ingestion.adapters.base import ParsedDoc, RawDoc
 from ingestion.normalizers.base import BaseNormalizer, Parser
 from ingestion.pipeline.chunker import UnifiedChunkerStep
+
+pytestmark = pytest.mark.unit
 
 
 class TestShortContentProcessing:

@@ -15,6 +15,8 @@ from ingestion.crawlers.docusaurus_fs_crawler import (
     _collect_dir_metadata
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestDocusaurusFSCrawler:
     """Тесты для docusaurus_fs_crawler.py"""

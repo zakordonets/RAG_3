@@ -12,6 +12,8 @@ from ingestion.adapters.docusaurus import DocusaurusAdapter
 from ingestion.adapters.website import WebsiteAdapter
 from ingestion.adapters.base import RawDoc
 
+pytestmark = pytest.mark.integration
+
 
 class TestDocusaurusAdapter:
     """Тесты для DocusaurusAdapter"""

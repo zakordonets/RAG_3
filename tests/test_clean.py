@@ -1,4 +1,8 @@
+import pytest
+
 from ingestion.utils.docusaurus_utils import clean
+
+pytestmark = pytest.mark.unit
 
 
 def test_clean_admonitions_and_jsx():

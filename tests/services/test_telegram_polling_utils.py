@@ -1,11 +1,15 @@
-﻿from pathlib import Path
-import importlib.util
+﻿import importlib.util
+from pathlib import Path
+
+import pytest
 
 MODULE_PATH = Path(__file__).resolve().parents[2] / "adapters" / "telegram" / "polling.py"
 spec = importlib.util.spec_from_file_location("telegram_polling_module", MODULE_PATH)
 telegram_polling = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(telegram_polling)
 extract_interaction_id = telegram_polling.extract_interaction_id
+
+pytestmark = pytest.mark.unit
 
 
 def test_extract_interaction_id_positive():

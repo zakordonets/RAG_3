@@ -14,6 +14,8 @@ from app.utils import (
     get_size_category
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestUnifiedTokenizer:
     """Тесты для класса UnifiedTokenizer"""

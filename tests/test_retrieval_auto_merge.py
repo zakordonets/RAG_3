@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+import pytest
+
 from app.config import CONFIG
 from app.services.search.retrieval import auto_merge_neighbors
 
@@ -10,6 +12,9 @@ def _fake_fetch_factory(mapping: dict[str, list[dict]]) -> Callable[[str], list[
     def _fetch(doc_id: str) -> list[dict]:
         return mapping.get(doc_id, [])
     return _fetch
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_auto_merge_neighbors_merges_adjacent_chunks(monkeypatch):

@@ -13,6 +13,8 @@ import pytest
 from app.config import CONFIG, SourcesRegistry, SourceConfig, SourceType
 from app.config.sources_config import extract_url_metadata
 
+pytestmark = pytest.mark.unit
+
 
 def test_config_contains_adaptive_chunking_settings():
     """CONFIG должен содержать параметры адаптивного чанкера, используемые пайплайном."""

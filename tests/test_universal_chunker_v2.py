@@ -12,6 +12,8 @@ from ingestion.chunking.universal_chunker import (
     chunk_text_universal
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestUniversalChunker:
     """Тесты для UniversalChunker"""

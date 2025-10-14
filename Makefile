@@ -1,6 +1,6 @@
 # Makefile для управления автотестами и разработкой
 
-.PHONY: help install test test-unit test-integration test-e2e test-slow clean lint format
+.PHONY: help install test test-unit test-integration test-e2e test-slow test-fast clean lint format coverage-extended ci-test ci-test-all
 
 # Цвета для вывода
 GREEN=\033[0;32m
@@ -39,7 +39,7 @@ test-slow: ## Запустить медленные тесты
 
 test-fast: ## Запустить только быстрые тесты
 	@echo "$(GREEN)Запуск быстрых тестов...$(NC)"
-	python -m pytest tests/ -m "not slow" -v
+	python -m pytest tests/ -m "not slow" -n auto -v
 
 test-pipeline: ## Запустить тесты pipeline
 	@echo "$(GREEN)Запуск тестов pipeline...$(NC)"
@@ -64,6 +64,10 @@ test-all-loading: ## Запустить все тесты загрузки и м
 test-coverage: ## Запустить тесты с покрытием кода
 	@echo "$(GREEN)Запуск тестов с покрытием...$(NC)"
 	python -m pytest tests/ --cov=app --cov-report=html --cov-report=term
+
+coverage-extended: ## Расширенное покрытие с порогом отказа
+	@echo "$(GREEN)Запуск расширенного покрытия...$(NC)"
+	python -m pytest tests/ --cov=app --cov=ingestion --cov=adapters --cov-report=term-missing --cov-report=xml --cov-report=html --cov-fail-under=70 -q
 
 lint: ## Проверить код линтером
 	@echo "$(GREEN)Проверка кода...$(NC)"
@@ -96,11 +100,11 @@ dev-setup: install ## Настроить среду разработки
 # Команды для CI/CD
 ci-test: ## Тесты для CI (без медленных тестов)
 	@echo "$(GREEN)Запуск CI тестов...$(NC)"
-	python -m pytest tests/ -m "not slow" --tb=short --maxfail=5
+	python -m pytest tests/ -m "not slow" -n auto --tb=short --maxfail=5
 
 ci-test-all: ## Все тесты для CI
 	@echo "$(GREEN)Запуск всех CI тестов...$(NC)"
-	python -m pytest tests/ --tb=short --maxfail=3
+	python -m pytest tests/ -n auto --tb=short --maxfail=3
 
 # Команды для мониторинга
 check-services: ## Проверить статус сервисов
