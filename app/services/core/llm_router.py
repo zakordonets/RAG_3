@@ -115,22 +115,68 @@ def is_list_intent(query: str) -> bool:
     return bool(LIST_INTENT_PATTERN.search(query))
 
 
-def _collect_sources(context: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, str]]:
+def _collect_sources(context: List[Dict[str, Any]], query: str, limit: int = 3) -> List[Dict[str, str]]:
     sources: List[Dict[str, str]] = []
-    seen = set()
-    for doc in context:
+    seen: set[str] = set()
+    keywords = {
+        token
+        for token in re.findall(r"\w+", (query or "").lower())
+        if len(token) >= 4
+    }
+
+    candidates: List[Dict[str, Any]] = []
+
+    for index, doc in enumerate(context):
         payload = doc.get("payload", {}) or {}
-        url = str(payload.get("url") or "").strip()
+        raw_url = (
+            payload.get("site_url")
+            or payload.get("canonical_url")
+            or payload.get("url")
+        )
+        url = str(raw_url or "").strip()
         if not url:
             continue
         normalized = _normalize_url(url)
+        if not normalized:
+            continue
         if normalized in seen:
             continue
-        title = str(payload.get("title") or "Документация").strip() or "Документация"
-        sources.append({"title": title, "url": url})
         seen.add(normalized)
-        if len(sources) >= limit:
-            break
+
+        title = str(payload.get("title") or "Документация").strip() or "Документация"
+        text = str(payload.get("text") or "").lower()
+        title_lower = title.lower()
+
+        match_score = 0
+        if keywords:
+            match_score = sum(
+                1 for kw in keywords if kw in text or kw in title_lower
+            )
+
+        candidates.append(
+            {
+                "title": title,
+                "url": normalized,
+                "match_score": match_score,
+                "order": index,
+            }
+        )
+
+    ordered: List[Dict[str, Any]]
+    if keywords:
+        matched = [c for c in candidates if c["match_score"] > 0]
+        matched.sort(key=lambda c: (-c["match_score"], c["order"]))
+        if matched:
+            ordered = matched[:limit]
+        else:
+            fallback = sorted(candidates, key=lambda c: c["order"])
+            ordered = fallback[: min(1, limit)]
+    else:
+        ordered = sorted(candidates, key=lambda c: c["order"])[:limit]
+
+    for candidate in ordered:
+        sources.append({"title": candidate["title"], "url": candidate["url"]})
+
     return sources
 
 
@@ -152,7 +198,7 @@ def _build_context_block(context: List[Dict[str, Any]]) -> str:
     for idx, doc in enumerate(context, start=1):
         payload = doc.get("payload", {}) or {}
         title = _trim_text(payload.get("title")) or f"Документ {idx}"
-        url = _trim_text(payload.get("url"))
+        url = _trim_text(payload.get("site_url") or payload.get("canonical_url") or payload.get("url"))
         text = _trim_text(payload.get("text"))
         block_lines = [f"### {title}"]
         if url:
@@ -320,10 +366,12 @@ def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[
             "Ты ассистент edna Chat Center. Отвечай на русском языке, используя только предоставленный контекст. "
             "Формат ответа — чистый Markdown: заголовки '###', списки '-', нумерация '1.' при необходимости, "
             "кодовые блоки в ``` без указания языка. "
+            "Будь лаконичным, в ответ добавляй не более 5 абзацев. Делай короткие абзацы по 1-3 предложения. "
             "Если информации недостаточно, честно сообщи об этом. Не придумывай ссылки и факты."
         )
 
-    sources = _collect_sources(context)
+
+    sources = _collect_sources(context, query)
     context_block = _build_context_block(context)
     sources_block = _build_sources_block(sources)
 
