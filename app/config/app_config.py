@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+import json
 
 
 load_dotenv()
@@ -129,6 +130,8 @@ class AppConfig:
     boost_well_structured: float = float(os.getenv("BOOST_WELL_STRUCTURED", "1.15"))
     boost_optimal_length: float = float(os.getenv("BOOST_OPTIMAL_LENGTH", "1.2"))
     boost_reliable_source: float = float(os.getenv("BOOST_RELIABLE_SOURCE", "1.1"))
+    group_boost_synonyms_raw: str = os.getenv("GROUP_BOOST_SYNONYMS", "")
+    group_boost_synonyms: dict[str, dict[str, object]] = field(init=False)
 
     # Quality Database
     quality_db_enabled: bool = os.getenv("QUALITY_DB_ENABLED", "false").lower() in ("1", "true", "yes")
@@ -159,6 +162,7 @@ class AppConfig:
 
     def __post_init__(self):
         """Validate configuration after initialization"""
+        object.__setattr__(self, "group_boost_synonyms", self._load_group_boost_synonyms())
         self._validate_config()
 
     def _validate_config(self):
@@ -242,6 +246,65 @@ class AppConfig:
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
             raise ValueError(error_msg)
+
+    def _load_group_boost_synonyms(self) -> dict[str, dict[str, object]]:
+        """Parses group boost synonyms from environment or returns defaults."""
+        default_mapping: dict[str, dict[str, object]] = {
+            "арм администратора": {"synonyms": ["админ панель", "администратор"], "weight": 1.3},
+            "арм агента": {"synonyms": ["оператор", "агент"], "weight": 1.25},
+            "арм супервайзера": {"synonyms": ["супервайзер"], "weight": 1.25},
+            "api": {"synonyms": ["rest", "интеграция", "webhook"], "weight": 1.2},
+        }
+
+        raw = (self.group_boost_synonyms_raw or "").strip()
+        if not raw:
+            return default_mapping
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return default_mapping
+
+        if not isinstance(parsed, dict):
+            return default_mapping
+
+        result: dict[str, dict[str, object]] = default_mapping.copy()
+
+        for label, value in parsed.items():
+            if not isinstance(label, str):
+                continue
+
+            synonyms: list[str] = []
+            weight: float | None = None
+
+            if isinstance(value, dict):
+                raw_synonyms = value.get("synonyms", [])
+                if isinstance(raw_synonyms, list):
+                    synonyms = [str(item).strip() for item in raw_synonyms if str(item).strip()]
+                raw_weight = value.get("weight")
+                try:
+                    if raw_weight is not None:
+                        weight = float(raw_weight)
+                except (TypeError, ValueError):
+                    weight = None
+            elif isinstance(value, list):
+                synonyms = [str(item).strip() for item in value if str(item).strip()]
+            elif isinstance(value, str):
+                synonyms = [value.strip()]
+
+            if not synonyms and weight is None:
+                continue
+
+            entry: dict[str, object] = {}
+            if synonyms:
+                entry["synonyms"] = synonyms
+            if weight is not None:
+                entry["weight"] = weight
+
+            if entry:
+                result[label] = entry
+
+        return result
 
     # Quality Metrics
     enable_quality_metrics: bool = os.getenv("ENABLE_QUALITY_METRICS", "false").lower() in ("1", "true", "yes")

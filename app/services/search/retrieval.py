@@ -121,7 +121,14 @@ def to_hit(res) -> list[dict]:
     return out
 
 
-def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: dict[str, float] | None = None, categories: list[str] | None = None) -> list[dict]:
+def hybrid_search(
+    query_dense: list[float],
+    query_sparse: dict,
+    k: int,
+    boosts: dict[str, float] | None = None,
+    categories: list[str] | None = None,
+    group_boosts: dict[str, float] | None = None,
+) -> list[dict]:
     """Гибридный поиск в Qdrant с RRF и улучшенным ранжированием.
     - query_dense: плотный вектор BGE-M3
     - query_sparse: словарь с полями indices/values (BGE-M3 sparse)
@@ -136,6 +143,13 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
         logger = logging.getLogger(__name__)
 
     boosts = boosts or {}
+    normalized_group_boosts: dict[str, float] = {}
+    if group_boosts:
+        normalized_group_boosts = {
+            str(key).lower().strip(): float(value)
+            for key, value in group_boosts.items()
+            if value
+        }
     params = SearchParams(hnsw_ef=EF_SEARCH)
     qfilter = _make_filter(categories)
 
@@ -210,6 +224,22 @@ def hybrid_search(query_dense: list[float], query_sparse: dict, k: int, boosts: 
         page_type = (payload.get("page_type") or "").lower()
         if page_type and page_type in boosts:
             s *= float(boosts[page_type])
+
+        # 1.1 Boost по группам (dir_meta)
+        if normalized_group_boosts:
+            groups = payload.get("groups_path") or payload.get("group_labels") or []
+            if isinstance(groups, str):
+                groups = [groups]
+            matched = False
+            for group in groups:
+                normalized_group = str(group).lower().strip()
+                for key, factor in normalized_group_boosts.items():
+                    if key and key in normalized_group:
+                        s *= factor
+                        matched = True
+                        break
+                if matched:
+                    break
 
         # 2. Тип документа на основе URL структуры
         url = (payload.get("url") or payload.get("canonical_url") or payload.get("site_url") or "").lower()

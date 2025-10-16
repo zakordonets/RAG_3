@@ -22,6 +22,18 @@ from app.config import CONFIG
 from loguru import logger
 from app.utils import write_debug_event
 
+try:
+    from app.utils.tokenizer import count_tokens, truncate_to_tokens  # type: ignore
+except Exception:  # pragma: no cover - fallback for test environments without tokenizer module
+    def count_tokens(text: str) -> int:
+        return 0 if not text else len(text.split())
+
+    def truncate_to_tokens(text: str, max_tokens: int) -> str:
+        if max_tokens <= 0:
+            return ""
+        tokens = text.split()
+        return " ".join(tokens[:max_tokens])
+
 
 DEFAULT_LLM = CONFIG.default_llm
 LIST_INTENT_PATTERN = re.compile(r"\b(какие|список|перечень)\b.*\bканал", re.IGNORECASE | re.DOTALL)
@@ -115,7 +127,7 @@ def is_list_intent(query: str) -> bool:
     return bool(LIST_INTENT_PATTERN.search(query))
 
 
-def _collect_sources(context: List[Dict[str, Any]], query: str, limit: int = 3) -> List[Dict[str, str]]:
+def _collect_sources(context: List[Dict[str, Any]], query: str, limit: int = 5) -> List[Dict[str, str]]:
     sources: List[Dict[str, str]] = []
     seen: set[str] = set()
     keywords = {
@@ -162,19 +174,16 @@ def _collect_sources(context: List[Dict[str, Any]], query: str, limit: int = 3) 
             }
         )
 
-    ordered: List[Dict[str, Any]]
     if keywords:
         matched = [c for c in candidates if c["match_score"] > 0]
+        fallback = [c for c in candidates if c["match_score"] == 0]
         matched.sort(key=lambda c: (-c["match_score"], c["order"]))
-        if matched:
-            ordered = matched[:limit]
-        else:
-            fallback = sorted(candidates, key=lambda c: c["order"])
-            ordered = fallback[: min(1, limit)]
+        fallback.sort(key=lambda c: c["order"])
+        ordered = matched + fallback
     else:
-        ordered = sorted(candidates, key=lambda c: c["order"])[:limit]
+        ordered = sorted(candidates, key=lambda c: c["order"])
 
-    for candidate in ordered:
+    for candidate in ordered[:limit]:
         sources.append({"title": candidate["title"], "url": candidate["url"]})
 
     return sources
@@ -198,6 +207,7 @@ def _build_context_block(context: List[Dict[str, Any]]) -> str:
     for idx, doc in enumerate(context, start=1):
         payload = doc.get("payload", {}) or {}
         title = _trim_text(payload.get("title")) or f"Документ {idx}"
+        group_labels = payload.get("group_labels") or payload.get("groups_path")
         url = _trim_text(payload.get("site_url") or payload.get("canonical_url") or payload.get("url"))
         text = _trim_text(payload.get("text"))
         block_lines = [f"### {title}"]
@@ -238,8 +248,27 @@ def _yandex_complete(prompt: str, max_tokens: int = 800, temperature: Optional[f
     _temperature = 0.2 if temperature is None else float(temperature)
     _top_p = 1.0 if top_p is None else float(top_p)
 
+    # Контроль длины входа: лимит Yandex ~32768 токенов на вход
+    # Оставляем запас под системный промпт и служебные токены
+    try:
+        yandex_limit = 32768
+        reserve_tokens = 1024
+        max_input_tokens = max(1024, yandex_limit - reserve_tokens)
+        if system_prompt:
+            # оценим длину system_prompt и скорректируем бюджет
+            sys_tokens = count_tokens(system_prompt)
+            max_input_tokens = max(512, yandex_limit - reserve_tokens - sys_tokens)
+        safe_prompt = prompt
+        if count_tokens(prompt) > max_input_tokens:
+            safe_prompt = truncate_to_tokens(prompt, max_input_tokens)
+            logger.warning(
+                f"Truncated prompt for YandexGPT: {count_tokens(prompt)} -> {count_tokens(safe_prompt)} tokens (limit {max_input_tokens})"
+            )
+    except Exception:
+        safe_prompt = prompt
+
     # Используем общую функцию для формирования messages
-    messages = _build_messages(prompt, system_prompt, content_key="text")
+    messages = _build_messages(safe_prompt, system_prompt, content_key="text")
 
     payload = {
         "modelUri": f"gpt://{CONFIG.yandex_catalog_id}/{CONFIG.yandex_model}",

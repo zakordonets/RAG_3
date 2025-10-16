@@ -1,0 +1,2 @@
+# Browser automation stack
+playwright==1.55.0

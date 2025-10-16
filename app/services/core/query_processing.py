@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
+
 from typing import Any, Dict, List
+from app.config import CONFIG
 
 
 def extract_entities(text: str) -> List[str]:
@@ -129,17 +131,18 @@ def process_query(text: str) -> Dict[str, Any]:
     subqueries = maybe_decompose(normalized)
 
     # Настраиваем boosts для поиска
-    boosts = _calculate_boosts(normalized)
+    page_boosts, group_boosts = _calculate_boosts(normalized)
 
     return {
         "normalized_text": normalized,
         "entities": entities,
-        "boosts": boosts,
+        "boosts": page_boosts,
+        "group_boosts": group_boosts,
         "subqueries": subqueries
     }
 
 
-def _calculate_boosts(normalized_text: str) -> Dict[str, float]:
+def _calculate_boosts(normalized_text: str) -> tuple[Dict[str, float], Dict[str, float]]:
     """
     Вычисляет коэффициенты повышения релевантности для разных типов документов.
 
@@ -149,7 +152,8 @@ def _calculate_boosts(normalized_text: str) -> Dict[str, float]:
     Returns:
         Словарь с коэффициентами boost для разных типов контента
     """
-    boosts = {}
+    boosts: Dict[str, float] = {}
+    group_boosts: Dict[str, float] = {}
     text_lower = normalized_text.lower()
 
     # Повышаем релевантность FAQ для вопросов
@@ -167,4 +171,36 @@ def _calculate_boosts(normalized_text: str) -> Dict[str, float]:
     if any(word in text_lower for word in update_words):
         boosts["release_notes"] = 1.15
 
-    return boosts
+    for label, config_entry in CONFIG.group_boost_synonyms.items():
+        normalized_label = label.lower().strip()
+        if not normalized_label:
+            continue
+
+        synonyms: list[str] = []
+        weight: float | None = None
+
+        if isinstance(config_entry, dict):
+            raw_synonyms = config_entry.get("synonyms", [])
+            if isinstance(raw_synonyms, list):
+                synonyms = [
+                    str(keyword).lower().strip()
+                    for keyword in raw_synonyms
+                    if str(keyword).strip()
+                ]
+            raw_weight = config_entry.get("weight")
+            try:
+                if raw_weight is not None:
+                    weight = float(raw_weight)
+            except (TypeError, ValueError):
+                weight = None
+        else:
+            continue
+
+        terms = {normalized_label}
+        terms.update(synonyms)
+        if any(term and term in text_lower for term in terms):
+            boost_value = weight if weight and weight > 0 else 1.25
+            current = group_boosts.get(normalized_label, 1.0)
+            group_boosts[normalized_label] = max(current, boost_value)
+
+    return boosts, group_boosts

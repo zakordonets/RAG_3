@@ -91,6 +91,39 @@ class UnifiedTokenizer:
         words = len(text.split())
         return int(words * 1.3)
 
+    def truncate_to_tokens(self, text: str, max_tokens: int) -> str:
+        """
+        Усечение текста по количеству токенов. Сохраняет начало текста.
+
+        Args:
+            text: Исходный текст
+            max_tokens: Максимальное число токенов
+
+        Returns:
+            Усеченный текст, не превышающий max_tokens
+        """
+        if not text or max_tokens <= 0:
+            return ""
+
+        tokenizer = self._get_tokenizer()
+        if tokenizer is not None:
+            try:
+                input_ids = tokenizer.encode(text, add_special_tokens=False)
+                if len(input_ids) <= max_tokens:
+                    return text
+                sliced = input_ids[:max_tokens]
+                return tokenizer.decode(sliced, skip_special_tokens=True)
+            except Exception as e:
+                logger.warning(f"Ошибка усечения по токенам: {e}, используем fallback")
+
+        # Fallback: приблизительное усечение по словам
+        # Оценим соотношение слов к токенам ~1.3
+        approx_words = max(1, int(max_tokens * 1.3))
+        words = text.split()
+        if len(words) <= approx_words:
+            return text
+        return " ".join(words[:approx_words])
+
     def count_tokens_batch(self, texts: List[str]) -> List[int]:
         """
         Пакетный подсчет токенов для нескольких текстов
@@ -225,3 +258,10 @@ def get_size_category(text: str) -> str:
         Категория размера
     """
     return get_tokenizer().get_size_category(text)
+
+
+def truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """
+    Глобальная функция усечения текста по количеству токенов.
+    """
+    return get_tokenizer().truncate_to_tokens(text, max_tokens)

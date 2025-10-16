@@ -63,6 +63,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             qp = process_query(message)
             normalized = qp["normalized_text"]
             boosts = qp.get("boosts", {})
+            group_boosts = qp.get("group_boosts", {})
             logger.info(f"Query processed in {time.time() - start:.2f}s")
         except Exception as e:
             logger.error(f"Query processing failed: {e}")
@@ -145,7 +146,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         # 3. Hybrid Search
         try:
             search_start = time.time()
-            candidates = hybrid_search(q_dense, q_sparse, k=20, boosts=boosts)
+            candidates = hybrid_search(q_dense, q_sparse, k=20, boosts=boosts, group_boosts=group_boosts)
             search_duration = time.time() - search_start
             logger.info(f"Hybrid search in {search_duration:.2f}s")
             get_metrics_collector().record_search_duration("hybrid", search_duration)
@@ -270,7 +271,17 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                         logger.error(f"RAGAS evaluation failed in background: {e}")
                         return None
                     finally:
-                        loop.close()
+                        try:
+                            if not loop.is_closed():
+                                # Аккуратно закрываем loop, завершая оставшиеся таски
+                                pending = asyncio.all_tasks(loop=loop)
+                                for task in pending:
+                                    task.cancel()
+                                if pending:
+                                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                                loop.close()
+                        except Exception as close_err:
+                            logger.warning(f"Error while closing RAGAS loop: {close_err}")
 
                 # Запускаем в фоне
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:

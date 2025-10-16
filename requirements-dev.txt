@@ -1,40 +1,40 @@
-# Дополнительные зависимости для разработки и тестирования
+# Additional dependencies for development and testing.
+# Install together with requirements.txt for a full developer environment.
 
-# Основные зависимости (из requirements.txt)
--r requirements.txt
-
-# Тестирование
+# Testing
 pytest>=8.0.0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.0.0
 pytest-mock>=3.10.0
 pytest-timeout>=2.1.0
-pytest-xdist>=3.0.0  # Параллельное выполнение тестов
+pytest-xdist>=3.0.0
+hypothesis>=6.100.0
+freezegun>=1.5.0
 
-# Линтинг и форматирование
+# Linting and formatting
 black>=23.0.0
 isort>=5.12.0
 flake8>=6.0.0
 mypy>=1.0.0
 
-# Документация
+# Documentation
 sphinx>=5.0.0
 sphinx-rtd-theme>=1.2.0
 
-# Профилирование и отладка
+# Profiling and debugging
 memory-profiler>=0.60.0
 line-profiler>=4.0.0
 py-spy>=0.3.14
 
-# Утилиты разработки
+# Developer utilities
 ipython>=8.0.0
 jupyter>=1.0.0
 notebook>=6.5.0
 
-# Безопасность
+# Security
 safety>=2.3.0
 bandit>=1.7.0
 
-# Мониторинг тестов
+# Test reporting
 pytest-html>=3.1.0
 pytest-json-report>=1.5.0
