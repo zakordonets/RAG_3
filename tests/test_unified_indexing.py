@@ -4,13 +4,13 @@
 
 import pytest
 import uuid
-from unittest.mock import Mock, patch, MagicMock
-from typing import List, Dict, Any
+from unittest.mock import Mock, patch
 
 from ingestion.pipeline.indexers.qdrant_writer import QdrantWriter
 from ingestion.pipeline.chunker import UnifiedChunkerStep
 from ingestion.pipeline.embedder import Embedder
 from ingestion.adapters.base import ParsedDoc
+from .fixtures.factories import make_chunk, make_chunk_payload
 
 pytestmark = pytest.mark.integration
 
@@ -49,22 +49,16 @@ class TestQdrantWriter:
 
         # Создаем тестовые чанки
         chunks = [
-            {
-                "text": "Test content 1",
-                "payload": {
-                    "chunk_id": "doc1#0",
-                    "title": "Test 1",
-                    "category": "АРМ_adm"
-                }
-            },
-            {
-                "text": "Test content 2",
-                "payload": {
-                    "chunk_id": "doc2#0",
-                    "title": "Test 2",
-                    "category": "АРМ_sv"
-                }
-            }
+            make_chunk(
+                text="Test content 1",
+                chunk_id="doc1#0",
+                payload_extra={"title": "Test 1", "category": "АРМ_adm"},
+            ),
+            make_chunk(
+                text="Test content 2",
+                chunk_id="doc2#0",
+                payload_extra={"title": "Test 2", "category": "АРМ_sv"},
+            ),
         ]
 
         # Обрабатываем батч
@@ -116,9 +110,7 @@ class TestQdrantWriter:
         writer = QdrantWriter()
 
         # Тест с chunk_id
-        chunk_with_id = {
-            "payload": {"chunk_id": "doc1#0"}
-        }
+        chunk_with_id = {"payload": make_chunk_payload("doc1#0")}
         point_id = writer._generate_point_id(chunk_with_id, "test text")
 
         # Проверяем, что ID в формате UUID
@@ -158,14 +150,15 @@ class TestQdrantWriter:
         """Тест создания payload"""
         writer = QdrantWriter()
 
-        chunk = {
-            "text": "Test content",
-            "payload": {
+        chunk = make_chunk(
+            text="Test content",
+            chunk_id=None,
+            payload_extra={
                 "title": "Test Title",
                 "category": "АРМ_adm",
-                "content": "Heavy content to be removed"
-            }
-        }
+                "content": "Heavy content to be removed",
+            },
+        )
 
         payload = writer._create_payload(chunk, "Test content", chunk["payload"])
 
@@ -278,8 +271,8 @@ class TestEmbedder:
 
         # Создаем тестовые чанки
         chunks = [
-            {"text": "Test content 1", "payload": {"chunk_id": "doc1#0"}},
-            {"text": "Test content 2", "payload": {"chunk_id": "doc2#0"}}
+            make_chunk(text="Test content 1", chunk_id="doc1#0"),
+            make_chunk(text="Test content 2", chunk_id="doc2#0"),
         ]
 
         # Обрабатываем чанки
@@ -305,9 +298,7 @@ class TestEmbedder:
 
         embedder = Embedder(batch_size=2)
 
-        chunks = [
-            {"text": "Test content", "payload": {"chunk_id": "doc1#0"}}
-        ]
+        chunks = [make_chunk(text="Test content", chunk_id="doc1#0")]
 
         # Обрабатываем чанки (должны получить fallback векторы)
         embedded_chunks = embedder.process(chunks)

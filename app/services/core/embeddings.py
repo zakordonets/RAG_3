@@ -21,6 +21,21 @@ from typing import Dict, List, Optional, Any
 
 from loguru import logger
 
+try:
+    # FlagEmbedding finalizers may run during interpreter shutdown when modules are cleared.
+    from FlagEmbedding.abc.inference import AbsEmbedder
+except ModuleNotFoundError:  # pragma: no cover - optional dependency not installed
+    AbsEmbedder = None
+else:  # pragma: no cover - defensive patch against library shutdown errors
+    def _safe_abs_embedder_del(self) -> None:
+        try:
+            self.stop_self_pool()
+        except Exception:
+            # During interpreter shutdown modules like gc may already be cleared.
+            pass
+
+    AbsEmbedder.__del__ = _safe_abs_embedder_del  # type: ignore[assignment]
+
 from app.config import CONFIG
 from app.infrastructure import cache_embedding
 

@@ -31,6 +31,16 @@ make test-e2e         # End-to-end тесты
 make test-slow        # Медленные тесты
 ```
 
+### Профили запуска
+
+| Профиль | Команда | Назначение |
+| --- | --- | --- |
+| `fast` | `make test-fast` | Параллельный запуск unit тестов без `slow`, оптимальный цикл разработки. |
+| `ci-unit` | `make ci-test` | То же, что GitHub Actions `unit` job: xdist + HTML/JSON отчеты, порог покрытия 70 %. |
+| `ci-full` | `make ci-test-all` | Полный прогон с параллелизацией, используется для ночных/ручных проверок. |
+| `coverage` | `make coverage-extended` | Строгая проверка покрытия (`--cov-fail-under=70`) + `coverage.xml/htmlcov`. |
+| `property` | `python -m pytest tests/property --maxfail=1 --hypothesis-profile=ci` | Property-based тесты на Hypothesis. Установите `HYPOTHESIS_PROFILE=ci` для детерминизма. |
+
 ## Структура тестов
 
 ### Типы тестов
@@ -59,11 +69,22 @@ make test-slow        # Медленные тесты
 - **Время выполнения**: > 60 секунд
 - **Примеры**: Полная переиндексация, нагрузочные тесты
 
+#### Property-based тесты
+- **Местоположение**: `tests/property/`
+- **Инструменты**: [Hypothesis](https://hypothesis.readthedocs.io)
+- **Цель**: Генеративная проверка инвариантов (whitelist ссылок, устойчивость чанкинга)
+- **Запуск**: `python -m pytest tests/property --hypothesis-profile=ci`
+- **Советы**: Экспортируйте `HYPOTHESIS_PROFILE=ci` для повторяемости; увеличивайте `--maxfail` только при локальной отладке.
+
 ### Структура файлов
 
 ```
 tests/
 ├── conftest.py                              # Фикстуры pytest
+│
+├── fixtures/                                # Общие тестовые данные
+│   ├── data_samples.py                      # Литералы markdown/URL/чанков
+│   └── factories.py                         # Фабрики payload и структур
 │
 ├── Core тесты
 │   ├── test_unified_pipeline.py             # Унифицированный pipeline
@@ -451,6 +472,7 @@ python scripts/test_retrieval_for_url.py
 - Используйте описательные имена тестов
 - Группируйте связанные тесты в классы
 - Добавляйте docstrings для объяснения тестов
+- Повторно используйте `tests.fixtures.data_samples` и `tests.fixtures.factories`, чтобы не дублировать markdown/URL/чанки
 
 ### 2. Маркировка
 - Используйте соответствующие маркеры (@pytest.mark.slow, @pytest.mark.integration)
@@ -483,6 +505,10 @@ make test-coverage
 open htmlcov/index.html
 ```
 
+- Локально `make coverage-extended` применяет порог `--cov-fail-under=70` для `app`, `ingestion`, `adapters`.
+- GitHub Actions `unit` job также останавливается при покрытии < 70 % и выгружает `coverage.xml`/`htmlcov`.
+- Для релизных проверок используйте `python -m pytest tests/ --cov=app --cov=ingestion --cov=adapters --cov-report=xml --cov-fail-under=80`.
+
 ### Логи тестов
 ```bash
 # Сохранение логов
@@ -500,6 +526,11 @@ make info
 # Количество тестов
 python -m pytest --collect-only -q
 ```
+
+### CI отчеты
+- `unit` job (GitHub Actions) прикрепляет `report.html`, `report.json`, `htmlcov/`, `coverage.xml` и публикует покрытие в Codecov.
+- `integration` и `slow` job выгружают `report.html`/`report.json` для последующего анализа.
+- Артефакты сохраняются 7 дней; используйте их для ретроспектив отладок и сверки покрытия.
 
 ## Заключение
 

@@ -4,19 +4,17 @@ from app.services.core.context_optimizer import (
     ContextOptimizer,
     extract_markdown_section,
 )
+from ..fixtures.data_samples import (
+    MARKDOWN_WITH_CHANNELS,
+    MARKDOWN_WITH_CHANNELS_AND_FALLBACK,
+    MARKDOWN_WITH_LIST_PARAGRAPH,
+)
 
 pytestmark = pytest.mark.unit
 
 
 def test_extract_markdown_section_returns_channels_block():
-    markdown = (
-        "# Введение\n\n"
-        "## Каналы\n"
-        "- Канал A\n"
-        "- Канал B\n\n"
-        "## Дополнительно\n"
-        "Текст про другое"
-    )
+    markdown = MARKDOWN_WITH_CHANNELS.replace("Канал 1", "Канал A").replace("Канал 2", "Канал B")
 
     section = extract_markdown_section(markdown)
 
@@ -28,14 +26,7 @@ def test_extract_markdown_section_returns_channels_block():
 
 def test_optimize_context_list_intent_returns_channels_section():
     optimizer = ContextOptimizer()
-    markdown = (
-        "# Документ\n\n"
-        "## Каналы\n"
-        "- Канал 1\n"
-        "- Канал 2\n\n"
-        "## Прочее\n"
-        "Непрофильный текст"
-    )
+    markdown = MARKDOWN_WITH_CHANNELS_AND_FALLBACK
 
     documents = [
         {"payload": {"title": "Тест", "text": markdown, "url": "https://example.com"}},
@@ -54,7 +45,7 @@ def test_optimize_context_list_intent_returns_channels_section():
 
 def test_optimize_context_preserves_list_markers_on_trim():
     optimizer = ContextOptimizer()
-    markdown = "- один\n- два\n- три\n\nСледующий абзац с подробным описанием." * 3
+    markdown = MARKDOWN_WITH_LIST_PARAGRAPH * 3
 
     truncated = optimizer._truncate_by_paragraphs(markdown, max_chars=80)  # pylint: disable=protected-access
 

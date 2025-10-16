@@ -10,6 +10,20 @@ from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
+from types import SimpleNamespace
+
+from .fixtures.data_samples import (
+    DEFAULT_JINA_CONTENT,
+    HTML_SAMPLE,
+    MARKDOWN_SIMPLE,
+    REFERENCE_URLS,
+)
+from .fixtures.factories import (
+    clone_sample,
+    make_html_content,
+    make_jina_content,
+    make_markdown_content,
+)
 
 try:  # Optional dependency: used in some integration paths only.
     import numpy as np
@@ -98,118 +112,33 @@ def mock_qdrant_client():
 @pytest.fixture
 def sample_jina_content():
     """Sample payload emulating Jina Reader output."""
-    return """Title: Demo Page
-URL Source: https://example.org/docs/start/overview
-Content Length: 2456
-Language Detected: English
-Published Time: 2024-07-24T10:30:00Z
-Images: 3
-Links: 12
-Markdown Content:
-
-# Heading
-
-Page contents.
-"""
+    return DEFAULT_JINA_CONTENT
 
 
 @pytest.fixture
 def sample_html_content():
     """Sample HTML document."""
-    return """<!DOCTYPE html>
-<html>
-<head>
-    <title>Demo Page</title>
-</head>
-<body>
-    <h1>Heading</h1>
-    <p>Page contents.</p>
-</body>
-</html>"""
+    return HTML_SAMPLE
 
 
 @pytest.fixture
 def sample_markdown_content():
     """Sample Markdown document."""
-    return """# Heading
-
-Page contents.
-
-## Subheading
-
-More contents.
-"""
+    return MARKDOWN_SIMPLE
 
 
 @pytest.fixture
 def test_urls() -> Dict[str, str]:
     """Collection of reference URLs used across tests."""
-    return {
-        "guide": "https://example.org/docs/start/overview",
-        "api": "https://example.org/docs/api/messages",
-        "faq": "https://example.org/faq",
-        "changelog": "https://example.org/blog/release-6-16",
-        "admin": "https://example.org/docs/admin/widget",
-        "supervisor": "https://example.org/docs/supervisor/threadcontrol",
-        "agent": "https://example.org/docs/agent/routing",
-    }
-
-
-class TestDataFactory:
-    """Helper factory for building sample content."""
-
-    @staticmethod
-    def create_jina_content(
-        title: str = "Demo Page",
-        url: str = "https://example.org/docs/start/overview",
-        content: str = "# Heading\n\nPage contents.",
-    ) -> str:
-        """Create a string payload similar to Jina Reader output."""
-        return f"""Title: {title}
-URL Source: {url}
-Content Length: 2456
-Language Detected: English
-Published Time: 2024-07-24T10:30:00Z
-Images: 3
-Links: 12
-Markdown Content:
-
-{content}
-"""
-
-    @staticmethod
-    def create_html_content(
-        title: str = "Demo Page",
-        content: str = "<h1>Heading</h1><p>Page contents.</p>",
-    ) -> str:
-        """Create an HTML snippet."""
-        return f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>{title}</title>
-</head>
-<body>
-    {content}
-</body>
-</html>"""
-
-    @staticmethod
-    def create_markdown_content(
-        title: str = "Heading",
-        content: str = "Page contents.",
-    ) -> str:
-        """Create a Markdown snippet."""
-        return f"""# {title}
-
-{content}
-
-## Subheading
-
-More contents.
-"""
+    return clone_sample(REFERENCE_URLS)
 
 
 @pytest.fixture
-def test_data_factory() -> TestDataFactory:
+def test_data_factory() -> SimpleNamespace:
     """Expose the test data factory for convenience."""
-    return TestDataFactory()
+    return SimpleNamespace(
+        create_jina_content=make_jina_content,
+        create_html_content=make_html_content,
+        create_markdown_content=make_markdown_content,
+        clone_sample=clone_sample,
+    )

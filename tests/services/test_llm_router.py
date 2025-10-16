@@ -5,6 +5,9 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from ..fixtures.data_samples import REFERENCE_URLS
+from ..fixtures.factories import make_context_document, make_source
+
 pytestmark = pytest.mark.unit
 
 project_root = pathlib.Path(__file__).resolve().parents[2]
@@ -97,12 +100,11 @@ def test_generate_answer_omits_null_url(monkeypatch):
     monkeypatch.setattr(llm_router, "DEFAULT_LLM", "YANDEX")
 
     context = [
-        {
-            "payload": {
-                "title": "Документ без ссылки",
-                "text": "Содержимое документа",
-            }
-        }
+        make_context_document(
+            title="Документ без ссылки",
+            text="Содержимое документа",
+            url=None,
+        )
     ]
 
     result = llm_router.generate_answer("Вопрос?", context)
@@ -119,15 +121,15 @@ def test_generate_answer_omits_null_url(monkeypatch):
 def test_apply_url_whitelist_filters_links(monkeypatch):
     llm_router = load_llm_router(monkeypatch)
 
-    sources = [{"title": "Ok", "url": "https://allowed.example.com/path"}]
+    sources = [make_source(title="Ok", url=REFERENCE_URLS["allowed"])]
     text = (
-        "Смотрите [док](https://allowed.example.com/path) и [фейк](https://bad.example.com). "
-        "Также есть https://evil.example.com"
+        f"Смотрите [док]({REFERENCE_URLS['allowed']}) и [фейк](https://bad.example.com). "
+        f"Также есть {REFERENCE_URLS['evil']}"
     )
 
     sanitized = llm_router.apply_url_whitelist(text, sources)
 
-    assert "https://allowed.example.com/path" in sanitized
+    assert REFERENCE_URLS["allowed"] in sanitized
     assert "https://bad.example.com" not in sanitized
-    assert "https://evil.example.com" not in sanitized
+    assert REFERENCE_URLS["evil"] not in sanitized
     assert "[фейк]" not in sanitized
