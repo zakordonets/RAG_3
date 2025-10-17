@@ -1,4 +1,5 @@
 @echo off
+pushd "%~dp0\..\.."
 echo Starting RAG System Monitoring Stack...
 echo.
 
@@ -22,4 +23,5 @@ echo.
 echo To stop monitoring:
 echo docker-compose -f docker-compose.monitoring.yml down
 echo.
+popd
 pause

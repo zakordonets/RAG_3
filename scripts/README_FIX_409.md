@@ -13,17 +13,7 @@
 
 ## Использование
 
-### Windows (PowerShell)
-```powershell
-.\fix_telegram_409.ps1
-```
-
-### Windows (CMD)
-```cmd
-fix_telegram_409.bat
-```
-
-### Linux/macOS/Прямой запуск
+### Запуск через Python (всех платформах)
 ```bash
 python scripts/fix_telegram_409.py
 ```
@@ -129,4 +119,4 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 Если проблема не решается:
 1. Проверьте логи: `tail -f logs/app.log`
 2. Создайте issue с описанием проблемы
-3. Приложите вывод скрипта `fix_telegram_409.py`
+3. Приложите вывод скрипта `scripts/fix_telegram_409.py`

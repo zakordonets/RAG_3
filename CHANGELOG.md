@@ -26,10 +26,8 @@
    - Очищает pending updates
    - Тестирует работоспособность getUpdates
 
-4. **Удобные скрипты запуска**:
-   - `fix_telegram_409.ps1` (Windows PowerShell)
-   - `fix_telegram_409.bat` (Windows CMD)
-   - Прямой запуск через Python
+4. **Запуск утилиты**:
+   - Через Python: `python scripts/fix_telegram_409.py`
 
 5. **Обновлена документация**:
    - Добавлен раздел в `docs/faq.md` с подробным описанием проблемы и решений

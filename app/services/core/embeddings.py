@@ -22,16 +22,16 @@ from typing import Dict, List, Optional, Any
 from loguru import logger
 
 try:
-    # FlagEmbedding finalizers may run during interpreter shutdown when modules are cleared.
+    # Финализаторы FlagEmbedding могут выполняться во время завершения интерпретатора, когда модули уже очищены.
     from FlagEmbedding.abc.inference import AbsEmbedder
-except ModuleNotFoundError:  # pragma: no cover - optional dependency not installed
+except ModuleNotFoundError:  # pragma: no cover - опциональная зависимость не установлена
     AbsEmbedder = None
-else:  # pragma: no cover - defensive patch against library shutdown errors
+else:  # pragma: no cover - защитный патч от ошибок завершения библиотеки
     def _safe_abs_embedder_del(self) -> None:
         try:
             self.stop_self_pool()
         except Exception:
-            # During interpreter shutdown modules like gc may already be cleared.
+            # Во время завершения интерпретатора модули как gc могут быть уже очищены.
             pass
 
     AbsEmbedder.__del__ = _safe_abs_embedder_del  # type: ignore[assignment]
@@ -177,7 +177,7 @@ def _get_bge_model():
 
 def _get_onnx_embedder():
     """
-    Получает ONNX эмбеддер как fallback (из существующей реализации).
+    Получает ONNX эмбеддер как запасной вариант (из существующей реализации).
 
     Returns:
         tuple: (InferenceSession, AutoTokenizer) или (None, None) в случае ошибки
@@ -204,7 +204,7 @@ def _get_onnx_embedder():
                     if CONFIG.onnx_provider == "dml" or (CONFIG.onnx_provider == "auto" and "DmlExecutionProvider" in ort.get_available_providers()):
                         providers.append("DmlExecutionProvider")
                         logger.info("Используем DmlExecutionProvider для ONNX эмбеддингов.")
-                    providers.append("CPUExecutionProvider")  # Всегда добавляем CPU как fallback
+                    providers.append("CPUExecutionProvider")  # Всегда добавляем CPU как запасной вариант
 
                     _onnx_embedder = InferenceSession(
                         os.path.join(model_path, "model.onnx"),
@@ -366,7 +366,7 @@ def _embed_unified_hybrid(
 
 
 def _get_empty_result(return_dense: bool, return_sparse: bool, return_colbert: bool) -> Dict[str, Any]:
-    """Генерирует пустую структуру результата для fallback случаев."""
+    """Генерирует пустую структуру результата для запасных случаев."""
     return {
         'dense_vecs': [[0.0] * 1024] if return_dense else None,
         'lexical_weights': [{}] if return_sparse else None,
@@ -389,13 +389,13 @@ def _normalize_texts(texts: List[str]) -> List[str]:
             safe_text = text.encode('utf-8', errors='ignore').decode('utf-8')
             safe_texts.append(safe_text)
         except Exception:
-            # Последний fallback
+            # Последний запасной вариант
             safe_texts.append(str(text).encode('utf-8', errors='ignore').decode('utf-8'))
     return safe_texts
 
 
 def _process_onnx_embedding(texts: List[str], max_length: int, return_dense: bool, return_sparse: bool) -> Dict[str, List]:
-    """Общая логика обработки ONNX эмбеддингов для single и batch режимов."""
+    """Общая логика обработки ONNX эмбеддингов для одиночного и пакетного режимов."""
     results = {'dense_vecs': [], 'lexical_weights': []}
 
     if not return_dense:
@@ -438,7 +438,7 @@ def _process_onnx_embedding(texts: List[str], max_length: int, return_dense: boo
         outputs = embedder.run(None, input_dict)
         embeddings = outputs[0]
 
-        # Mean pooling для получения финальных эмбеддингов
+        # Среднее пулинга для получения финальных эмбеддингов
         input_mask_expanded = np.expand_dims(inputs["attention_mask"], axis=-1).astype(float)
         sum_embeddings = np.sum(embeddings * input_mask_expanded, axis=1)
         sum_mask = np.clip(input_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
@@ -472,7 +472,7 @@ def _process_onnx_embedding(texts: List[str], max_length: int, return_dense: boo
 
 
 def _process_bge_embedding(texts: List[str], max_length: int, return_dense: bool, return_sparse: bool, return_colbert: bool = False) -> Dict[str, List]:
-    """Общая логика обработки BGE-M3 эмбеддингов для single и batch режимов."""
+    """Общая логика обработки BGE-M3 эмбеддингов для одиночного и пакетного режимов."""
     model = _get_bge_model()
     if model is None:
         logger.error("BGE-M3 модель недоступна")
@@ -525,13 +525,13 @@ def embed_batch_optimized(
     return_sparse: bool = True,
     context: str = "document"
 ) -> Dict[str, List]:
-    """Batch генерация эмбеддингов для максимальной эффективности."""
+    """Пакетная генерация эмбеддингов для максимальной эффективности."""
     if not texts:
         return {'dense_vecs': [], 'lexical_weights': []}
 
     backend = _get_optimal_backend_strategy()
 
-    # Автооптимизация max_length для batch
+    # Автооптимизация max_length для пакетной обработки
     if max_length is None:
         avg_length = sum(len(text) for text in texts) / len(texts)
         max_length = get_optimal_max_length("x" * int(avg_length), context)
@@ -543,26 +543,26 @@ def embed_batch_optimized(
     elif backend == "hybrid":
         return _embed_batch_hybrid(texts, max_length, return_dense, return_sparse)
     else:
-        logger.error(f"Неизвестный бэкенд для batch обработки: {backend}")
+        logger.error(f"Неизвестный бэкенд для пакетной обработки: {backend}")
         return {'dense_vecs': [], 'lexical_weights': []}
 
 
 def _embed_batch_bge(texts: List[str], max_length: int, return_dense: bool, return_sparse: bool) -> Dict[str, List]:
-    """BGE-M3 batch обработка, используя общую логику обработки."""
+    """BGE-M3 пакетная обработка, используя общую логику обработки."""
     result = _process_bge_embedding(texts, max_length, return_dense, return_sparse, False)
-    logger.info(f"BGE-M3 batch кодирование завершено: {len(texts)} текстов, max_length={max_length}")
+    logger.info(f"BGE-M3 пакетное кодирование завершено: {len(texts)} текстов, max_length={max_length}")
     return result
 
 
 def _embed_batch_onnx(texts: List[str], max_length: int, return_dense: bool, return_sparse: bool) -> Dict[str, List]:
-    """ONNX batch обработка, используя общую логику обработки."""
+    """ONNX пакетная обработка, используя общую логику обработки."""
     result = _process_onnx_embedding(texts, max_length, return_dense, return_sparse)
-    logger.info(f"ONNX batch обработка завершена: {len(texts)} текстов")
+    logger.info(f"ONNX пакетная обработка завершена: {len(texts)} текстов")
     return result
 
 
 def _embed_batch_hybrid(texts: List[str], max_length: int, return_dense: bool, return_sparse: bool) -> Dict[str, List]:
-    """Гибридная batch обработка, используя общую логику обработки."""
+    """Гибридная пакетная обработка, используя общую логику обработки."""
     results = {'dense_vecs': [], 'lexical_weights': []}
 
     # Плотные через ONNX

@@ -1,3 +1,4 @@
+Set-Location -Path (Join-Path $PSScriptRoot '..\\..')
 Write-Host "Starting RAG System Monitoring Stack..." -ForegroundColor Green
 Write-Host ""
 

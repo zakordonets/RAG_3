@@ -381,13 +381,6 @@ ERROR | __main__:get_updates:193 - Failed to get updates: 409
 
 **Решение**:
 ```bash
-# Windows (PowerShell)
-.\fix_telegram_409.ps1
-
-# Windows (CMD)
-fix_telegram_409.bat
-
-# Linux/macOS
 python scripts/fix_telegram_409.py
 ```
 
