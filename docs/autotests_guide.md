@@ -106,6 +106,9 @@ tests/
 │   ├── test_universal_loader.py             # Универсальный загрузчик
 │   ├── test_docusaurus_crawler.py           # Docusaurus crawler
 │   ├── test_docusaurus_utils.py             # Утилиты Docusaurus
+│   ├── test_sdk_docs_integration.py         # Интеграционные тесты SDK документации
+│   ├── test_sdk_docs_pipeline.py            # Smoke-тесты пайплайна SDK документации
+│   ├── test_ingestion_config_loader.py     # Тесты загрузки конфигурации индексации
 │
 ├── Chunking тесты
 │   ├── test_adaptive_chunker.py             # Адаптивный chunking
@@ -224,6 +227,71 @@ requirements-dev.txt                         # Зависимости для р�
 - Проверка адаптеров источников данных
 - Валидация метаданных и эмбеддингов
 - Тестирование записи в Qdrant с sparse векторами
+
+### 8. SDK Documentation Ingestion Tests
+
+**Файлы**:
+- `tests/test_sdk_docs_integration.py` - Интеграционные тесты
+- `tests/test_sdk_docs_pipeline.py` - Smoke-тесты пайплайна
+- `tests/test_ingestion_config_loader.py` - Тесты конфигурации
+- `tests/test_docusaurus_crawler.py` - Тесты crawler с `top_level_meta`
+- `tests/test_docusaurus_utils.py` - Тесты утилит с пустым `site_docs_prefix`
+
+**Функциональность**:
+- **Поддержка пустого `site_docs_prefix`**: Тестирование формирования URL без префикса `/docs` для SDK документации
+- **Работа с `top_level_meta`**: Проверка добавления метаданных платформ (android, ios, web, main) в документы
+- **Множественные источники**: Тестирование конфигурации с несколькими источниками Docusaurus
+- **Интеграция адаптера**: Проверка работы `DocusaurusAdapter` с `top_level_meta` и пустым префиксом
+- **Приоритет метаданных**: Тестирование корректного мержа `top_level_meta` с `_category_.json`
+- **Конфигурация**: Валидация загрузки и обработки конфигурации с SDK источниками
+
+**Примеры тестов**:
+
+```python
+# Тест пустого site_docs_prefix
+def test_fs_to_url_empty_prefix():
+    """Тест формирования URL без префикса /docs"""
+    url = fs_to_url(
+        docs_root=Path("C:/SDK_docs/docs"),
+        abs_path=Path("C:/SDK_docs/docs/android/intro.md"),
+        site_base="https://docs-sdk.edna.ru",
+        docs_prefix=""
+    )
+    assert url == "https://docs-sdk.edna.ru/android/intro"
+
+# Тест адаптера с top_level_meta
+def test_adapter_with_top_level_meta():
+    """Тест адаптера с метаданными платформ"""
+    adapter = DocusaurusAdapter(
+        docs_root="...",
+        site_base_url="https://docs-sdk.edna.ru",
+        site_docs_prefix="",
+        top_level_meta={
+            "android": {"sdk_platform": "android", "product": "sdk"}
+        }
+    )
+    docs = list(adapter.iter_documents())
+    assert docs[0].meta["sdk_platform"] == "android"
+```
+
+**Запуск тестов SDK документации**:
+
+```bash
+# Все тесты SDK документации
+python -m pytest tests/test_sdk_docs_integration.py tests/test_sdk_docs_pipeline.py -v
+
+# Только интеграционные тесты
+python -m pytest tests/test_sdk_docs_integration.py -v
+
+# Только smoke-тесты пайплайна
+python -m pytest tests/test_sdk_docs_pipeline.py -v
+
+# Тесты утилит с пустым префиксом
+python -m pytest tests/test_docusaurus_utils.py -k "empty_prefix" -v
+
+# Тесты crawler с top_level_meta
+python -m pytest tests/test_docusaurus_crawler.py -k "top_level" -v
+```
 
 ## Команды разработки
 
@@ -561,6 +629,11 @@ python -m pytest --collect-only -q
 - ✅ Комплексные тесты RAG системы
 - ✅ Тесты для всех сервисов (Context Optimizer, LLM Router, etc.)
 - ✅ Обновлена структура тестов под новую архитектуру
+- ✅ **Тесты SDK документации**: Добавлены интеграционные тесты для загрузчика SDK документации
+  - Тесты поддержки пустого `site_docs_prefix`
+  - Тесты работы с `top_level_meta` для платформ (android, ios, web, main)
+  - Smoke-тесты полного пайплайна индексации SDK документации
+  - Тесты загрузки конфигурации с множественными источниками
 
 ### v4.2.0
 - Тесты для гибридного поиска (dense + sparse)

@@ -5,7 +5,9 @@
 import sys
 import argparse
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from copy import deepcopy
+import yaml
 from loguru import logger
 
 # Добавляем корневую директорию в путь
@@ -22,6 +24,125 @@ from ingestion.pipeline.indexers.qdrant_writer import QdrantWriter
 from ingestion.pipeline.dag import PipelineDAG
 from ingestion.state.state_manager import get_state_manager
 from app.config.app_config import CONFIG
+
+
+def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Рекурсивно объединяет словари, не модифицируя оригиналы."""
+    merged = deepcopy(base) if base else {}
+    for key, value in (override or {}).items():
+        if (
+            key in merged
+            and isinstance(merged[key], dict)
+            and isinstance(value, dict)
+        ):
+            merged[key] = _deep_merge_dicts(merged[key], value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
+
+
+def load_sources_from_config(config_path: str, profile: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Загружает и нормализует источники из YAML-конфигурации."""
+    cfg_file = Path(config_path)
+    if not cfg_file.exists():
+        raise FileNotFoundError(f"Конфигурационный файл не найден: {config_path}")
+
+    try:
+        raw_data = yaml.safe_load(cfg_file.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Ошибка парсинга конфигурации {config_path}: {exc}") from exc
+
+    data = deepcopy(raw_data)
+    if profile:
+        profiles = raw_data.get("profiles", {})
+        if profile not in profiles:
+            raise ValueError(f"Профиль '{profile}' не найден в {config_path}")
+        profile_section = profiles[profile]
+        if "global" in profile_section:
+            data["global"] = _deep_merge_dicts(
+                data.get("global", {}),
+                profile_section["global"]
+            )
+        if "sources" in profile_section:
+            data.setdefault("sources", {})
+            for name, overrides in profile_section["sources"].items():
+                data["sources"][name] = _deep_merge_dicts(
+                    data["sources"].get(name, {}),
+                    overrides
+                )
+
+    global_cfg = data.get("global", {})
+    global_indexing = global_cfg.get("indexing", {}) or {}
+    global_qdrant = global_cfg.get("qdrant", {}) or {}
+
+    sources_cfg = data.get("sources", {}) or {}
+    normalized_sources: List[Dict[str, Any]] = []
+
+    for source_name, source_cfg in sources_cfg.items():
+        if not isinstance(source_cfg, dict):
+            continue
+        if not source_cfg.get("enabled", True):
+            continue
+
+        source_type = source_cfg.get("type", "docusaurus")
+        if source_type not in {"docusaurus", "website"}:
+            logger.warning("Пропускаем источник {} с неподдерживаемым типом {}", source_name, source_type)
+            continue
+
+        if source_type == "docusaurus":
+            docs_root = source_cfg.get("docs_root")
+            if not docs_root:
+                raise ValueError(f"Источник '{source_name}' не содержит docs_root")
+            routing_cfg = source_cfg.get("routing", {}) or {}
+            chunk_cfg = source_cfg.get("chunk", {}) or {}
+            source_indexing = source_cfg.get("indexing", {}) or {}
+
+            run_config: Dict[str, Any] = {
+                "docs_root": docs_root,
+                "site_base_url": source_cfg.get("site_base_url", "https://docs-chatcenter.edna.ru"),
+                "site_docs_prefix": source_cfg.get("site_docs_prefix", "/docs"),
+                "collection_name": source_cfg.get("collection_name", global_qdrant.get("collection", CONFIG.qdrant_collection)),
+                "batch_size": source_cfg.get("batch_size", global_indexing.get("batch_size", 16)),
+                "chunk_max_tokens": chunk_cfg.get("max_tokens", 600),
+                "chunk_min_tokens": chunk_cfg.get("min_tokens", 350),
+                "chunk_overlap_base": chunk_cfg.get("overlap_base", 100),
+                "chunk_oversize_block_policy": chunk_cfg.get("oversize_block_policy", "split"),
+                "chunk_oversize_block_limit": chunk_cfg.get("oversize_block_limit", 1200),
+                "drop_prefix_all_levels": routing_cfg.get("drop_numeric_prefix_in_first_level", True),
+                "top_level_meta": source_cfg.get("top_level_meta"),
+                "max_pages": source_cfg.get("max_pages"),
+            }
+
+            normalized_sources.append({
+                "name": source_name,
+                "source_type": source_type,
+                "config": run_config,
+                "reindex_mode": source_indexing.get("reindex_mode", global_indexing.get("reindex_mode", "changed"))
+            })
+
+        elif source_type == "website":
+            seed_urls = source_cfg.get("seed_urls")
+            if not seed_urls:
+                raise ValueError(f"Источник '{source_name}' (website) не содержит seed_urls")
+            run_config = {
+                "seed_urls": seed_urls,
+                "base_url": source_cfg.get("base_url"),
+                "render_js": source_cfg.get("render_js", False),
+                "max_pages": source_cfg.get("max_pages"),
+                "collection_name": source_cfg.get("collection_name", global_qdrant.get("collection", CONFIG.qdrant_collection)),
+                "batch_size": source_cfg.get("batch_size", global_indexing.get("batch_size", 16)),
+                "chunk_max_tokens": source_cfg.get("chunk_max_tokens", 600),
+                "chunk_min_tokens": source_cfg.get("chunk_min_tokens", 350),
+                "chunk_overlap_base": source_cfg.get("chunk_overlap_base", 100),
+            }
+            normalized_sources.append({
+                "name": source_name,
+                "source_type": source_type,
+                "config": run_config,
+                "reindex_mode": global_indexing.get("reindex_mode", "changed")
+            })
+
+    return normalized_sources
 
 
 def _clear_qdrant_collection(collection_name: str) -> None:
@@ -133,7 +254,9 @@ def run_unified_indexing(
                 docs_root=config["docs_root"],
                 site_base_url=config.get("site_base_url", "https://docs-chatcenter.edna.ru"),
                 site_docs_prefix=config.get("site_docs_prefix", "/docs"),
-                max_pages=config.get("max_pages")
+                drop_prefix_all_levels=config.get("drop_prefix_all_levels", True),
+                max_pages=config.get("max_pages"),
+                top_level_meta=config.get("top_level_meta")
             )
             dag = create_docusaurus_dag(config)
 
@@ -216,8 +339,18 @@ def main():
     parser.add_argument(
         "--source",
         choices=["docusaurus", "website"],
-        required=True,
+        required=False,
         help="Тип источника данных"
+    )
+
+    parser.add_argument(
+        "--config",
+        help="Путь к YAML конфигурации (для запуска нескольких источников)"
+    )
+
+    parser.add_argument(
+        "--profile",
+        help="Имя профиля из конфигурации (development/production/etc)"
     )
 
     parser.add_argument(
@@ -303,6 +436,45 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if args.config:
+        try:
+            sources_to_run = load_sources_from_config(args.config, args.profile)
+        except Exception as exc:
+            logger.error(f"Не удалось загрузить конфигурацию {args.config}: {exc}")
+            sys.exit(1)
+
+        if not sources_to_run:
+            logger.warning("В конфигурации нет включенных источников")
+            sys.exit(0)
+
+        total_sources = len(sources_to_run)
+        for idx, source in enumerate(sources_to_run, start=1):
+            logger.info(
+                "▶️ Источник {} ({}) [{}/{}]",
+                source["name"],
+                source["source_type"],
+                idx,
+                total_sources
+            )
+            result = run_unified_indexing(
+                source["source_type"],
+                source["config"],
+                source.get("reindex_mode", args.reindex_mode),
+                clear_collection=args.clear_collection and idx == 1
+            )
+            if not result["success"]:
+                logger.error(
+                    "❌ Источник {} завершился ошибкой: {}",
+                    source["name"],
+                    result.get("error", "unknown")
+                )
+                sys.exit(1)
+        logger.success("🎉 Все источники из конфигурации успешно обработаны")
+        sys.exit(0)
+
+    if not args.source:
+        parser.error("--source обязательно, если не указан --config")
 
     # Формируем конфигурацию
     config = {

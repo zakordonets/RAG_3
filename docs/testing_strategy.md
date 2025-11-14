@@ -860,6 +860,122 @@ class TestPerformanceBenchmark:
         assert duration_cached < duration, "Caching is not effective"
 ```
 
+## 📦 SDK Documentation Ingestion - Тестирование
+
+### Новые компоненты для тестирования
+
+#### 1. **Docusaurus Utils с пустым префиксом** (`ingestion/utils/docusaurus_utils.py`)
+- **Unit тесты**: `tests/test_docusaurus_utils.py`
+- **Покрытие**: Формирование URL без префикса `/docs`, обработка пустого `site_docs_prefix`
+- **Критерии**: Корректные URL для SDK документации без лишних слешей
+
+#### 2. **Docusaurus Crawler с top_level_meta** (`ingestion/crawlers/docusaurus_fs_crawler.py`)
+- **Unit тесты**: `tests/test_docusaurus_crawler.py`
+- **Покрытие**: Добавление метаданных платформ, мерж с `_category_.json`, определение `top_level_dir`
+- **Критерии**: Корректное добавление `top_level_meta` в `dir_meta`, приоритет метаданных
+
+#### 3. **Docusaurus Adapter с SDK конфигурацией** (`ingestion/adapters/docusaurus.py`)
+- **Integration тесты**: `tests/test_sdk_docs_integration.py`
+- **Покрытие**: Работа с `top_level_meta`, формирование метаданных в `RawDoc`, поддержка множественных платформ
+- **Критерии**: Корректные метаданные в документах, правильные URL без префикса
+
+#### 4. **Конфигурация индексации** (`ingestion/run.py`)
+- **Integration тесты**: `tests/test_ingestion_config_loader.py`
+- **Покрытие**: Загрузка конфигурации с SDK источниками, множественные источники, профили
+- **Критерии**: Корректная загрузка `top_level_meta`, поддержка пустого `site_docs_prefix`
+
+#### 5. **Полный пайплайн SDK документации**
+- **Smoke тесты**: `tests/test_sdk_docs_pipeline.py`
+- **Покрытие**: Полный поток от адаптера до DAG, создание DAG с пустым префиксом
+- **Критерии**: Успешная обработка SDK документов через весь пайплайн
+
+### Метрики качества SDK загрузчика
+
+#### 1. **Корректность URL**
+```python
+def test_sdk_urls_correct():
+    """URL для SDK документации не содержат /docs префикс"""
+    adapter = DocusaurusAdapter(
+        docs_root="...",
+        site_base_url="https://docs-sdk.edna.ru",
+        site_docs_prefix=""
+    )
+    docs = list(adapter.iter_documents())
+    for doc in docs:
+        assert not doc.meta["site_url"].startswith("https://docs-sdk.edna.ru/docs/")
+        assert doc.meta["site_url"].startswith("https://docs-sdk.edna.ru/")
+```
+
+#### 2. **Метаданные платформ**
+```python
+def test_platform_metadata():
+    """Все документы содержат метаданные платформ"""
+    adapter = DocusaurusAdapter(
+        docs_root="...",
+        top_level_meta={
+            "android": {"sdk_platform": "android", "product": "sdk"},
+            "ios": {"sdk_platform": "ios", "product": "sdk"}
+        }
+    )
+    docs = list(adapter.iter_documents())
+    for doc in docs:
+        assert "top_level_dir" in doc.meta
+        assert "sdk_platform" in doc.meta
+        assert doc.meta["product"] == "sdk"
+```
+
+#### 3. **Приоритет метаданных**
+```python
+def test_metadata_priority():
+    """top_level_meta не перезаписывает _category_.json"""
+    items = list(crawl_docs(
+        docs_root=...,
+        top_level_meta={"android": {"sdk_platform": "android"}}
+    ))
+    for item in items:
+        # Оба типа метаданных должны присутствовать
+        assert "top_level_dir" in item.dir_meta
+        if "current_label" in item.dir_meta:
+            assert item.dir_meta["current_label"]  # Из _category_.json
+```
+
+### Тестовые данные SDK документации
+
+#### 1. **Структура платформ**
+```
+SDK_docs/docs/
+├── android/
+│   ├── getting-started/
+│   │   ├── _category_.json
+│   │   └── installation.md
+│   └── api/
+│       └── reference.md
+├── ios/
+│   └── intro.md
+├── web/
+│   └── guides/
+│       └── overview.md
+└── main/
+    └── changelog.md
+```
+
+#### 2. **Конфигурация с top_level_meta**
+```yaml
+sources:
+  docusaurus_sdk:
+    enabled: true
+    docs_root: "C:\\CC_RAG\\SDK_docs\\docs"
+    site_base_url: "https://docs-sdk.edna.ru"
+    site_docs_prefix: ""
+    top_level_meta:
+      android:
+        sdk_platform: "android"
+        product: "sdk"
+      ios:
+        sdk_platform: "ios"
+        product: "sdk"
+```
+
 ## 🚀 Запуск тестов
 
 ### Команды для запуска тестов
@@ -879,6 +995,11 @@ pytest tests/test_pipeline_compatibility.py -v
 
 # Запуск только performance тестов
 pytest tests/test_performance_benchmark.py -v
+
+# Тесты SDK документации
+pytest tests/test_sdk_docs_integration.py tests/test_sdk_docs_pipeline.py -v
+pytest tests/test_docusaurus_utils.py -k "empty_prefix" -v
+pytest tests/test_docusaurus_crawler.py -k "top_level" -v
 
 # Запуск с покрытием кода
 pytest tests/ --cov=ingestion.processors --cov-report=html

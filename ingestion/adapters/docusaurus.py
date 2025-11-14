@@ -3,12 +3,11 @@
 """
 
 from pathlib import Path
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Optional, Set
 from loguru import logger
 
 from .base import SourceAdapter, RawDoc
 from ingestion.crawlers.docusaurus_fs_crawler import crawl_docs
-from ingestion.utils.docusaurus_utils import fs_to_url
 
 
 class DocusaurusAdapter(SourceAdapter):
@@ -25,7 +24,8 @@ class DocusaurusAdapter(SourceAdapter):
         site_base_url: str = "https://docs-chatcenter.edna.ru",
         site_docs_prefix: str = "/docs",
         drop_prefix_all_levels: bool = True,
-        max_pages: int = None
+        max_pages: int = None,
+        top_level_meta: Optional[Dict[str, Dict[str, str]]] = None,
     ):
         """
         Инициализирует адаптер Docusaurus.
@@ -36,12 +36,17 @@ class DocusaurusAdapter(SourceAdapter):
             site_docs_prefix: Префикс для документации в URL
             drop_prefix_all_levels: Удалять числовые префиксы на всех уровнях
             max_pages: Максимальное количество страниц для обработки
+            top_level_meta: Дополнительные метаданные для верхних директорий
         """
         self.docs_root = Path(docs_root)
         self.site_base_url = site_base_url
         self.max_pages = max_pages
         self.site_docs_prefix = site_docs_prefix
         self.drop_prefix_all_levels = drop_prefix_all_levels
+        self.top_level_meta = top_level_meta or {}
+        self._top_level_meta_keys: Set[str] = set()
+        for meta in self.top_level_meta.values():
+            self._top_level_meta_keys.update(meta.keys())
 
         if not self.docs_root.exists():
             raise ValueError(f"Директория {docs_root} не существует")
@@ -53,14 +58,25 @@ class DocusaurusAdapter(SourceAdapter):
         Yields:
             RawDoc: Сырой документ с содержимым файла и метаданными
         """
-        logger.info(f"Начинаем сканирование Docusaurus документации в {self.docs_root}")
+        logger.info(
+            "Начинаем сканирование Docusaurus документации в {} (site={}, prefix={})",
+            self.docs_root,
+            self.site_base_url,
+            self.site_docs_prefix or "/"
+        )
+        if self.top_level_meta:
+            logger.info(
+                "Платформенные директории: {}",
+                ", ".join(sorted(self.top_level_meta.keys()))
+            )
 
         # Сначала подсчитываем общее количество файлов
         all_items = list(crawl_docs(
             docs_root=self.docs_root,
             site_base_url=self.site_base_url,
             site_docs_prefix=self.site_docs_prefix,
-            drop_prefix_all_levels=self.drop_prefix_all_levels
+            drop_prefix_all_levels=self.drop_prefix_all_levels,
+            top_level_meta=self.top_level_meta if self.top_level_meta else None,
         ))
         total_files = len(all_items)
 
@@ -95,6 +111,12 @@ class DocusaurusAdapter(SourceAdapter):
                     "file_extension": item.abs_path.suffix,
                     "source": "docusaurus"
                 }
+                if "top_level_dir" in item.dir_meta:
+                    meta["top_level_dir"] = item.dir_meta["top_level_dir"]
+                if self._top_level_meta_keys:
+                    for key in self._top_level_meta_keys:
+                        if key in item.dir_meta:
+                            meta[key] = item.dir_meta[key]
 
                 # Создаем RawDoc
                 raw_doc = RawDoc(

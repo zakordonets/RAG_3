@@ -58,6 +58,40 @@ sources:
       upsert: true
       delete_missing: false
 
+  docusaurus_sdk:
+    enabled: true
+    docs_root: "C:\\CC_RAG\\SDK_docs\\docs"
+    site_base_url: "https://docs-sdk.edna.ru"
+    site_docs_prefix: ""
+    top_level_meta:
+      android:
+        sdk_platform: "android"
+        product: "sdk"
+      ios:
+        sdk_platform: "ios"
+        product: "sdk"
+      web:
+        sdk_platform: "web"
+        product: "sdk"
+      main:
+        sdk_platform: "main"
+        product: "sdk"
+
+    chunk:
+      max_tokens: 600
+      min_tokens: 350
+      overlap_base: 100
+      oversize_block_policy: "split"
+      oversize_block_limit: 1200
+
+    routing:
+      drop_numeric_prefix_in_first_level: true
+      add_trailing_slash: false
+
+    indexing:
+      upsert: true
+      delete_missing: false
+
 # Профили конфигурации для разных сценариев
 profiles:
   # Профиль для разработки

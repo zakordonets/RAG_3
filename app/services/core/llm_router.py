@@ -81,13 +81,14 @@ def _normalize_url(url: str) -> str:
 def apply_url_whitelist(answer_md: str, sources: List[Dict[str, str]]) -> str:
     """
     Оставляет в ответе только ссылки из whitelist'а sources.
+    Не обрабатывает URL внутри markdown code blocks (```...```).
 
     Args:
         answer_md: Исходный Markdown-ответ модели.
         sources: Список разрешенных источников с URL.
 
     Returns:
-        Markdown-текст без посторонних ссылок.
+        Markdown-текст без посторонних ссылок (кроме ссылок в code blocks).
     """
     if not answer_md:
         return answer_md
@@ -98,6 +99,26 @@ def apply_url_whitelist(answer_md: str, sources: List[Dict[str, str]]) -> str:
         if source.get("url")
     }
     allowed_urls = {url for url in allowed_urls if url}
+
+    # Разделяем текст на части: code blocks и обычный текст
+    # Обрабатываем code blocks отдельно, чтобы не удалять URL внутри них
+    parts = []
+    current_pos = 0
+
+    # Находим все code blocks (```...``` или ```language...```)
+    # Используем более надежный паттерн: ищем открывающие ```, затем все до закрывающих ```
+    code_block_pattern = r"```[^\n]*\n(?:[^`]|`(?!``))*?```|```[^`]*```"
+    for match in re.finditer(code_block_pattern, answer_md, re.DOTALL):
+        if match.start() > current_pos:
+            # Текст до code block
+            parts.append(("text", answer_md[current_pos:match.start()]))
+        # Сохраняем code block как есть
+        parts.append(("code", match.group(0)))
+        current_pos = match.end()
+
+    # Добавляем оставшийся текст
+    if current_pos < len(answer_md):
+        parts.append(("text", answer_md[current_pos:]))
 
     def replace_markdown_link(match: re.Match[str]) -> str:
         text, url = match.group(1), match.group(2)
@@ -115,9 +136,19 @@ def apply_url_whitelist(answer_md: str, sources: List[Dict[str, str]]) -> str:
         logger.debug(f"Removing non-whitelisted bare URL: {url}")
         return ""
 
-    sanitized = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_markdown_link, answer_md)
-    sanitized = re.sub(r"https?://[^\s)]+", replace_bare_url, sanitized)
-    return sanitized
+    # Обрабатываем только части с типом "text", пропуская code blocks
+    result_parts = []
+    for part_type, part_text in parts:
+        if part_type == "code":
+            # Code blocks не обрабатываем - оставляем как есть
+            result_parts.append(part_text)
+        else:
+            # Обрабатываем обычный текст
+            sanitized = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_markdown_link, part_text)
+            sanitized = re.sub(r"https?://[^\s)]+", replace_bare_url, sanitized)
+            result_parts.append(sanitized)
+
+    return "".join(result_parts)
 
 
 def is_list_intent(query: str) -> bool:

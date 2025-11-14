@@ -89,11 +89,14 @@ python app.py
 # Инициализация Qdrant
 python scripts/init_qdrant.py
 
-# Индексация документации (v4.2.0)
-python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs"
+# Индексация всех источников из config.yaml
+python -m ingestion.run --config ingestion/config.yaml
 
 # Полная переиндексация с очисткой коллекции
-python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --clear-collection
+python -m ingestion.run --config ingestion/config.yaml --clear-collection
+
+# Индексация только ChatCenter документов (ручной режим)
+python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs"
 
 # Индексация с ограничением количества документов (для тестирования)
 python -m ingestion.run --source docusaurus --docs-root "C:\CC_RAG\docs" --max-pages 10

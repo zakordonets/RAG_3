@@ -39,6 +39,7 @@ def crawl_docs(
     site_base_url: str,
     site_docs_prefix: str = "/docs",
     drop_prefix_all_levels: bool = True,
+    top_level_meta: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Iterable[CrawlerItem]:
     """Рекурсивно обходит файловую систему Docusaurus и собирает метаданные.
 
@@ -47,6 +48,7 @@ def crawl_docs(
         site_base_url: Базовый URL сайта
         site_docs_prefix: Префикс для документации в URL
         drop_prefix_all_levels: Удалять числовые префиксы на всех уровнях
+        top_level_meta: Дополнительные метаданные для верхнего уровня (android/ios/web/etc)
 
     Yields:
         CrawlerItem: Элемент с метаданными файла
@@ -59,9 +61,24 @@ def crawl_docs(
             continue
 
         rel_path = str(abs_path.relative_to(docs_root)).replace("\\", "/")
+        top_level_dir = rel_path.split("/", 1)[0] if rel_path else None
 
         # Собираем метаданные из _category_.json по всему пути
-        dir_meta = _collect_dir_metadata(docs_root, abs_path.parent)
+        category_meta = _collect_dir_metadata(docs_root, abs_path.parent)
+
+        dir_meta: Dict[str, str] = {}
+        if top_level_dir:
+            dir_meta["top_level_dir"] = top_level_dir
+            if top_level_meta:
+                extra_meta = top_level_meta.get(top_level_dir)
+                if extra_meta:
+                    for key, value in extra_meta.items():
+                        if key not in dir_meta and value is not None:
+                            dir_meta[key] = str(value)
+
+        for key, value in category_meta.items():
+            if key not in dir_meta:
+                dir_meta[key] = value
 
         mtime = abs_path.stat().st_mtime
         site_url = fs_to_url(

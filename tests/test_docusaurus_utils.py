@@ -296,6 +296,35 @@ class TestDocusaurusPathing:
         result = fs_to_url(docs_root, abs_path, "https://example.com", "/help")
         assert result == "https://example.com/help/admin/user"
 
+    def test_fs_to_url_empty_prefix(self):
+        """Тест с пустым префиксом документации (для SDK docs)"""
+        docs_root = Path("C:/SDK_docs/docs")
+        abs_path = Path("C:/SDK_docs/docs/android/getting-started/installation.md")
+        result = fs_to_url(docs_root, abs_path, "https://docs-sdk.edna.ru", "")
+        assert result == "https://docs-sdk.edna.ru/android/getting-started/installation"
+
+    def test_fs_to_url_empty_prefix_root_file(self):
+        """Тест файла в корне с пустым префиксом"""
+        docs_root = Path("C:/SDK_docs/docs")
+        abs_path = Path("C:/SDK_docs/docs/index.md")
+        result = fs_to_url(docs_root, abs_path, "https://docs-sdk.edna.ru", "")
+        # Файл в корне все равно имеет имя, поэтому URL будет с именем файла
+        assert result == "https://docs-sdk.edna.ru/index"
+
+    def test_fs_to_url_empty_prefix_single_level(self):
+        """Тест одноуровневой структуры с пустым префиксом"""
+        docs_root = Path("C:/SDK_docs/docs")
+        abs_path = Path("C:/SDK_docs/docs/android.md")
+        result = fs_to_url(docs_root, abs_path, "https://docs-sdk.edna.ru", "")
+        assert result == "https://docs-sdk.edna.ru/android"
+
+    def test_fs_to_url_empty_prefix_with_numeric_prefixes(self):
+        """Тест с числовыми префиксами и пустым site_docs_prefix"""
+        docs_root = Path("C:/SDK_docs/docs")
+        abs_path = Path("C:/SDK_docs/docs/01-android/02-getting-started.md")
+        result = fs_to_url(docs_root, abs_path, "https://docs-sdk.edna.ru", "")
+        assert result == "https://docs-sdk.edna.ru/android/getting-started"
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

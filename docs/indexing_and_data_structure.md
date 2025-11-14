@@ -408,22 +408,13 @@ print(f"Upserted {result.count} points")
 
 ```bash
 # Полная переиндексация
-python -m ingestion.run \
-  --source-type docusaurus \
-  --config ingestion/config.yaml \
-  --reindex all
+python -m ingestion.run --config ingestion/config.yaml --reindex-mode full
 
 # Инкрементальная индексация (только changed)
-python -m ingestion.run \
-  --source-type docusaurus \
-  --config ingestion/config.yaml \
-  --reindex changed
+python -m ingestion.run --config ingestion/config.yaml --reindex-mode changed
 
 # Ограничение количества страниц (для тестов)
-python -m ingestion.run \
-  --source-type docusaurus \
-  --config ingestion/config.yaml \
-  --max-pages 10
+python -m ingestion.run --config ingestion/config.yaml --max-pages 10
 ```
 
 ### Инициализация Qdrant
@@ -444,32 +435,57 @@ python scripts/clear_collection.py --collection edna_docs
 **Файл**: `ingestion/config.yaml`
 
 ```yaml
-source_type: docusaurus
+sources:
+  docusaurus:
+    enabled: true
+    docs_root: "C:\CC_RAG\docs"
+    site_base_url: "https://docs-chatcenter.edna.ru"
+    site_docs_prefix: "/docs"
+    chunk:
+      max_tokens: 600
+      min_tokens: 350
+      overlap_base: 100
+      oversize_block_policy: split
+      oversize_block_limit: 1200
+  docusaurus_sdk:
+    enabled: true
+    docs_root: "C:\CC_RAG\SDK_docs\docs"
+    site_base_url: "https://docs-sdk.edna.ru"
+    site_docs_prefix: ""
+    top_level_meta:
+      android:
+        sdk_platform: "android"
+        product: "sdk"
+      ios:
+        sdk_platform: "ios"
+        product: "sdk"
+      web:
+        sdk_platform: "web"
+        product: "sdk"
+      main:
+        sdk_platform: "main"
+        product: "sdk"
 
-# Source configuration
-source:
-  docs_root: "C:/path/to/docs"
-  base_url: "https://docs-chatcenter.edna.ru"
-
-# Chunking parameters
-chunking:
-  max_tokens: 600
-  min_tokens: 350
-  overlap_base: 100
-  oversize_block_policy: split
-  oversize_block_limit: 1200
-
-# Qdrant settings
-qdrant:
-  collection_name: edna_docs
-  url: http://localhost:6333
-  batch_size: 100
-
-# Performance
-performance:
-  embedding_batch_size: 16
-  max_workers: 4
+global:
+  qdrant:
+    collection: "chatcenter_docs"
+  indexing:
+    batch_size: 16
+    reindex_mode: "changed"
 ```
+
+Запустите все активированные источники одной командой:
+
+```bash
+python -m ingestion.run --config ingestion/config.yaml --profile production
+```
+
+
+
+
+
+
+
 
 ### Мониторинг индексации
 

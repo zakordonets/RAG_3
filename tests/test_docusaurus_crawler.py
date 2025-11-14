@@ -14,6 +14,7 @@ from ingestion.crawlers.docusaurus_fs_crawler import (
     _read_dir_label,
     _collect_dir_metadata
 )
+from ingestion.utils.docusaurus_utils import fs_to_url
 
 pytestmark = pytest.mark.unit
 
@@ -118,6 +119,42 @@ class TestDocusaurusFSCrawler:
             # При отсутствии _category_.json функция возвращает пустой словарь
             assert result == {}
 
+    def test_fs_to_url_without_prefix(self):
+        """fs_to_url формирует корректные ссылки без docs префикса"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_root = Path(temp_dir)
+            android_dir = docs_root / "android"
+            android_dir.mkdir()
+
+            intro_file = android_dir / "intro.md"
+            intro_file.write_text("# Intro")
+
+            url = fs_to_url(
+                docs_root=docs_root,
+                abs_path=intro_file,
+                site_base="https://docs-sdk.edna.ru",
+                docs_prefix=""
+            )
+            assert url == "https://docs-sdk.edna.ru/android/intro"
+
+    def test_fs_to_url_with_prefix(self):
+        """fs_to_url продолжает работать с префиксом"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_root = Path(temp_dir)
+            android_dir = docs_root / "01-android"
+            android_dir.mkdir(parents=True, exist_ok=True)
+
+            intro_file = android_dir / "01-intro.md"
+            intro_file.write_text("# Intro")
+
+            url = fs_to_url(
+                docs_root=docs_root,
+                abs_path=intro_file,
+                site_base="https://example.com",
+                docs_prefix="/docs"
+            )
+            assert url == "https://example.com/docs/android/intro"
+
     def test_crawl_docs_basic(self):
         """Тест базового краулинга"""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -149,6 +186,69 @@ class TestDocusaurusFSCrawler:
             assert item.rel_path == "01-admin/user.md"
             assert item.dir_meta["current_label"] == "Администрирование"
             assert item.site_url == "https://example.com/docs/admin/user"
+
+    def test_crawl_docs_with_top_level_meta(self):
+        """Тест добавления top_level_meta в метаданные"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_root = Path(temp_dir)
+            android_dir = docs_root / "android"
+            android_dir.mkdir()
+            getting_started = android_dir / "getting-started"
+            getting_started.mkdir()
+
+            category_file = getting_started / "_category_.json"
+            with open(category_file, 'w', encoding='utf-8') as f:
+                json.dump({"label": "Гайды"}, f, ensure_ascii=False)
+
+            installation_file = getting_started / "installation.md"
+            installation_file.write_text("# Installation")
+
+            top_level_meta = {
+                "android": {"sdk_platform": "android", "product": "sdk"}
+            }
+
+            items = list(crawl_docs(
+                docs_root=docs_root,
+                site_base_url="https://docs-sdk.edna.ru",
+                site_docs_prefix="",
+                top_level_meta=top_level_meta
+            ))
+
+            assert len(items) == 1
+            item = items[0]
+            assert item.dir_meta["top_level_dir"] == "android"
+            assert item.dir_meta["sdk_platform"] == "android"
+            assert item.dir_meta["product"] == "sdk"
+            assert item.dir_meta["current_label"] == "Гайды"
+            assert item.site_url == "https://docs-sdk.edna.ru/android/getting-started/installation"
+
+    def test_crawl_docs_top_level_dir_without_meta(self):
+        """Тест, что top_level_dir записывается даже без top_level_meta"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            docs_root = Path(temp_dir)
+            web_dir = docs_root / "web"
+            web_dir.mkdir()
+            methods_dir = web_dir / "guides"
+            methods_dir.mkdir()
+
+            category_file = methods_dir / "_category_.json"
+            with open(category_file, 'w', encoding='utf-8') as f:
+                json.dump({"label": "Методы"}, f, ensure_ascii=False)
+
+            guide_file = methods_dir / "overview.md"
+            guide_file.write_text("# Overview")
+
+            items = list(crawl_docs(
+                docs_root=docs_root,
+                site_base_url="https://docs-sdk.edna.ru",
+                site_docs_prefix=""
+            ))
+
+            assert len(items) == 1
+            item = items[0]
+            assert item.dir_meta["top_level_dir"] == "web"
+            assert item.dir_meta["current_label"] == "Методы"
+            assert "sdk_platform" not in item.dir_meta
 
     def test_crawl_docs_multiple_files(self):
         """Тест краулинга нескольких файлов"""

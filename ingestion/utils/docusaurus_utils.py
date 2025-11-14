@@ -123,7 +123,13 @@ def fs_to_url(
         if parts:
             parts[0] = NUM_PREFIX_RE.sub("", parts[0])
 
-    url_path = "/".join([docs_prefix.strip("/")] + parts).replace("\\", "/")
+    prefix = docs_prefix.strip("/")
+    path_parts = parts if not prefix else [prefix] + parts
+    url_path = "/".join(path_parts).replace("\\", "/")
     if add_trailing_slash:
         url_path = url_path.rstrip("/")
+    # Если path_parts оказался пустым (например, файл лежит прямо в корне и docs_prefix=""),
+    # то url_path будет пустым, значит отдаем базовый URL без завершающего слеша.
+    if not url_path:
+        return site_base.rstrip("/")
     return f"{site_base.rstrip('/')}/{url_path}"

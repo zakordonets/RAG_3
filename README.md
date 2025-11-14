@@ -62,10 +62,8 @@ python scripts/init_quality_db.py
 ### 4. Индексация документации
 
 ```bash
-# Базовая индексация (150-300 токенов на чанк)
-python -m ingestion.run \
-  --source-type docusaurus \
-  --config ingestion/config.yaml
+# Базовая индексация всех источников из config.yaml
+python -m ingestion.run --config ingestion/config.yaml
 ```
 
 ### 5. Запуск системы
@@ -214,16 +212,11 @@ make lint
 ### Индексация
 
 ```bash
-# Полная индексация
-python -m ingestion.run \
-  --source-type docusaurus \
-  --config ingestion/config.yaml
+# Полная индексация всех источников
+python -m ingestion.run --config ingestion/config.yaml --reindex-mode full
 
-# Инкрементальная (только changed)
-python -m ingestion.run \
-  --source-type docusaurus \
-  --config ingestion/config.yaml \
-  --reindex changed
+# Инкрементальная (режим changed по умолчанию)
+python -m ingestion.run --config ingestion/config.yaml --reindex-mode changed
 ```
 
 ### Мониторинг
