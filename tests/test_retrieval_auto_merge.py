@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Callable
 
 import pytest
 
 from app.config import CONFIG
-from app.services.search.retrieval import auto_merge_neighbors
+from app.retrieval.retrieval import auto_merge_neighbors
 
 
 def _fake_fetch_factory(mapping: dict[str, list[dict]]) -> Callable[[str], list[dict]]:

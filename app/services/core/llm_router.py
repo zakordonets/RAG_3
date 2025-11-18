@@ -241,7 +241,10 @@ def _build_context_block(context: List[Dict[str, Any]]) -> str:
         group_labels = payload.get("group_labels") or payload.get("groups_path")
         url = _trim_text(payload.get("site_url") or payload.get("canonical_url") or payload.get("url"))
         text = _trim_text(payload.get("text"))
+        theme_label = _trim_text(payload.get("theme_label"))
         block_lines = [f"### {title}"]
+        if theme_label:
+            block_lines.append(f"Тема: {theme_label}")
         if url:
             block_lines.append(f"{url}")
         if text:
@@ -412,6 +415,7 @@ def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[
     policy = policy or {}
     mode = "extract" if is_list_intent(query) else "compose"
 
+    theme_instruction = policy.get("theme_instruction") if policy else None
     if mode == "extract":
         temperature: Optional[float] = 0.05
         top_p: Optional[float] = 0.9
@@ -429,6 +433,8 @@ def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[
             "Будь лаконичным, в ответ добавляй не более 5 абзацев. Делай короткие абзацы по 1-3 предложения. "
             "Если информации недостаточно, честно сообщи об этом. Не придумывай ссылки и факты."
         )
+        if theme_instruction:
+            system_prompt += f" {theme_instruction}"
 
 
     sources = _collect_sources(context, query)

@@ -114,7 +114,52 @@
 - **Sparse-векторы**: BGE-M3 sparse (локальная генерация через BGE-M3 на CPU)
 - **Хранение**: вместе с dense в Qdrant как named vectors
 - **Fusion**: RRF (Reciprocal Rank Fusion) поверх отдельных результатов dense и sparse
-- **Metadata-boost**: учет `page_type` (API/FAQ/guide/release_notes), свежести и формы вопроса
+- **Metadata-boost** (через `app/config/boosting.yaml`):
+  - `page_type` (API/FAQ/guide/release_notes),
+  - `section`/`platform` (ARM/SDK),
+  - длина/структура текста, источник, глубина URL.
+- **Тематики** (через `route_query` + `themes.yaml`):
+  - фильтрация по `domain/section/platform/role`,
+  - мягкий thematic boost из результата роутера.
+
+**Единый пайплайн для запроса (high‑level)**:
+
+```text
+User Query
+   ↓
+Channel Adapter (Telegram/Web)
+   ↓
+handle_query (Orchestrator)
+   ↓
+Query Processing (process_query)
+   - normalization
+   - entities, boosts, group_boosts
+   - optional decomposition
+   ↓
+Theme Router (route_query)
+   - themes from app/config/themes.yaml
+   - LLM-assisted or heuristic routing
+   - routing_result + clarification_required
+   ↓
+Embedding Service (embed_unified / embed_dense/sparse)
+   ↓
+Hybrid Search (hybrid_search)
+   - dense + sparse → RRF
+   - Qdrant filters (categories + metadata_filter from routing_result)
+   - boosting via app/retrieval/boosting.py
+   ↓
+Rerank (bge-reranker-v2-m3)
+   ↓
+Auto-Merge Neighbors (AUTO_MERGE)
+   ↓
+Context Optimizer (optimize_context)
+   ↓
+LLM Router (generate_answer)
+   - system prompt + optional theme_instruction
+   - sources whitelisting
+   ↓
+Channel Adapter formatting + response
+```
 
 **Реранкинг**:
 - bge-reranker-v2-m3 по top-N (например, N=30 → топ-10)
@@ -234,10 +279,10 @@ class ChannelAdapter(Protocol):
 def embed_dense(text: str) -> list[float]: ...  # BGE-M3 via ONNX
 def embed_sparse(text: str) -> dict[str, float]: ...  # BGE-M3 sparse
 
-# app/services/search/retrieval.py
+# app/retrieval/retrieval.py
 def hybrid_search(query_dense: list[float], query_sparse: dict[str, float], k: int, boosts: dict) -> list[dict]: ...
 
-# app/services/search/rerank.py
+# app/retrieval/rerank.py
 def rerank(query: str, candidates: list[dict], top_n: int) -> list[dict]: ...  # bge-reranker-v2-m3
 
 # app/services/core/llm_router.py

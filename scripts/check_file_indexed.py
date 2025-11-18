@@ -1,10 +1,10 @@
-"""
+﻿"""
 Проверка, проиндексирован ли конкретный файл из docs
 """
 import sys
 sys.path.insert(0, '.')
 
-from app.services.search.retrieval import client, COLLECTION
+from app.retrieval.retrieval import client, COLLECTION
 
 print("=" * 80)
 print("🔍 ПРОВЕРКА ИНДЕКСАЦИИ ФАЙЛА 10-whatis.md")

@@ -24,6 +24,7 @@ from ingestion.pipeline.indexers.qdrant_writer import QdrantWriter
 from ingestion.pipeline.dag import PipelineDAG
 from ingestion.state.state_manager import get_state_manager
 from app.config.app_config import CONFIG
+from ingestion.metadata.docusaurus import DocusaurusMetadataMapper
 
 
 def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -39,6 +40,29 @@ def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
         else:
             merged[key] = deepcopy(value)
     return merged
+
+
+def _build_docusaurus_metadata_mapper(meta_cfg: Optional[Dict[str, Any]]) -> Optional[DocusaurusMetadataMapper]:
+    """Создает маппер тематик Docusaurus из конфигурации."""
+    if not meta_cfg:
+        return None
+    domain = meta_cfg.get("domain")
+    if not domain:
+        logger.warning("Пропускаем metadata маппер без domain")
+        return None
+    return DocusaurusMetadataMapper(
+        domain=domain,
+        section_by_dir=meta_cfg.get("section_by_dir", {}) or {},
+        role_by_section=meta_cfg.get("role_by_section", {}) or {},
+        platform_by_dir=meta_cfg.get("platform_by_dir", {}) or {},
+        page_type_by_dir=meta_cfg.get("page_type_by_dir", {}) or {},
+        fixed_section=meta_cfg.get("fixed_section"),
+        fixed_role=meta_cfg.get("fixed_role"),
+        fixed_platform=meta_cfg.get("fixed_platform"),
+        default_section=meta_cfg.get("default_section"),
+        default_role=meta_cfg.get("default_role"),
+        default_platform=meta_cfg.get("default_platform"),
+    )
 
 
 def load_sources_from_config(config_path: str, profile: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -111,6 +135,7 @@ def load_sources_from_config(config_path: str, profile: Optional[str] = None) ->
                 "drop_prefix_all_levels": routing_cfg.get("drop_numeric_prefix_in_first_level", True),
                 "top_level_meta": source_cfg.get("top_level_meta"),
                 "max_pages": source_cfg.get("max_pages"),
+                "metadata": source_cfg.get("metadata"),
             }
 
             normalized_sources.append({
@@ -250,13 +275,15 @@ def run_unified_indexing(
     try:
         # Создаем адаптер источника
         if source_type == "docusaurus":
+            metadata_mapper = _build_docusaurus_metadata_mapper(config.get("metadata"))
             adapter = DocusaurusAdapter(
                 docs_root=config["docs_root"],
                 site_base_url=config.get("site_base_url", "https://docs-chatcenter.edna.ru"),
                 site_docs_prefix=config.get("site_docs_prefix", "/docs"),
                 drop_prefix_all_levels=config.get("drop_prefix_all_levels", True),
                 max_pages=config.get("max_pages"),
-                top_level_meta=config.get("top_level_meta")
+                top_level_meta=config.get("top_level_meta"),
+                metadata_mapper=metadata_mapper,
             )
             dag = create_docusaurus_dag(config)
 

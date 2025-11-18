@@ -219,6 +219,19 @@ python -m ingestion.run --config ingestion/config.yaml --reindex-mode full
 python -m ingestion.run --config ingestion/config.yaml --reindex-mode changed
 ```
 
+### Тонкая настройка поиска (boosting & тематики)
+
+- `app/config/boosting.yaml` — конфигурация буста:
+  - `page_type_boosts`, `section_boosts`, `platform_boosts` — веса для типов страниц/секций/платформ;
+  - `url_patterns`, `title_keywords`, `length`, `structure`, `source_boosts`, `depth_penalty` — эвристики ранжирования;
+  - `theme_boost` — мягкое усиление документов по выбранной тематике.
+  Измените коэффициенты в этом файле и перезапустите backend — поведение поиска обновится без переиндексации.
+
+- `app/config/themes.yaml` — список тематик (SDK Android/iOS/Web, АРМы и др.):
+  - каждая тема описывает `domain/section/platform/role` и `display_name`;
+  - используется в `route_query` для выбора корпуса документов и фильтрации;
+  - вы можете добавлять/менять тематики (например, под новый продукт/модуль) и переиспользовать тот же RAG‑pipeline.
+
 ### Мониторинг
 
 ```bash

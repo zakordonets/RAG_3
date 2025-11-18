@@ -159,12 +159,6 @@ qdrant_circuit_breaker = CircuitBreaker(
     name="qdrant_service"
 )
 
-sparse_circuit_breaker = CircuitBreaker(
-    failure_threshold=5,
-    timeout=60,
-    name="sparse_service"
-)
-
 
 def with_circuit_breaker(circuit_breaker: CircuitBreaker):
     """
@@ -186,7 +180,6 @@ def get_all_circuit_breakers() -> dict[str, dict[str, Any]]:
         "llm": llm_circuit_breaker.get_state(),
         "embedding": embedding_circuit_breaker.get_state(),
         "qdrant": qdrant_circuit_breaker.get_state(),
-        "sparse": sparse_circuit_breaker.get_state(),
     }
 
 
@@ -195,5 +188,4 @@ def reset_all_circuit_breakers() -> None:
     llm_circuit_breaker.reset()
     embedding_circuit_breaker.reset()
     qdrant_circuit_breaker.reset()
-    sparse_circuit_breaker.reset()
     logger.info("All circuit breakers reset")

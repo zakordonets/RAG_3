@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Комплексный тест RAG системы с проверкой всех компонентов
 """
@@ -11,7 +11,7 @@ from typing import Dict, List, Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.core.embeddings import embed_unified, embed_dense, embed_sparse_optimized
-from app.services.search.retrieval import hybrid_search
+from app.retrieval.retrieval import hybrid_search
 from ingestion.indexer import client as qdrant_client
 from app.config import CONFIG
 

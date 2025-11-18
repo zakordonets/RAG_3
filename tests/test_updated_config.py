@@ -1,17 +1,20 @@
-﻿"""
-Тесты для актуальной конфигурации приложения и реестра источников.
+"""
+Тесты для актуальной конфигурации приложения и основной схемы ingestion.
 
-Ранее здесь проверялись вспомогательные функции ingestion.run, которые были
-удалены в рамках рефакторинга. Теперь фокусируемся на реальном объекте CONFIG
-и SourcesRegistry, которые используются сервисом.
+Покрываем три аспекта:
+1. CONFIG (AppConfig) содержит ожидаемые параметры адаптивного чанкера.
+2. ingestion/config.yaml описывает ключевые источники (chatcenter docs + SDK docs).
+3. Утилита извлечения метаданных из URL возвращает корректные section/role.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 import pytest
 
-from app.config import CONFIG, SourcesRegistry, SourceConfig, SourceType
-from app.config.sources_config import extract_url_metadata
+from app.config import CONFIG
+from app.utils import extract_url_metadata
+from ingestion.run import load_sources_from_config
 
 pytestmark = pytest.mark.unit
 
@@ -24,55 +27,41 @@ def test_config_contains_adaptive_chunking_settings():
     assert CONFIG.chunk_strategy in {"adaptive", "simple"}
 
 
-def test_sources_registry_has_default_edna_source():
-    """По умолчанию в реестре зарегистрирован источник edna_docs."""
-    registry = SourcesRegistry()
-    source = registry._sources["edna_docs"]  # noqa: SLF001
-    assert source.base_url == "https://docs-chatcenter.edna.ru/"
-    assert source.source_type == SourceType.DOCS_SITE
-    assert "https://docs-chatcenter.edna.ru/docs/start/" in source.seed_urls
-    assert source.strategy == "jina"
+def test_default_ingestion_config_includes_required_sources():
+    """
+    ingestion/config.yaml должен описывать базовые источники:
+    - пользовательскую документацию ChatCenter;
+    - SDK документацию.
+    """
+    config_path = Path("ingestion/config.yaml")
+    assert config_path.exists()
 
+    sources = load_sources_from_config(str(config_path))
+    source_names = {src["name"] for src in sources}
 
-def test_sources_registry_register_custom_source():
-    """Можно зарегистрировать новый источник с корректной конфигурацией."""
-    registry = SourcesRegistry()
-    custom = SourceConfig(
-        name="local_docs",
-        base_url="https://docs.example.com/",
-        source_type=SourceType.DOCS_SITE,
-        strategy="markdown",
-        use_cache=False,
-        seed_urls=["https://docs.example.com/docs/intro"],
-    )
-    registry.register(custom)
-    retrieved = registry._sources["local_docs"]  # noqa: SLF001 - тестирует внутреннее состояние
-    assert retrieved.strategy == "markdown"
-    assert retrieved.use_cache is False
+    assert "docusaurus" in source_names
+    assert "docusaurus_sdk" in source_names
 
-
-def test_sources_registry_validation_rejects_invalid_url():
-    """Некорректный base_url приводит к ValueError."""
-    registry = SourcesRegistry()
-    with pytest.raises(ValueError):
-        registry.register(
-            SourceConfig(
-                name="bad",
-                base_url="ftp://invalid",
-                source_type=SourceType.EXTERNAL,
-            )
-        )
+    sdk_source = next(src for src in sources if src["name"] == "docusaurus_sdk")
+    cfg = sdk_source.get("config", {})
+    top_level_meta = cfg.get("top_level_meta", {})
+    metadata = cfg.get("metadata", {})
+    assert "android" in top_level_meta and "ios" in top_level_meta
+    assert all(entry.get("product") == "sdk" for entry in top_level_meta.values())
+    assert metadata.get("domain") == "sdk_docs"
+    assert metadata.get("platform_by_dir")
 
 
 @pytest.mark.parametrize(
-    "url,expected_section",
+    "url,expected_section,expected_role",
     [
-        ("https://docs-chatcenter.edna.ru/docs/agent/routing", "agent"),
-        ("https://docs-chatcenter.edna.ru/docs/admin/setup", "admin"),
-        ("https://docs-chatcenter.edna.ru/blog/release", "changelog"),
+        ("https://docs-chatcenter.edna.ru/docs/agent/routing", "agent", "agent"),
+        ("https://docs-chatcenter.edna.ru/docs/api/messages", "api", "integrator"),
+        ("https://docs-chatcenter.edna.ru/blog/release-6.15", "changelog", "all"),
     ],
 )
-def test_extract_url_metadata_sections(url, expected_section):
+def test_extract_url_metadata_sections(url: str, expected_section: str, expected_role: str):
     metadata = extract_url_metadata(url)
     assert metadata["section"] == expected_section
+    assert metadata["user_role"] == expected_role
     assert metadata["url"] == url

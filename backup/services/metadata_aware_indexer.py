@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Metadata-aware indexing service for optimized document processing
 """
@@ -308,7 +308,7 @@ class MetadataAwareIndexer:
             sparse_hits = [{"id": str(r.id), "score": r.score, "payload": r.payload} for r in sparse_results]
 
             # Apply RRF fusion
-            from app.services.search.retrieval import rrf_fuse
+            from app.retrieval.retrieval import rrf_fuse
             fused_results = rrf_fuse(dense_hits, sparse_hits)
 
             return fused_results[:limit]

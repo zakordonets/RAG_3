@@ -1,13 +1,27 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+"""
+Гибридный поиск по коллекции Qdrant:
+- параллельный dense + sparse поиск;
+- RRF-фьюжн результатов;
+- пост-boosting на основе метаданных и тематического роутинга;
+- лёгкий кэш чанков документов.
+"""
 
 from typing import Any, Callable, TypedDict
 from copy import deepcopy
+import importlib
+import importlib.util
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, Filter, SparseVector, SearchParams, NamedSparseVector, FieldCondition, MatchValue
-from app.config import CONFIG
 from loguru import logger
 
-# Optional tiktoken import
+from app.config import CONFIG
+from app.config.boosting_config import get_boosting_config
+from app.retrieval.boosting import boost_hits
+
+# Optional tiktoken import (для оценки токенов при auto-merge)
 try:
     import tiktoken
     _tokenizer = tiktoken.get_encoding("cl100k_base")
@@ -16,16 +30,21 @@ except ImportError:
     TIKTOKEN_AVAILABLE = False
     logger.debug("tiktoken not available, using heuristic token estimation (len//4)")
 
-# Optional cachetools import
-try:
-    from cachetools import TTLCache
-    CACHETOOLS_AVAILABLE = True
-except ImportError:
+# Optional cachetools import (lazy, чтобы не делать зависимость обязательной)
+_cachetools_module = importlib.util.find_spec("cachetools")
+if _cachetools_module is None:
+    TTLCache = None
     CACHETOOLS_AVAILABLE = False
     logger.debug("cachetools not available, using simple dict cache (no TTL)")
+else:
+    cachetools = importlib.import_module("cachetools")
+    TTLCache = getattr(cachetools, "TTLCache", None)
+    CACHETOOLS_AVAILABLE = TTLCache is not None
+    if not CACHETOOLS_AVAILABLE:
+        logger.debug("cachetools module found but TTLCache missing, falling back to dict cache")
 
 
-# TypedDict для payload структур
+# TypedDict для payload структур, которые возвращаются из поиска
 class ChunkPayload(TypedDict, total=False):
     """Типизация payload для чанков документа."""
     doc_id: str
@@ -41,7 +60,7 @@ class ChunkPayload(TypedDict, total=False):
 
 
 class DocumentHit(TypedDict, total=False):
-    """Типизация результата поиска."""
+    """Типизация результата поиска (один документ/чанк в выдаче)."""
     id: str
     score: float
     payload: ChunkPayload
@@ -57,7 +76,7 @@ W_SPARSE = CONFIG.hybrid_sparse_weight
 
 client = QdrantClient(url=CONFIG.qdrant_url, api_key=CONFIG.qdrant_api_key or None)
 
-# Cache для документов - TTL если доступен cachetools, иначе простой dict
+# Кэш для чанков документов — TTL, если доступен cachetools, иначе простой dict
 if CACHETOOLS_AVAILABLE:
     _doc_chunk_cache: Any = TTLCache(
         maxsize=CONFIG.retrieval_cache_maxsize,
@@ -69,17 +88,8 @@ else:
     logger.warning("Using simple dict cache without TTL (memory may grow over time)")
 
 
-def _make_filter(categories: list[str] | None) -> Filter | None:
-    """Создает фильтр по категориям для разделения АРМ."""
-    if not categories:
-        return None
-    return Filter(
-        must=[FieldCondition(key="category", match=MatchValue(value=c)) for c in categories]
-    )
-
-
 def clear_chunk_cache():
-    """Очистка кеша чанков документов."""
+    """Полностью очищает кэш чанков документов (для админки/тестов)."""
     global _doc_chunk_cache
     if CACHETOOLS_AVAILABLE:
         _doc_chunk_cache.clear()
@@ -89,8 +99,11 @@ def clear_chunk_cache():
 
 
 def rrf_fuse(dense_hits: list[dict], sparse_hits: list[dict]) -> list[dict]:
-    """Reciprocal Rank Fusion для объединения dense и sparse результатов.
-    Весовые коэффициенты берутся из CONFIG (HYBRID_DENSE_WEIGHT / HYBRID_SPARSE_WEIGHT).
+    """
+    Reciprocal Rank Fusion для объединения dense и sparse результатов.
+
+    Используется классическая формула 1 / (RRF_K + rank) с разными весами
+    для dense и sparse частей (из CONFIG.hybrid_dense_weight / hybrid_sparse_weight).
     """
     scores: dict[str, float] = {}
     items: dict[str, dict] = {}
@@ -111,6 +124,7 @@ def rrf_fuse(dense_hits: list[dict], sparse_hits: list[dict]) -> list[dict]:
 
 
 def to_hit(res) -> list[dict]:
+    """Нормализует элементы ответа Qdrant в внутренний формат hit-словаря."""
     out = []
     for r in res:
         out.append({
@@ -126,15 +140,27 @@ def hybrid_search(
     query_sparse: dict,
     k: int,
     boosts: dict[str, float] | None = None,
-    categories: list[str] | None = None,
     group_boosts: dict[str, float] | None = None,
+    routing_result: dict | None = None,
+    metadata_filter: Filter | None = None,
 ) -> list[dict]:
-    """Гибридный поиск в Qdrant с RRF и улучшенным ранжированием.
-    - query_dense: плотный вектор BGE-M3
-    - query_sparse: словарь с полями indices/values (BGE-M3 sparse)
-    - k: количество результатов для возврата
-    - boosts: словарь типа {page_type: factor}
-    - categories: список категорий для фильтрации (например, ["АРМ_adm", "АРМ_sv"])
+    """
+    Гибридный поиск в Qdrant с RRF и boosting.
+
+    Пайплайн:
+    1. Dense-поиск по вектору "dense" (BGE-M3).
+    2. Sparse-поиск по вектору "sparse" (BGE-M3 sparse), если включён.
+    3. RRF-фьюжн двух списков результатов.
+    4. Применение boosting правил (boosting.yaml) + групповые/тематические бусты.
+
+    Параметры:
+    - query_dense: плотный вектор BGE-M3 для запроса;
+    - query_sparse: словарь с полями indices/values (BGE-M3 sparse);
+    - k: сколько результатов вернуть после boosting;
+    - boosts: временные бусты по page_type для конкретного запроса;
+    - group_boosts: бусты по группам (ARM, API и т.п.), приходит из CONFIG.group_boost_synonyms;
+    - routing_result: результат тематического роутера (домен/секция/платформа);
+    - metadata_filter: предрасчитанный фильтр по метаданным от оркестратора.
     """
     try:
         from loguru import logger
@@ -151,14 +177,14 @@ def hybrid_search(
             if value
         }
     params = SearchParams(hnsw_ef=EF_SEARCH)
-    qfilter = _make_filter(categories)
+    qfilter = metadata_filter
 
     # Увеличиваем k для лучшего recall в RRF
     k_dense = int(k * 2)
     k_sparse = int(k * 2)
 
     if hasattr(logger, 'debug'):
-        logger.debug(f"Hybrid search: k={k}, k_dense={k_dense}, k_sparse={k_sparse}, categories={categories}, sparse_enabled={CONFIG.use_sparse}")
+        logger.debug(f"Hybrid search: k={k}, k_dense={k_dense}, k_sparse={k_sparse}, sparse_enabled={CONFIG.use_sparse}")
 
     # Dense search
     try:
@@ -215,93 +241,14 @@ def hybrid_search(
         # Fallback to dense only
         fused = to_hit(dense_res)
 
-    # Универсальная система бустинга документов
-    def boost_score(item: dict) -> float:
-        s = item.get("rrf_score", item.get("score", 0.0))
-        payload = item.get("payload", {})
-
-        # 1. Metadata boost (существующий)
-        page_type = (payload.get("page_type") or "").lower()
-        if page_type and page_type in boosts:
-            s *= float(boosts[page_type])
-
-        # 1.1 Boost по группам (dir_meta)
-        if normalized_group_boosts:
-            groups = payload.get("groups_path") or payload.get("group_labels") or []
-            if isinstance(groups, str):
-                groups = [groups]
-            matched = False
-            for group in groups:
-                normalized_group = str(group).lower().strip()
-                for key, factor in normalized_group_boosts.items():
-                    if key and key in normalized_group:
-                        s *= factor
-                        matched = True
-                        break
-                if matched:
-                    break
-
-        # 2. Тип документа на основе URL структуры
-        url = (payload.get("url") or payload.get("canonical_url") or payload.get("site_url") or "").lower()
-        title = (payload.get("title") or "").lower()
-
-        # Обзорная документация (высокий приоритет)
-        if any(path in url for path in ["/start/", "/overview", "/introduction", "/what-is", "/about"]):
-            s *= CONFIG.boost_overview_docs
-        # FAQ и справочники (средний приоритет)
-        elif any(path in url for path in ["/faq", "/guide", "/manual", "/help"]):
-            s *= CONFIG.boost_faq_guides
-        # Техническая документация (средний приоритет)
-        elif any(path in url for path in ["/admin/", "/api/", "/sdk/", "/integration"]):
-            s *= CONFIG.boost_technical_docs
-        # Release notes и блоги (низкий приоритет для общих вопросов)
-        elif any(path in url for path in ["/blog", "/release", "/version", "/changelog"]):
-            s *= CONFIG.boost_release_notes
-
-        # 3. Boost на основе заголовка
-        if any(keyword in title for keyword in ["что такое", "обзор", "введение", "начало работы", "возможности"]):
-            s *= CONFIG.boost_overview_docs
-        elif any(keyword in title for keyword in ["настройка", "конфигурация", "установка"]):
-            s *= CONFIG.boost_technical_docs
-
-        # 4. Boost на основе полноты информации
-        text = payload.get("text", "")
-        content_length = payload.get("content_length") or len(text)
-
-        # Документы средней длины (не слишком короткие, не слишком длинные)
-        if 1000 <= content_length <= 5000:
-            s *= CONFIG.boost_optimal_length
-        elif content_length > 5000:
-            s *= CONFIG.boost_technical_docs  # Длинные документы могут быть избыточными
-
-        # 5. Boost для документов с хорошей структурой
-        if text:
-            text_lower = text.lower()
-            # Документы с заголовками и списками (хорошо структурированные)
-            if any(marker in text_lower for marker in ["##", "###", "•", "1.", "2.", "3."]):
-                s *= CONFIG.boost_well_structured
-            # Документы с примерами (практические)
-            if any(marker in text_lower for marker in ["пример", "например", "как", "шаг"]):
-                s *= CONFIG.boost_technical_docs
-
-        # 6. Boost для документов из надежных источников
-        source = payload.get("source", "").lower()
-        if source in ["docs-site", "official-docs", "main-docs"]:
-            s *= CONFIG.boost_reliable_source
-
-        # 7. Понижение для дублирующихся документов (по URL паттерну)
-        # Это поможет избежать повторения похожих документов
-        url_parts = url.split("/")
-        if len(url_parts) > 4:  # Глубоко вложенные документы
-            s *= 0.95
-
-        return s
-
-    # Apply boosts and sort
-    for it in fused:
-        it["boosted_score"] = boost_score(it)
-
-    fused.sort(key=lambda x: x["boosted_score"], reverse=True)
+    boosting_cfg = get_boosting_config()
+    boost_context = {
+        "boosts": boosts or {},
+        "group_boosts": normalized_group_boosts,
+    }
+    if routing_result:
+        boost_context["routing_result"] = routing_result
+    fused = boost_hits(fused, boosting_cfg, boost_context)
 
     if hasattr(logger, 'debug'):
         logger.debug(f"Final results: {len(fused[:k])} items")
@@ -385,6 +332,13 @@ def _fetch_doc_chunks(doc_id: str, fetch_fn: Callable[[str], list[dict[str, Any]
 
 
 def _build_merged_doc(base_doc: dict, doc_chunks: list[dict[str, Any]], indices: list[int]) -> dict:
+    """
+    Строит новый документ на основе базового hit'а и списка индексов чанков.
+
+    - склеивает тексты выбранных чанков в один;
+    - пересчитывает длину контента;
+    - добавляет служебные поля auto_merged / merged_chunk_indices / chunk_span / merged_chunk_ids.
+    """
     merged = dict(base_doc)
     payload = deepcopy(base_doc.get("payload", {}) or {})
 
@@ -424,7 +378,103 @@ def _build_merged_doc(base_doc: dict, doc_chunks: list[dict[str, Any]], indices:
     return merged
 
 
+def _build_windows_for_doc(
+    doc_id: str,
+    items: list[tuple[int, dict]],
+    max_tokens: int,
+    fetch_fn: Callable[[str], list[dict[str, Any]]] | None = None,
+) -> dict[tuple[str, int], tuple[tuple[str, tuple[int, ...]], dict]]:
+    """
+    Строит окна для одного документа и возвращает их отображение:
+    (doc_id, chunk_index) -> (window_key, merged_doc).
+    """
+    windows: dict[tuple[str, int], tuple[tuple[str, tuple[int, ...]], dict]] = {}
+
+    doc_chunks = _fetch_doc_chunks(doc_id, fetch_fn)
+    if not doc_chunks:
+        # Нет информации о чанках документа — каждый hit остаётся сам по себе
+        for chunk_index, doc in items:
+            key = (doc_id, (chunk_index,))
+            windows[(doc_id, chunk_index)] = (key, doc)
+        return windows
+
+    # Быстрый доступ от chunk_index к позиции в списке чанков
+    positions = {
+        chunk["payload"].get("chunk_index"): idx
+        for idx, chunk in enumerate(doc_chunks)
+    }
+    covered: set[int] = set()
+
+    for chunk_index, doc in sorted(items, key=lambda x: x[0]):
+        pos = positions.get(chunk_index)
+        if pos is None:
+            key = (doc_id, (chunk_index,))
+            windows[(doc_id, chunk_index)] = (key, doc)
+            continue
+
+        # Чанк уже покрыт ранее построенным окном
+        if pos in covered and (doc_id, chunk_index) in windows:
+            continue
+
+        start = end = pos
+        tokens_used = _estimate_tokens(doc_chunks[pos]["payload"].get("text", ""))
+
+        # Жадно расширяем окно влево/вправо, пока укладываемся в лимит токенов
+        while True:
+            expanded = False
+            if start > 0 and (start - 1) not in covered:
+                candidate_text = doc_chunks[start - 1]["payload"].get("text", "")
+                candidate_tokens = _estimate_tokens(candidate_text)
+                if tokens_used + candidate_tokens <= max_tokens:
+                    start -= 1
+                    tokens_used += candidate_tokens
+                    expanded = True
+            if end + 1 < len(doc_chunks) and (end + 1) not in covered:
+                candidate_text = doc_chunks[end + 1]["payload"].get("text", "")
+                candidate_tokens = _estimate_tokens(candidate_text)
+                if tokens_used + candidate_tokens <= max_tokens:
+                    end += 1
+                    tokens_used += candidate_tokens
+                    expanded = True
+            if not expanded:
+                break
+
+        indices = list(range(start, end + 1))
+        covered.update(indices)
+
+        merged_indices = [
+            doc_chunks[i]["payload"].get("chunk_index")
+            for i in indices
+        ]
+
+        if len(merged_indices) > 1:
+            merged_doc = _build_merged_doc(doc, doc_chunks, indices)
+        else:
+            merged_doc = doc
+
+        window_key = (doc_id, tuple(merged_indices))
+        for idx in merged_indices:
+            windows[(doc_id, idx)] = (window_key, merged_doc)
+
+    return windows
+
+
 def auto_merge_neighbors(hits: list[dict], max_window_tokens: int | None = None, fetch_fn: Callable[[str], list[dict[str, Any]]] | None = None) -> list[dict]:
+    """
+    Автоматически объединяет соседние чанки одного документа в более крупные окна.
+
+    Алгоритм:
+    1. Группирует hits по doc_id + chunk_index.
+    2. Для каждого документа подтягивает все чанки и строит «окно» вокруг выбранного chunk_index,
+       расширяя его влево/вправо пока суммарное число токенов (по _estimate_tokens) не превысит лимит.
+    3. Если в окно попало больше одного чанка, создаёт объединённый документ через _build_merged_doc.
+    4. В итоговой выдаче каждый window (набор чанков) представлен одним hit'ом; остальные скрываются.
+
+    max_window_tokens:
+        жёсткий лимит токенов на одно окно; по умолчанию берётся из CONFIG.retrieval_auto_merge_max_tokens.
+    fetch_fn:
+        опциональная функция для подмены источника чанков (используется в тестах).
+    """
     if not hits:
         return []
 
@@ -447,67 +497,8 @@ def auto_merge_neighbors(hits: list[dict], max_window_tokens: int | None = None,
     window_map: dict[tuple[str, int], tuple[tuple[str, tuple[int, ...]], dict]] = {}
 
     for doc_id, items in doc_hits.items():
-        doc_chunks = _fetch_doc_chunks(doc_id, fetch_fn)
-        if not doc_chunks:
-            for chunk_index, doc in items:
-                key = (doc_id, (chunk_index,))
-                window_map[(doc_id, chunk_index)] = (key, doc)
-            continue
-
-        positions = {
-            chunk["payload"].get("chunk_index"): idx
-            for idx, chunk in enumerate(doc_chunks)
-        }
-        covered: set[int] = set()
-
-        for chunk_index, doc in sorted(items, key=lambda x: x[0]):
-            pos = positions.get(chunk_index)
-            if pos is None:
-                key = (doc_id, (chunk_index,))
-                window_map[(doc_id, chunk_index)] = (key, doc)
-                continue
-
-            if pos in covered and (doc_id, chunk_index) in window_map:
-                continue
-
-            start = end = pos
-            tokens_used = _estimate_tokens(doc_chunks[pos]["payload"].get("text", ""))
-
-            while True:
-                expanded = False
-                if start > 0 and (start - 1) not in covered:
-                    candidate_text = doc_chunks[start - 1]["payload"].get("text", "")
-                    candidate_tokens = _estimate_tokens(candidate_text)
-                    if tokens_used + candidate_tokens <= max_tokens:
-                        start -= 1
-                        tokens_used += candidate_tokens
-                        expanded = True
-                if end + 1 < len(doc_chunks) and (end + 1) not in covered:
-                    candidate_text = doc_chunks[end + 1]["payload"].get("text", "")
-                    candidate_tokens = _estimate_tokens(candidate_text)
-                    if tokens_used + candidate_tokens <= max_tokens:
-                        end += 1
-                        tokens_used += candidate_tokens
-                        expanded = True
-                if not expanded:
-                    break
-
-            indices = list(range(start, end + 1))
-            covered.update(indices)
-
-            merged_indices = [
-                doc_chunks[i]["payload"].get("chunk_index")
-                for i in indices
-            ]
-
-            if len(merged_indices) > 1:
-                merged_doc = _build_merged_doc(doc, doc_chunks, indices)
-            else:
-                merged_doc = doc
-
-            window_key = (doc_id, tuple(merged_indices))
-            for idx in merged_indices:
-                window_map[(doc_id, idx)] = (window_key, merged_doc)
+        doc_windows = _build_windows_for_doc(doc_id, items, max_tokens, fetch_fn)
+        window_map.update(doc_windows)
 
     result: list[dict] = []
     seen_windows: set[tuple[str, tuple[int, ...]]] = set()

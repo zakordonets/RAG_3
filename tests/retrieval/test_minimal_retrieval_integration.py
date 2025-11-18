@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import uuid
 import sys
@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.config import CONFIG
-from app.services.search import retrieval
+from app.retrieval import retrieval
 
 
 pytestmark = pytest.mark.integration

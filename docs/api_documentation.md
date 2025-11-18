@@ -142,8 +142,7 @@ API endpoints сгруппированы по функциональности:
   "circuit_breakers": {
     "llm_service": {"state": "closed", "failure_count": 0},
     "embedding_service": {"state": "closed", "failure_count": 0},
-    "qdrant_service": {"state": "closed", "failure_count": 0},
-    "sparse_service": {"state": "closed", "failure_count": 0}
+    "qdrant_service": {"state": "closed", "failure_count": 0}
   },
   "cache": {
     "redis_available": true,
@@ -195,8 +194,7 @@ API endpoints сгруппированы по функциональности:
     "last_failure_time": null
   },
   "embedding_service": {...},
-  "qdrant_service": {...},
-  "sparse_service": {...}
+  "qdrant_service": {...}
 }
 ```
 

@@ -1,0 +1,50 @@
+themes:
+  sdk_android:
+    display_name: "SDK для Android"
+    domain: "sdk_docs"
+    section: "sdk"
+    platform: "android"
+    role: "integrator"
+  sdk_ios:
+    display_name: "SDK для iOS"
+    domain: "sdk_docs"
+    section: "sdk"
+    platform: "ios"
+    role: "integrator"
+  sdk_web:
+    display_name: "Web SDK"
+    domain: "sdk_docs"
+    section: "sdk"
+    platform: "web"
+    role: "integrator"
+  sdk_main:
+    display_name: "SDK (общие материалы)"
+    domain: "sdk_docs"
+    section: "sdk"
+    platform: "main"
+    role: "integrator"
+  user_agent:
+    display_name: "АРМ агента"
+    domain: "chatcenter_user_docs"
+    section: "agent"
+    role: "operator"
+  user_supervisor:
+    display_name: "АРМ супервайзера"
+    domain: "chatcenter_user_docs"
+    section: "supervisor"
+    role: "supervisor"
+  user_admin:
+    display_name: "АРМ администратора"
+    domain: "chatcenter_user_docs"
+    section: "admin"
+    role: "administrator"
+  user_api:
+    display_name: "API и интеграции"
+    domain: "chatcenter_user_docs"
+    section: "api"
+    role: "integrator"
+  user_faq:
+    display_name: "FAQ / База знаний"
+    domain: "chatcenter_user_docs"
+    section: "faq"
+    role: "all"

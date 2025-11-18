@@ -77,12 +77,6 @@ docker run -d \
   qdrant/qdrant
 ```
 
-#### Sparse Embeddings Service (опционально)
-```bash
-cd sparse_service
-python app.py
-```
-
 ### 4. Инициализация системы
 
 ```bash

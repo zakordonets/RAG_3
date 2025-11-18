@@ -36,10 +36,10 @@
 
 ### Компоненты системы
 
-1. **Конфигурация источников** (`app/config/sources_config.py`)
-   - Реестр всех источников данных
-   - Типы источников (SourceType enum)
-   - Настройки для каждого источника
+1. **Конфигурация источников** (`ingestion/config.yaml`)
+   - YAML-описание всех источников и профилей
+   - Дополнительные настройки (метаданные, чанкинг, переиспользуемые профили)
+   - Используется `ingestion/run.py` и тестами
 
 2. **Source Adapters** (`ingestion/adapters/`)
    - Извлечение данных из разных источников
@@ -78,21 +78,8 @@
 
 ### Поддерживаемые типы (для расширения)
 
-В `app/config/sources_config.py` определены дополнительные типы:
-
-```python
-class SourceType(Enum):
-    DOCS_SITE = "docs_site"          # Документационный сайт
-    API_DOCS = "api_docs"            # API документация (Swagger, OpenAPI)
-    BLOG = "blog"                    # Блог или новости
-    FAQ = "faq"                      # FAQ страницы
-    EXTERNAL = "external"            # Внешний сайт
-    LOCAL_FOLDER = "local_folder"    # Локальная папка с документами
-    FILE_COLLECTION = "file_collection"  # Коллекция файлов
-    GIT_REPOSITORY = "git_repository"    # Git репозиторий
-    CONFLUENCE = "confluence"        # Confluence wiki
-    NOTION = "notion"               # Notion workspace
-```
+Дополнительные значения `source_type` задаются в `ingestion/config.yaml` и сопоставляются с адаптерами.
+Поддерживаемые значения: `docusaurus`, `website`, `local_folder`, `api_docs` (см. `ingestion/adapters/`).
 
 ## 🚀 Быстрый старт: Добавление источника
 
@@ -120,39 +107,7 @@ python ingestion/run.py website \
     --reindex-mode full
 ```
 
-### Способ 2: Конфигурация в sources_config.py
-
-Добавьте конфигурацию источника в `app/config/sources_config.py`:
-
-```python
-# В методе _load_default_sources()
-self.register(SourceConfig(
-    name="my_docs",
-    base_url="https://docs.example.com/",
-    source_type=SourceType.DOCS_SITE,
-    strategy="jina",
-    use_cache=True,
-    sitemap_path="/sitemap.xml",
-    seed_urls=[
-        "https://docs.example.com/",
-        "https://docs.example.com/docs/",
-    ],
-    crawl_deny_prefixes=[
-        "https://docs.example.com/api/",
-        "https://docs.example.com/admin/",
-    ],
-    metadata_patterns={
-        r'/docs/': {'section': 'docs', 'user_role': 'all'},
-        r'/api/': {'section': 'api', 'user_role': 'developer'},
-        r'/blog/': {'section': 'blog', 'user_role': 'all'},
-    },
-    timeout_s=30,
-    crawl_delay_ms=1000,
-    user_agent="RAGBot/1.0",
-))
-```
-
-### Способ 3: YAML конфигурация
+### Способ 2: Конфигурация через ingestion/config.yaml
 
 Добавьте источник в `ingestion/config.yaml`:
 
@@ -891,10 +846,10 @@ python ingestion/run.py my_source \
 
 ```bash
 # Просмотр всех доступных источников
-python -c "from app.config.sources_config import sources_registry; print(sources_registry.list_all())"
+python -c "from ingestion.run import load_sources_from_config; print([s['name'] for s in load_sources_from_config('ingestion/config.yaml')])"
 
 # Информация о конкретном источнике
-python -c "from app.config.sources_config import get_source_config; print(get_source_config('edna_docs'))"
+python -c "from ingestion.run import load_sources_from_config; sources=load_sources_from_config('ingestion/config.yaml'); print([s for s in sources if s['name']=='docusaurus'])"
 
 # Тестирование адаптера
 python -m pytest tests/test_my_source_adapter.py -v

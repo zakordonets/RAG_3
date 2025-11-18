@@ -1,10 +1,10 @@
-"""
+﻿"""
 Проверка: есть ли поле text в payload чанков Qdrant
 """
 import sys
 sys.path.insert(0, '.')
 
-from app.services.search.retrieval import client, COLLECTION
+from app.retrieval.retrieval import client, COLLECTION
 
 print("=" * 100)
 print("🔍 ПРОВЕРКА НАЛИЧИЯ ПОЛЯ 'text' В QDRANT PAYLOAD")

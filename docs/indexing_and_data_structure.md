@@ -236,6 +236,26 @@ def calculate_boost(metadata: dict) -> float:
     return round(boost, 2)
 ```
 
+#### Заголовки и title для Docusaurus / SDK
+
+- Для Docusaurus-документов:
+  - если во frontmatter есть `title`, он используется как заголовок страницы;
+  - если `title` отсутствует (как это часто бывает в SDK-документации), нормализатор берёт
+    **первый markdown-заголовок `# …` после frontmatter** и записывает его в `metadata["title"]`.
+- Пример:
+
+  ```markdown
+  ---
+  sidebar_position: 1
+  ---
+  # Подключение
+
+  ## Минимальные требования
+  ...
+  ```
+
+  В этом случае итоговый `title` документа будет `"Подключение"`, даже если фронт‑маттер не содержит `title`.
+
 ---
 
 ## Система Chunking
@@ -247,10 +267,10 @@ def calculate_boost(metadata: dict) -> float:
 ```python
 from ingestion.chunking.universal_chunker import UniversalChunker
 
-chunker = UniversalChunker(
-    max_tokens=300,            # Оптимизировано для точности ответов
-    min_tokens=150,            # Фокус на одной теме
-    overlap_base=50,           # Адаптивное перекрытие
+  chunker = UniversalChunker(
+      max_tokens=300,            # Оптимизировано для точности ответов
+      min_tokens=150,            # Фокус на одной теме
+      overlap_base=50,           # Адаптивное перекрытие
     oversize_block_policy="split",  # Разбиение больших блоков
     oversize_block_limit=600   # Лимит для принудительного split
 )
@@ -269,11 +289,35 @@ chunks = chunker.chunk(
 |----------|----------|-------------|
 | `max_tokens` | **300** | Предотвращение смешивания разных тем |
 | `min_tokens` | **150** | Достаточно для семантического понимания |
-| `overlap_base` | **50** | Сохранение контекста между чанками |
-| `oversize_block_policy` | split | Разбиение больших code/table блоков |
-| `oversize_block_limit` | 600 | Максимум перед принудительным split |
+  | `overlap_base` | **50** | Сохранение контекста между чанками |
+  | `oversize_block_policy` | split | Разбиение больших code/table блоков |
+  | `oversize_block_limit` | 600 | Максимум перед принудительным split |
 
-### Почему 150-300, а не больше?
+  ### Откуда берутся параметры чанкинга
+
+  В продакшене есть два основных способа задать `max_tokens` / `min_tokens`:
+
+  1. **Через YAML-конфиг индексации** (рекомендуется для батч‑запусков)
+     - Команда: `python ingestion/run.py --config ingestion/config.yaml --profile <profile>`
+     - Размеры чанков берутся из секции `chunk` соответствующего источника в `ingestion/config.yaml`, например:
+       - `sources.docusaurus.chunk.max_tokens`
+       - `sources.docusaurus.chunk.min_tokens`
+     - Профили (`profiles.production`, `profiles.development` и т.п.) переопределяют эти значения для конкретного окружения.
+     - В этом режиме значения `CHUNK_MIN_TOKENS` / `CHUNK_MAX_TOKENS` из `.env` **не используются** для UniversalChunker.
+
+  2. **Через CLI‑параметры** (ад‑hoc запуск без `--config`)
+     - Команда: `python ingestion/run.py --source docusaurus --docs-root ... [--chunk-max-tokens N --chunk-min-tokens M]`
+     - Если флаги `--chunk-max-tokens` / `--chunk-min-tokens` переданы, используются именно они.
+     - Если флаги не заданы, берутся значения из `AppConfig` (`app/config/app_config.py`), которые читают переменные окружения:
+       - `CHUNK_MIN_TOKENS` из `.env`
+       - `CHUNK_MAX_TOKENS` из `.env`
+     - При отсутствии этих переменных используются зашитые в коде дефолты.
+
+  Таким образом, примерные значения 150–300 токенов в этом документе — это **рекомендация**, а фактический размер чанков зависит от:
+  - настроек `chunk.*` в `ingestion/config.yaml` (при запуске с `--config`);
+  - либо от сочетания CLI‑флагов и переменных `.env` (при запуске без `--config`).
+
+  ### Почему 150-300, а не больше?
 
 **Проблема с большими чанками** (350-600 токенов):
 - ❌ Информация из разных подразделов сливалась
@@ -438,9 +482,31 @@ python scripts/clear_collection.py --collection edna_docs
 sources:
   docusaurus:
     enabled: true
-    docs_root: "C:\CC_RAG\docs"
+    docs_root: "C:\\CC_RAG\\docs"
     site_base_url: "https://docs-chatcenter.edna.ru"
     site_docs_prefix: "/docs"
+    metadata:
+      domain: "chatcenter_user_docs"
+      section_by_dir:
+        start: "start"
+        agent: "agent"
+        supervisor: "supervisor"
+        admin: "admin"
+        chat-bot: "chat-bot"
+        api: "api"
+        faq: "faq"
+        blog: "blog"
+      role_by_section:
+        agent: "operator"
+        supervisor: "supervisor"
+        admin: "administrator"
+        api: "integrator"
+      page_type_by_dir:
+        start: "overview"
+        faq: "faq"
+        blog: "changelog"
+      default_section: "general"
+      default_role: "unspecified"
     chunk:
       max_tokens: 600
       min_tokens: 350
@@ -449,7 +515,7 @@ sources:
       oversize_block_limit: 1200
   docusaurus_sdk:
     enabled: true
-    docs_root: "C:\CC_RAG\SDK_docs\docs"
+    docs_root: "C:\\CC_RAG\\SDK_docs\\docs"
     site_base_url: "https://docs-sdk.edna.ru"
     site_docs_prefix: ""
     top_level_meta:
@@ -465,6 +531,15 @@ sources:
       main:
         sdk_platform: "main"
         product: "sdk"
+    metadata:
+      domain: "sdk_docs"
+      fixed_section: "sdk"
+      fixed_role: "integrator"
+      platform_by_dir:
+        android: "android"
+        ios: "ios"
+        web: "web"
+        main: "main"
 
 global:
   qdrant:
@@ -480,12 +555,14 @@ global:
 python -m ingestion.run --config ingestion/config.yaml --profile production
 ```
 
-
-
-
-
-
-
+**Примечание по тематическим полям**:
+- Во время индексации маппер `DocusaurusMetadataMapper` добавляет к каждому документу поля:
+  - `domain` (`chatcenter_user_docs`, `sdk_docs`, `api_docs`, …);
+  - `section` (`agent`, `admin`, `sdk`, `faq`, …);
+  - `platform` (`android`, `ios`, `web`, `main` для SDK);
+  - `role` (`operator`, `administrator`, `integrator`, …);
+  - `page_type` (например, `overview`, `faq`, `changelog`).
+- Эти поля затем используются тематическим роутером (`route_query`) и модулем буста (`boosting.py`) для фильтрации и ранжирования результатов поиска.
 
 ### Мониторинг индексации
 

@@ -32,6 +32,32 @@ sources:
     site_base_url: "https://docs-chatcenter.edna.ru"
     site_docs_prefix: "/docs"
     include_file_extensions: [".md", ".mdx"]
+    metadata:
+      domain: "chatcenter_user_docs"
+      section_by_dir:
+        start: "start"
+        agent: "agent"
+        supervisor: "supervisor"
+        admin: "admin"
+        chat-bot: "chat-bot"
+        api: "api"
+        faq: "faq"
+        blog: "blog"
+      role_by_section:
+        start: "all"
+        agent: "operator"
+        supervisor: "supervisor"
+        admin: "administrator"
+        chat-bot: "integrator"
+        api: "integrator"
+        faq: "all"
+        blog: "all"
+      page_type_by_dir:
+        start: "overview"
+        faq: "faq"
+        blog: "changelog"
+      default_section: "general"
+      default_role: "unspecified"
 
     # Настройки очистки контента
     cleaning:
@@ -42,11 +68,11 @@ sources:
 
     # Настройки чанкинга
     chunk:
-      max_tokens: 600
-      min_tokens: 350
-      overlap_base: 100
+      max_tokens: 300
+      min_tokens: 150
+      overlap_base: 50
       oversize_block_policy: "split"  # keep|split|skip
-      oversize_block_limit: 1200
+      oversize_block_limit: 600
 
     # Настройки маршрутизации URL
     routing:
@@ -76,13 +102,22 @@ sources:
       main:
         sdk_platform: "main"
         product: "sdk"
+    metadata:
+      domain: "sdk_docs"
+      fixed_section: "sdk"
+      fixed_role: "integrator"
+      platform_by_dir:
+        android: "android"
+        ios: "ios"
+        web: "web"
+        main: "main"
 
     chunk:
-      max_tokens: 600
-      min_tokens: 350
-      overlap_base: 100
+      max_tokens: 300
+      min_tokens: 150
+      overlap_base: 50
       oversize_block_policy: "split"
-      oversize_block_limit: 1200
+      oversize_block_limit: 600
 
     routing:
       drop_numeric_prefix_in_first_level: true

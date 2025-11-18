@@ -212,10 +212,6 @@ GET /v1/admin/health
     "qdrant_service": {
       "state": "closed",
       "failure_count": 0
-    },
-    "sparse_service": {
-      "state": "closed",
-      "failure_count": 0
     }
   },
   "cache": {
@@ -345,8 +341,7 @@ GET /v1/admin/circuit-breakers
     "threshold": 5,
     "timeout": 60
   },
-  "qdrant_service": {...},
-  "sparse_service": {...}
+  "qdrant_service": {...}
 }
 ```
 

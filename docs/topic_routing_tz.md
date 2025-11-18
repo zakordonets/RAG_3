@@ -1,4 +1,4 @@
-## Единое ТЗ на рефакторинг поиска: метаданные, бустинг, роутинг, использование тематик
+﻿## Единое ТЗ на рефакторинг поиска: метаданные, бустинг, роутинг, использование тематик
 
 Цель: улучшить качество RAG‑поиска за счёт:
 - нормализованных тематических метаданных на уровне индекса;
@@ -106,7 +106,7 @@
 
 ## Этап 2. Рефакторинг буста (boosting)
 
-**Цель:** вынести логику буста из `app/services/search/retrieval.py` в отдельный модуль и конфигурацию, чтобы:
+**Цель:** вынести логику буста из `app/retrieval/retrieval.py` в отдельный модуль и конфигурацию, чтобы:
 - ранжировать документы **внутри уже выбранных тематик**;
 - избавиться от жёсткого хардкода в коде;
 - использовать тематические поля (`domain/section/platform/page_type`) и результат роутера (`routing_result`) как мягкие сигналы.
@@ -216,7 +216,7 @@ def get_boosting_config() -> BoostingConfig:
 
 ### 2.4. Модуль буста
 
-- Создать `app/services/search/boosting.py`.
+- Создать `app/retrieval/boosting.py`.
 - Интерфейс:
 
 ```python
@@ -278,12 +278,12 @@ def boost_score(
 
 ### 2.6. Интеграция в `hybrid_search`
 
-- В `app/services/search/retrieval.py`:
+- В `app/retrieval/retrieval.py`:
   - Импортировать:
 
     ```python
     from app.config.boosting_config import get_boosting_config
-    from app.services.search.boosting import boost_hits
+    from app.retrieval.boosting import boost_hits
     ```
 
   - После RRF‑слияния (`fused = rrf_fuse(...)`):
@@ -355,7 +355,7 @@ def boost_score(
 
 ### 3.3. Тематический роутер запросов
 
-- Создать модуль `app/services/search/theme_router.py`.
+- Создать модуль `app/retrieval/theme_router.py`.
 - Интерфейс:
 
 ```python

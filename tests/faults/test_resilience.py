@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import Callable, List
@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.infrastructure.caching import CacheManager
 from app.services.core import llm_router
-from app.services.search import retrieval
+from app.retrieval import retrieval
 
 
 @contextmanager

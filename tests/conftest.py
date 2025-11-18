@@ -1,4 +1,4 @@
-"""Shared fixtures and utilities for the test suite."""
+﻿"""Shared fixtures and utilities for the test suite."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ def mock_requests_get():
 @pytest.fixture
 def mock_qdrant_client():
     """Fixture for mocking the Qdrant client."""
-    with patch("app.services.search.retrieval.client") as mock_client:
+    with patch("app.retrieval.retrieval.client") as mock_client:
         yield mock_client
 
 

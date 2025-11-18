@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from flask import Blueprint, request, jsonify
 from loguru import logger
-from app.services.infrastructure.orchestrator import handle_query
+from app.orchestration.orchestrator import handle_query
 from app.utils import validate_query_data
 from app.infrastructure import validate_request, security_monitor
 

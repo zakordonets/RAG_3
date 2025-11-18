@@ -1,4 +1,4 @@
-# Внутреннее API - Документация для разработчиков
+﻿# Внутреннее API - Документация для разработчиков
 
 ## 📚 Обзор
 
@@ -253,62 +253,73 @@ max_merge_span = 5               # Макс. чанков в одном merge
 
 ## 🔍 Search Services
 
-### 5. Hybrid Search (`app/services/search/retrieval.py`)
+### 5. Hybrid Search (`app/retrieval/retrieval.py`)
 
-Гибридный поиск (dense + sparse) с BM25 reranking.
+Гибридный поиск (dense + sparse) с конфигурируемым boosting и поддержкой тематик.
 
-#### `hybrid_search(query_dense: List[float], query_sparse: Dict, k: int, ...) -> List[Dict]`
+#### `hybrid_search(query_dense: List[float], query_sparse: Dict, k: int, boosts=None, categories=None, group_boosts=None, routing_result=None, metadata_filter=None) -> List[Dict]`
 
 Основная функция гибридного поиска.
 
 **Параметры**:
 - `query_dense` (List[float]): Dense эмбеддинг запроса [1024]
-- `query_sparse` (Dict[str, float]): Sparse вектор (BM25 scores)
+- `query_sparse` (Dict): Sparse‑вектор BGE‑M3 (`{"indices": [...], "values": [...]}`)
 - `k` (int): Количество результатов
-- `boosts` (Optional[Dict[str, float]]): Метаданные boosts (e.g., `{"user_role:agent": 1.3}`)
-- `categories` (Optional[List[str]]): Фильтр по категориям
+- `boosts` (Optional[Dict[str, float]]): Page‑type boosts (например, `{"faq": 1.2}`) из `process_query`
+- `group_boosts` (Optional[Dict[str, float]]): Boosts по группам/лейблам (совместимость со старыми конфигами)
+- `categories` (Optional[List[str]]): Фильтр по payload `category` (исторический механизм разделения АРМ)
+- `routing_result` (Optional[dict]): Результат тематического роутера (`route_query`), используется для мягкого thematic boost
+- `metadata_filter` (Optional[Filter]): Дополнительный фильтр Qdrant по полям `domain/section/platform/role`
 
 **Возвращает**:
 - Список документов с полями:
   - `id` (str): Qdrant point ID
-  - `score` (float): Гибридная оценка релевантности
+  - `score` (float): базовый score от Qdrant
+  - `rrf_score` (float): оценка после RRF‑слияния dense+sparse
+  - `boosted_score` (float): итоговый score после применения boosting
   - `payload` (Dict): Метаданные и текст
 
 **Алгоритм**:
-1. **Parallel search**: Dense + Sparse запросы параллельно
-2. **Reciprocal Rank Fusion (RRF)**: Объединение результатов
-3. **Metadata boosting**: Применение boosts к оценкам
+1. **Dense search**: поиск по dense‑вектору запроса.
+2. **Sparse search**: поиск по named sparse vector (если `CONFIG.use_sparse=True`).
+3. **Reciprocal Rank Fusion (RRF)**: объединение результатов dense+sparse.
+4. **Boosting** (`app/retrieval/boosting.py` + `app/config/boosting.yaml`):
+   - учёт `page_type`, `section`, `platform`, длины/структуры текста, источника;
+   - применение `boosts`/`group_boosts` из `process_query`;
+   - мягкий тематический буст на основе `routing_result` (темы/платформы).
+5. Сортировка по `boosted_score` и возврат топ‑`k` документов.
 4. **Reranking**: Переранжирование BM25 (если enabled)
 
 **Пример**:
 ```python
-from app.services.search.retrieval import hybrid_search
+from app.retrieval.retrieval import hybrid_search
 from app.services.core.embeddings import embed_unified
+from app.retrieval import route_query
 
-# 1. Получаем эмбеддинги запроса
-embeddings = embed_unified("Как настроить маршрутизацию?", context="query")
+query_text = "Как подключить SDK в Android приложении?"
+embeddings = embed_unified(query_text, context="query")
 
-# 2. Гибридный поиск
+# Тематический роутинг (опционально)
+routing = route_query(query_text)
+
 results = hybrid_search(
     query_dense=embeddings["dense_vecs"],
-    query_sparse=embeddings["lexical_weights"],
+    query_sparse={"indices": [], "values": []},  # или конвертация lexical_weights
     k=10,
-    boosts={"user_role:admin": 1.2}
+    boosts={"faq": 1.2},
+    routing_result=routing,
 )
 
-# 3. Результаты
 for doc in results:
-    print(f"Score: {doc['score']:.3f} - {doc['payload']['title']}")
+    print(f"Score: {doc['boosted_score']:.3f} - {doc['payload'].get('title')}")
 ```
 
-**Конфигурация**:
-```python
-# В app.config.app_config
-search_top_k = 10                # Количество результатов
-dense_weight = 0.7               # Вес dense поиска
-sparse_weight = 0.3              # Вес sparse поиска
-use_bm25_reranking = True        # BM25 reranking
-```
+**Конфигурация буста**:
+- Файл `app/config/boosting.yaml` содержит:
+  - `page_type_boosts`, `section_boosts`, `platform_boosts`;
+  - `url_patterns`, `title_keywords`, `length`, `structure`, `source_boosts`, `depth_penalty`;
+  - `theme_boost` — коэффициенты для thematic boost.
+- Загрузка/кеширование через `app/config/boosting_config.get_boosting_config()`.
 
 ---
 
@@ -599,7 +610,7 @@ if risk > 7:
 
 ## 🔗 Orchestrator
 
-### 11. Query Orchestrator (`app/services/infrastructure/orchestrator.py`)
+### 11. Query Orchestrator (`app/orchestration/orchestrator.py`)
 
 Главный оркестратор обработки запросов (главный entry point).
 
@@ -638,7 +649,7 @@ if risk > 7:
 
 **Пример**:
 ```python
-from app.services.infrastructure.orchestrator import handle_query
+from app.orchestration.orchestrator import handle_query
 
 result = handle_query(
     channel="telegram",

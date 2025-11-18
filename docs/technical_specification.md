@@ -1,4 +1,4 @@
-# Техническая спецификация RAG-системы
+﻿# Техническая спецификация RAG-системы
 
 Полная техническая спецификация RAG-системы для edna Chat Center.
 
@@ -346,7 +346,7 @@ sparse = embed_sparse_optimized("Как настроить маршрутиза�
 #### Hybrid Search Algorithm
 
 ```python
-from app.services.search.retrieval import hybrid_search
+from app.retrieval.retrieval import hybrid_search
 
 # Гибридный поиск
 results = hybrid_search(
@@ -382,7 +382,7 @@ results = hybrid_search(
 - **Output**: Top-10 reranked documents
 
 ```python
-from app.services.search.rerank import rerank_candidates
+from app.retrieval.rerank import rerank_candidates
 
 # Reranking
 reranked = rerank_candidates(

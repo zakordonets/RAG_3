@@ -1,4 +1,4 @@
-"""
+﻿"""
 Расширенные тесты для функциональности auto-merge.
 Покрывают edge cases, performance, и интеграционные сценарии.
 """
@@ -10,7 +10,7 @@ from typing import Callable
 import pytest
 
 from app.config import CONFIG
-from app.services.search.retrieval import auto_merge_neighbors, _estimate_tokens
+from app.retrieval.retrieval import auto_merge_neighbors, _estimate_tokens
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 

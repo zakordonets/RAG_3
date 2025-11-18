@@ -22,7 +22,7 @@ from ingestion.adapters.base import ParsedDoc, RawDoc
 from ingestion.normalizers.base import BaseNormalizer, Parser
 from ingestion.pipeline.chunker import UnifiedChunkerStep
 from ingestion.processors.docusaurus_markdown_processor import process_markdown
-from app.config.sources_config import extract_url_metadata
+from app.utils import extract_url_metadata
 
 pytestmark = pytest.mark.integration
 
@@ -104,7 +104,7 @@ category: "АРМ_adm"
 
 
 class TestUrlMetadataExtraction:
-    """Извлечение метаданных из URL в новом SourcesRegistry."""
+    """Извлечение метаданных из URL должно соответствовать текущей схеме доменов."""
 
     @pytest.mark.parametrize(
         "url,expected_section,expected_role",

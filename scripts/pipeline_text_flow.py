@@ -1,12 +1,12 @@
-"""
+﻿"""
 Тест: проверка, что происходит с полем text на всех этапах pipeline
 """
 import sys
 sys.path.insert(0, '.')
 
-from app.services.search.retrieval import hybrid_search, client, COLLECTION
+from app.retrieval.retrieval import hybrid_search, client, COLLECTION
 from app.services.core.embeddings import embed_unified
-from app.services.search.rerank import rerank
+from app.retrieval.rerank import rerank
 from app.config import CONFIG
 
 print("=" * 100)

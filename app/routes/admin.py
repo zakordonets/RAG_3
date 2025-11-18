@@ -176,8 +176,6 @@ def health():
                   type: object
                 qdrant_service:
                   type: object
-                sparse_service:
-                  type: object
             cache:
               type: object
               description: Состояние кэша
@@ -200,9 +198,6 @@ def health():
                 state: "closed"
                 failure_count: 0
               qdrant_service:
-                state: "closed"
-                failure_count: 0
-              sparse_service:
                 state: "closed"
                 failure_count: 0
             cache:

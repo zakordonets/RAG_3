@@ -1,19 +1,26 @@
 """
-Security utilities: validation and basic monitoring used across the RAG API.
-This is a compact reconstruction that preserves the public API expected by the
-rest of the codebase (SecurityValidator, SecurityMonitor, validate_request,
-security_monitor).
+Утилиты безопасности для RAG API:
+- базовая проверка входящих запросов (канал, chat_id, текст);
+- санитация текста от потенциально опасных конструкций (HTML/JS инъекции);
+- лёгкий in-memory мониторинг активности и блокировок пользователей.
+
+Модуль специально сделан компактным и без внешних зависимостей, но при этом
+сохраняет публичный API, на который завязан остальной код:
+SecurityValidator, SecurityMonitor, validate_request, security_monitor.
 """
 from __future__ import annotations
 
 import re
 import html
 import time
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 from loguru import logger
 
 
 class SecurityConfig:
+    """Константы и настройки, связанные с безопасностью на уровне входящих сообщений."""
+
     MAX_MESSAGE_LENGTH = 2000
     ALLOWED_CHANNELS = ["telegram", "web", "api"]
 
@@ -34,11 +41,70 @@ class SecurityConfig:
     ]
 
 
+@dataclass
+class ValidationResult:
+    """
+    Структурированный результат валидации/санитации сообщения.
+
+    Поля:
+    - is_valid: итоговый флаг валидности (False, если есть критические ошибки);
+    - sanitized_message: уже очищенный/усечённый текст сообщения;
+    - warnings: мягкие предупреждения (например, «сообщение было очищено»);
+    - errors: ошибки валидации (пустое сообщение, запрещённый канал и т.п.);
+    - risk_score: числовая оценка риска (пока всегда 0, зарезервировано под будущее).
+    """
+
+    is_valid: bool = True
+    sanitized_message: str = ""
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    risk_score: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "is_valid": self.is_valid,
+            "sanitized_message": self.sanitized_message,
+            "warnings": list(self.warnings),
+            "errors": list(self.errors),
+            "risk_score": self.risk_score,
+        }
+
+
+@dataclass
+class SecurityEvent:
+    """
+    Событие безопасности, которое фиксируется монитором.
+
+    Используется только в памяти, чтобы иметь краткую историю активности
+    и на её основе считать risk_score.
+    """
+
+    timestamp: float
+    event_type: str
+    details: Dict[str, Any]
+    risk_score: int = 0
+
+
 class SecurityValidator:
+    """
+    Отвечает за валидацию и санитацию полей входящего запроса.
+
+    Основные задачи:
+    - зачистка текста сообщения от потенциально опасных конструкций;
+    - проверка разрешённости канала;
+    - базовая проверка chat_id.
+    """
+
     def __init__(self) -> None:
         self._blocked_regexes = [re.compile(p, re.IGNORECASE | re.DOTALL) for p in SecurityConfig.BLOCKED_PATTERNS]
 
     def sanitize_message(self, message: str) -> str:
+        """
+        HTML-экранирует текст, вырезает потенциально опасные куски и ограничивает длину.
+
+        Это не полноценный WAF, но работает как «грубый фильтр», чтобы убрать
+        очевидные HTML/JS инъекции и чрезмерно длинные сообщения.
+        """
         if not message:
             return ""
         # HTML escape first
@@ -54,9 +120,21 @@ class SecurityValidator:
         return sanitized
 
     def validate_channel(self, channel: str) -> bool:
+        """
+        Проверяет, разрешён ли канал (telegram/web/api).
+
+        Не занимается авторизацией, только грубой проверкой допустимых значений.
+        """
         return channel in SecurityConfig.ALLOWED_CHANNELS
 
     def validate_chat_id(self, chat_id: Any) -> bool:
+        """
+        Проверяет chat_id на базовую «безопасность».
+
+        Допустимо:
+        - пустое значение (None / пустая строка);
+        - строка разумной длины без спецсимволов < > " '.
+        """
         # Allow empty/none
         if chat_id is None or chat_id == "":
             return True
@@ -67,44 +145,52 @@ class SecurityValidator:
             return False
         return True
 
-    def validate_message(self, message: str) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
-            "is_valid": True,
-            "sanitized_message": message,
-            "warnings": [],
-            "errors": [],
-            "risk_score": 0,
-        }
+    def validate_message(self, message: str) -> ValidationResult:
+        """
+        Валидирует и санитизирует текст сообщения.
 
+        - Если сообщение пустое, помечает результат как невалидный;
+        - в остальных случаях возвращает ValidationResult с очищенным текстом
+          и, при необходимости, предупреждением о модификации.
+        """
+        result = ValidationResult(sanitized_message=message or "")
         if not message or not message.strip():
-            result["is_valid"] = False
-            result["errors"].append("Empty message")
+            result.is_valid = False
+            result.errors.append("Empty message")
             return result
 
         sanitized = self.sanitize_message(message)
-        result["sanitized_message"] = sanitized
+        result.sanitized_message = sanitized
         if sanitized != message:
-            result["warnings"].append("Message sanitized")
+            result.warnings.append("Message sanitized")
 
         return result
 
 
 class SecurityMonitor:
-    """Lightweight in-memory monitoring of suspicious activity and blocks."""
+    """
+    Лёгкий in-memory монитор активности и блокировок.
+
+    Не претендует на полноценную систему аудита, но позволяет:
+    - фиксировать ключевые события по пользователю (тип, детали, риск);
+    - проверять, заблокирован ли пользователь;
+    - вычислять агрегированный риск за последний час;
+    - отдавать короткую сводку для /admin API.
+    """
 
     def __init__(self) -> None:
-        self.suspicious_activity: Dict[str, List[Dict[str, Any]]] = {}
+        self.suspicious_activity: Dict[str, List[SecurityEvent]] = {}
         self.blocked_users: set[str] = set()
         self.alert_threshold: int = 5
 
     def log_activity(self, user_id: str, activity_type: str, details: Dict[str, Any], risk_score: int = 0) -> None:
-        rec = {
-            "timestamp": time.time(),
-            "type": activity_type,
-            "details": details,
-            "risk_score": int(risk_score) if isinstance(risk_score, int) else 0,
-        }
-        self.suspicious_activity.setdefault(str(user_id), []).append(rec)
+        event = SecurityEvent(
+            timestamp=time.time(),
+            event_type=activity_type,
+            details=details,
+            risk_score=int(risk_score) if isinstance(risk_score, int) else 0,
+        )
+        self.suspicious_activity.setdefault(str(user_id), []).append(event)
 
     def block_user(self, user_id: str, reason: str = "") -> None:
         self.blocked_users.add(str(user_id))
@@ -118,9 +204,15 @@ class SecurityMonitor:
         if uid not in self.suspicious_activity:
             return 0
         cutoff = time.time() - 3600
-        return sum(int(a.get("risk_score", 0)) for a in self.suspicious_activity.get(uid, []) if a.get("timestamp", 0) >= cutoff)
+        return sum(event.risk_score for event in self.suspicious_activity.get(uid, []) if event.timestamp >= cutoff)
 
     def get_security_stats(self) -> Dict[str, Any]:
+        """
+        Возвращает агрегированную статистику для административных панелей.
+
+        Показывает количество пользователей с активностью, количество блокировок
+        и число «высокорисковых» пользователей по текущему порогу.
+        """
         total_users = len(self.suspicious_activity)
         blocked_users = len(self.blocked_users)
         high_risk_users = sum(1 for uid in self.suspicious_activity if self.get_user_risk_score(uid) > 10)
@@ -137,45 +229,60 @@ security_monitor = SecurityMonitor()
 
 
 def validate_request(user_id: str, message: str, channel: str, chat_id: Any) -> Dict[str, Any]:
-    """Validate incoming request payload and record basic activity."""
-    result: Dict[str, Any] = {
-        "is_valid": True,
-        "sanitized_message": message,
-        "warnings": [],
-        "errors": [],
-        "risk_score": 0,
-    }
+    """
+    Высокоуровневая валидация входящего запроса и логирование активности.
 
-    if security_monitor.is_user_blocked(str(user_id)):
-        result["is_valid"] = False
-        result["errors"].append("User is blocked")
-        return result
+    Последовательность проверок:
+    1. Пользователь не заблокирован (SecurityMonitor);
+    2. Канал входит в разрешённый список (telegram/web/api);
+    3. chat_id выглядит безопасно;
+    4. Текст сообщения проходит через санитацию/валидацию.
+
+    В любом случае записывает событие в SecurityMonitor с базовыми деталями.
+    Возвращает dict в формате ValidationResult.to_dict(), чтобы не ломать API.
+    """
+    user_id_str = str(user_id)
+    result = ValidationResult(sanitized_message=message or "")
+
+    if security_monitor.is_user_blocked(user_id_str):
+        result.is_valid = False
+        result.errors.append("User is blocked")
+        return result.to_dict()
 
     if not security_validator.validate_channel(channel):
-        result["is_valid"] = False
-        result["errors"].append(f"Invalid channel: {channel}")
-        return result
+        result.is_valid = False
+        result.errors.append(f"Invalid channel: {channel}")
+        return result.to_dict()
 
     if not security_validator.validate_chat_id(chat_id):
-        result["is_valid"] = False
-        result["errors"].append(f"Invalid chat_id: {chat_id}")
-        return result
+        result.is_valid = False
+        result.errors.append(f"Invalid chat_id: {chat_id}")
+        return result.to_dict()
 
     msg_validation = security_validator.validate_message(message)
-    result.update(msg_validation)
+    merged = msg_validation.to_dict()
+    merged["is_valid"] = merged["is_valid"] and result.is_valid
+    merged["warnings"] = result.warnings + merged["warnings"]
+    merged["errors"] = result.errors + merged["errors"]
+    result = ValidationResult(
+        is_valid=merged["is_valid"],
+        sanitized_message=merged["sanitized_message"],
+        warnings=merged["warnings"],
+        errors=merged["errors"],
+        risk_score=merged["risk_score"],
+    )
 
     security_monitor.log_activity(
-        user_id=str(user_id),
+        user_id=user_id_str,
         activity_type="message_validation",
         details={
             "channel": channel,
             "chat_id": str(chat_id),
             "message_length": len(message or ""),
-            "warnings": msg_validation.get("warnings", []),
-            "errors": msg_validation.get("errors", []),
+            "warnings": list(msg_validation.warnings),
+            "errors": list(msg_validation.errors),
         },
-        risk_score=msg_validation.get("risk_score", 0),
+        risk_score=msg_validation.risk_score,
     )
 
-    return result
-
+    return result.to_dict()

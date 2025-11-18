@@ -3,7 +3,7 @@ Docusaurus-специфичные нормализаторы
 """
 
 import re
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from loguru import logger
 
 from .base import BaseNormalizer
@@ -48,12 +48,13 @@ class DocusaurusNormalizer(PipelineStep):
 
         # Сначала применяем базовую нормализацию
         normalized = self.base_normalizer.process(data)
+        fallback_title = self._extract_heading_from_text(data.text or "")
 
         # Применяем Docusaurus-специфичные правила
         docusaurus_text = self._apply_docusaurus_rules(normalized.text)
 
         # Обновляем метаданные
-        updated_metadata = self._process_docusaurus_metadata(normalized)
+        updated_metadata = self._process_docusaurus_metadata(normalized, fallback_title)
 
         # Создаем результат
         result = ParsedDoc(
@@ -82,7 +83,7 @@ class DocusaurusNormalizer(PipelineStep):
 
         return cleaned_text
 
-    def _process_docusaurus_metadata(self, parsed_doc: ParsedDoc) -> Dict[str, Any]:
+    def _process_docusaurus_metadata(self, parsed_doc: ParsedDoc, fallback_title: Optional[str] = None) -> Dict[str, Any]:
         """Обрабатывает метаданные Docusaurus документа."""
         metadata = parsed_doc.metadata.copy()
 
@@ -129,7 +130,23 @@ class DocusaurusNormalizer(PipelineStep):
         else:
             metadata["content_type"] = "docusaurus_mdx"
 
+        if (not metadata.get("title")) and fallback_title:
+            metadata["title"] = fallback_title
+
         return metadata
+
+    def _extract_heading_from_text(self, text: str) -> Optional[str]:
+        if not text:
+            return None
+        stripped = text.lstrip()
+        if stripped.startswith("---"):
+            fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n?", stripped, flags=re.DOTALL)
+            if fm_match:
+                stripped = stripped[fm_match.end():]
+        heading_match = re.search(r"^\s*#\s+(.+?)\s*$", stripped, flags=re.MULTILINE)
+        if heading_match:
+            return heading_match.group(1).strip()
+        return None
 
 
 class URLMapper(PipelineStep):

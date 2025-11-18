@@ -1,10 +1,10 @@
-"""
+﻿"""
 Проверка текста SDK документа в Qdrant
 """
 import sys
 sys.path.insert(0, '.')
 
-from app.services.search.retrieval import client, COLLECTION
+from app.retrieval.retrieval import client, COLLECTION
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 # Ищем документ по URL SDK документации

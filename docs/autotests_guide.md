@@ -1,4 +1,4 @@
-# Руководство по автотестам
+﻿# Руководство по автотестам
 
 ## Обзор
 
@@ -398,7 +398,7 @@ class TestIntegration:
 ```python
 # tests/test_e2e_custom.py
 import pytest
-from app.services.infrastructure.orchestrator import handle_query
+from app.orchestration.orchestrator import handle_query
 
 class TestE2ECustom:
     @pytest.mark.e2e

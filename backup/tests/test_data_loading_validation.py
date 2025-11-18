@@ -1,4 +1,4 @@
-"""
+﻿"""
 Тесты валидации загружаемых данных и метаданных.
 """
 
@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 from ingestion.content_loader import load_content_universal
 from ingestion.pipeline import crawl_and_index
 from app.services.indexing.optimized_pipeline import run_optimized_indexing
-from app.services.search.retrieval import client, COLLECTION
+from app.retrieval.retrieval import client, COLLECTION
 
 
 @pytest.mark.integration

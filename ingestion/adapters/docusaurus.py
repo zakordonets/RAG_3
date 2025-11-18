@@ -8,6 +8,7 @@ from loguru import logger
 
 from .base import SourceAdapter, RawDoc
 from ingestion.crawlers.docusaurus_fs_crawler import crawl_docs
+from ingestion.metadata.docusaurus import DocusaurusMetadataMapper
 
 
 class DocusaurusAdapter(SourceAdapter):
@@ -26,6 +27,7 @@ class DocusaurusAdapter(SourceAdapter):
         drop_prefix_all_levels: bool = True,
         max_pages: int = None,
         top_level_meta: Optional[Dict[str, Dict[str, str]]] = None,
+        metadata_mapper: Optional[DocusaurusMetadataMapper] = None,
     ):
         """
         Инициализирует адаптер Docusaurus.
@@ -37,6 +39,7 @@ class DocusaurusAdapter(SourceAdapter):
             drop_prefix_all_levels: Удалять числовые префиксы на всех уровнях
             max_pages: Максимальное количество страниц для обработки
             top_level_meta: Дополнительные метаданные для верхних директорий
+            metadata_mapper: Маппер для вычисления тематических полей
         """
         self.docs_root = Path(docs_root)
         self.site_base_url = site_base_url
@@ -44,6 +47,7 @@ class DocusaurusAdapter(SourceAdapter):
         self.site_docs_prefix = site_docs_prefix
         self.drop_prefix_all_levels = drop_prefix_all_levels
         self.top_level_meta = top_level_meta or {}
+        self.metadata_mapper = metadata_mapper
         self._top_level_meta_keys: Set[str] = set()
         for meta in self.top_level_meta.values():
             self._top_level_meta_keys.update(meta.keys())
@@ -117,6 +121,11 @@ class DocusaurusAdapter(SourceAdapter):
                     for key in self._top_level_meta_keys:
                         if key in item.dir_meta:
                             meta[key] = item.dir_meta[key]
+                if self.metadata_mapper:
+                    mapped = self.metadata_mapper.map_metadata(item.rel_path, item.dir_meta)
+                    for key, value in mapped.items():
+                        if value is not None:
+                            meta[key] = value
 
                 # Создаем RawDoc
                 raw_doc = RawDoc(

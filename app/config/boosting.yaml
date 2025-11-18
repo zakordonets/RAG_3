@@ -1,0 +1,67 @@
+page_type_boosts:
+  overview: 1.4
+  howto: 1.2
+  faq: 1.2
+  reference: 1.0
+  changelog: 0.85
+
+section_boosts:
+  sdk: 1.1
+  agent: 1.0
+  supervisor: 1.0
+  admin: 1.0
+  api: 1.05
+  faq: 1.05
+
+platform_boosts:
+  android: 1.15
+  ios: 1.15
+  web: 1.1
+  main: 1.05
+
+url_patterns:
+  overview:
+    paths: ["/start/", "/overview", "/introduction", "/what-is", "/about"]
+    boost: 1.2
+  faq:
+    paths: ["/faq", "/guide", "/manual", "/help"]
+    boost: 1.1
+  technical:
+    paths: ["/admin/", "/api/", "/sdk/", "/integration"]
+    boost: 1.05
+  release:
+    paths: ["/blog", "/release", "/version", "/changelog"]
+    boost: 0.85
+
+title_keywords:
+  overview:
+    words: ["что такое", "обзор", "введение", "начало работы", "возможности"]
+    boost: 1.2
+  technical:
+    words: ["настройка", "конфигурация", "установка"]
+    boost: 1.1
+
+length:
+  optimal_min: 800
+  optimal_max: 5000
+  optimal_boost: 1.1
+  long_boost: 1.05
+
+structure:
+  well_structured_markers: ["##", "###", "•", "1.", "2.", "3."]
+  example_markers: ["пример", "например", "как", "шаг"]
+  well_structured_boost: 1.05
+  example_boost: 1.05
+
+source_boosts:
+  docs-site: 1.05
+  official-docs: 1.05
+  main-docs: 1.05
+
+depth_penalty:
+  min_depth: 5
+  factor: 0.95
+
+theme_boost:
+  primary_boost: 1.1
+  secondary_boost: 1.05

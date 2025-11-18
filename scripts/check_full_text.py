@@ -1,8 +1,8 @@
-"""Получаем полный текст чанка"""
+﻿"""Получаем полный текст чанка"""
 import sys
 sys.path.insert(0, '.')
 
-from app.services.search.retrieval import client, COLLECTION
+from app.retrieval.retrieval import client, COLLECTION
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 target_url = "https://docs-chatcenter.edna.ru/docs/start/whatis"

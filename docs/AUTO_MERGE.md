@@ -1,4 +1,4 @@
-# Auto-Merge: Автоматическое объединение соседних чанков
+﻿# Auto-Merge: Автоматическое объединение соседних чанков
 
 ## 📖 Обзор
 
@@ -216,7 +216,7 @@ pytest tests/test_retrieval_auto_merge*.py -v
 ### Пример 1: Базовое использование
 
 ```python
-from app.services.search.retrieval import auto_merge_neighbors
+from app.retrieval.retrieval import auto_merge_neighbors
 
 # После rerank получили топ-10 чанков
 top_docs = reranker.rerank(query, candidates)
@@ -265,7 +265,7 @@ merged = auto_merge_neighbors(top_docs, max_window_tokens=0)  # Не сольё�
 Orchestrator автоматически вызывает auto-merge после rerank:
 
 ```python
-# app/services/infrastructure/orchestrator.py
+# app/orchestration/orchestrator.py
 
 # 5a. Rerank
 top_docs = reranker.rerank(query, candidates)

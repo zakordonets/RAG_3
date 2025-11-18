@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 End-to-end тесты pipeline для автотестов
 """
@@ -136,7 +136,7 @@ class TestEndToEndPipeline:
         assert indexed_count == 1, "Чанк не проиндексирован"
 
         # Проверяем запись в Qdrant
-        from app.services.search.retrieval import client, COLLECTION
+        from app.retrieval.retrieval import client, COLLECTION
 
         # Ищем по URL, который должен быть уникальным
         search_result = client.scroll(

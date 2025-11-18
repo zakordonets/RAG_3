@@ -1,4 +1,4 @@
-"""
+﻿"""
 Диагностический скрипт для проверки, попадает ли конкретная страница в результаты поиска.
 Использование: python scripts/test_retrieval_for_url.py
 """
@@ -7,7 +7,7 @@ sys.path.insert(0, '.')
 
 from app.config import CONFIG
 from app.services.core.embeddings import embed_unified
-from app.services.search.retrieval import hybrid_search, client, COLLECTION
+from app.retrieval.retrieval import hybrid_search, client, COLLECTION
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 from loguru import logger
 

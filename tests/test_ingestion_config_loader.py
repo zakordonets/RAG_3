@@ -25,6 +25,15 @@ def test_load_sources_from_config_with_top_level_meta():
               android:
                 sdk_platform: "android"
                 product: "sdk"
+            metadata:
+              domain: "sdk_docs"
+              fixed_section: "sdk"
+              fixed_role: "integrator"
+              platform_by_dir:
+                android: "android"
+                ios: "ios"
+                web: "web"
+                main: "main"
     """
     with tempfile.TemporaryDirectory() as tmp_dir:
         config_path = Path(tmp_dir) / "config.yaml"
@@ -39,6 +48,8 @@ def test_load_sources_from_config_with_top_level_meta():
     assert sdk_config["site_docs_prefix"] == ""
     assert sdk_config["top_level_meta"]["android"]["sdk_platform"] == "android"
     assert sdk_config["collection_name"] == "test_collection"
+    assert sdk_config["metadata"]["domain"] == "sdk_docs"
+    assert sdk_config["metadata"]["platform_by_dir"]["android"] == "android"
     assert sdk_source["reindex_mode"] == "changed"
 
 

@@ -13,19 +13,3 @@ spec:
   - port: http
     path: /metrics
     interval: 30s
----
-apiVersion: v1
-kind: ServiceMonitor
-metadata:
-  name: sparse-service-monitor
-  namespace: rag-system
-  labels:
-    app: sparse-service
-spec:
-  selector:
-    matchLabels:
-      app: sparse-service
-  endpoints:
-  - port: http
-    path: /metrics
-    interval: 30s

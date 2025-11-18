@@ -122,14 +122,7 @@ class AppConfig:
     ragas_async_timeout: int = int(os.getenv("RAGAS_ASYNC_TIMEOUT", "60"))
     ragas_llm_model: str = os.getenv("RAGAS_LLM_MODEL", "yandexgpt")
 
-    # Document Boosting Configuration
-    boost_overview_docs: float = float(os.getenv("BOOST_OVERVIEW_DOCS", "1.4"))
-    boost_faq_guides: float = float(os.getenv("BOOST_FAQ_GUIDES", "1.2"))
-    boost_technical_docs: float = float(os.getenv("BOOST_TECHNICAL_DOCS", "1.1"))
-    boost_release_notes: float = float(os.getenv("BOOST_RELEASE_NOTES", "0.8"))
-    boost_well_structured: float = float(os.getenv("BOOST_WELL_STRUCTURED", "1.15"))
-    boost_optimal_length: float = float(os.getenv("BOOST_OPTIMAL_LENGTH", "1.2"))
-    boost_reliable_source: float = float(os.getenv("BOOST_RELIABLE_SOURCE", "1.1"))
+    # Runtime boost synonyms (used by group_boosts context)
     group_boost_synonyms_raw: str = os.getenv("GROUP_BOOST_SYNONYMS", "")
     group_boost_synonyms: dict[str, dict[str, object]] = field(init=False)
 
@@ -206,13 +199,6 @@ class AppConfig:
 
         if self.semantic_chunker_overlap_size < 0:
             errors.append("semantic_chunker_overlap_size must be non-negative")
-
-        # Validate boost factors
-        if self.boost_overview_docs <= 0:
-            errors.append("boost_overview_docs must be positive")
-
-        if self.boost_release_notes <= 0:
-            errors.append("boost_release_notes must be positive")
 
         # Validate chunk strategy
         if self.chunk_strategy not in ["adaptive", "simple"]:
