@@ -129,9 +129,9 @@ class ContextOptimizer:
 
             # Топ-документы получают больше токенов
             if i < 2:  # Первые 2 документа
-                max_tokens = min(tokens_per_doc * 1.5, 600)
+                max_tokens = int(min(tokens_per_doc * 1.5, 600))
             else:
-                max_tokens = min(tokens_per_doc, 400)
+                max_tokens = int(min(tokens_per_doc, 400))
 
             # Оптимизируем текст с сохранением Markdown структуры
             optimized_text = self._optimize_text_markdown(original_text, max_tokens, query)
@@ -170,7 +170,7 @@ class ContextOptimizer:
         if current_tokens <= max_tokens:
             return text  # Текст уже оптимального размера
 
-        max_chars = max_tokens * 4  # Примерно 4 символа на токен
+        max_chars = int(max_tokens * 4)  # Примерно 4 символа на токен
         return self._truncate_by_paragraphs(text, max_chars=max_chars)
 
     def _split_markdown_blocks(self, text: str) -> List[str]:

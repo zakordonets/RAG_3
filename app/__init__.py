@@ -87,4 +87,12 @@ def create_app() -> Flask:
     else:
         logger.info("Skipping Swagger initialization (flasgger module unavailable).")
 
+    # Прогреваем эмбеддеры и связанные модели только в рабочем процессе (без родителя reloader)
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "false" and os.environ.get("SKIP_EMBEDDING_WARMUP") != "1":
+        try:
+            from app.services.core.embeddings import warmup_embeddings
+
+            warmup_embeddings()
+        except Exception as exc:
+            logger.warning(f"Embedding warmup skipped due to error: {exc}")
     return app

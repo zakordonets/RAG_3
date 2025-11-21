@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import time
 from typing import Any, Optional
 from functools import wraps
@@ -69,6 +70,10 @@ class CacheManager:
     def __init__(self):
         self.redis_client = None
         self.memory_cache = InMemoryCache(CacheConfig.MAX_MEMORY_ITEMS)
+
+        # В родительском процессе Flask reloader не инициализируем подключения
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "false":
+            return
 
         if REDIS_AVAILABLE and CONFIG.redis_url:
             try:
@@ -146,6 +151,7 @@ class CacheManager:
 
 
 # Глобальный экземпляр кэш-менеджера
+# __init__ пропускает инициализацию подключений в родительском процессе Flask reloader
 cache_manager = CacheManager()
 
 

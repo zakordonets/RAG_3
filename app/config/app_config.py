@@ -78,6 +78,9 @@ class AppConfig:
     yandex_model: str = os.getenv("YANDEX_MODEL", "yandexgpt/rc")
     yandex_max_tokens: int = int(os.getenv("YANDEX_MAX_TOKENS", "4000"))
 
+    # Theme router
+    theme_router_mode: str = os.getenv("THEME_ROUTER_MODE", "heuristic").lower()
+
     # Telegram
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_poll_interval: float = float(os.getenv("TELEGRAM_POLL_INTERVAL", "1.0"))

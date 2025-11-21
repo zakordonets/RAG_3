@@ -51,6 +51,11 @@ _onnx_embedder = None  # ONNX инференс сессия
 _onnx_tokenizer = None  # ONNX токенизатор
 _onnx_lock = threading.Lock()  # Блокировка для thread-safe доступа к ONNX компонентам
 
+# Управление стратегией и прогревом бэкендов
+_backend_lock = threading.Lock()
+_cached_backend_strategy: Optional[str] = None
+_backends_warmed = False
+
 
 def _determine_device() -> str:
     """
@@ -140,6 +145,16 @@ def _get_optimal_backend_strategy() -> str:
         return "onnx"
 
 
+def _get_cached_backend_strategy() -> str:
+    """Кеширует выбранную стратегию, чтобы не пересчитывать её на каждый запрос."""
+    global _cached_backend_strategy
+    if _cached_backend_strategy is None:
+        with _backend_lock:
+            if _cached_backend_strategy is None:
+                _cached_backend_strategy = _get_optimal_backend_strategy()
+    return _cached_backend_strategy
+
+
 def _get_bge_model():
     """
     Получает singleton экземпляр BGE-M3 модели с оптимизированными настройками.
@@ -221,6 +236,44 @@ def _get_onnx_embedder():
     return _onnx_embedder, _onnx_tokenizer
 
 
+def ensure_embedding_backends_ready() -> str:
+    """
+    Гарантирует, что необходимые бэкенды эмбеддингов инициализированы один раз за процесс.
+
+    Returns:
+        str: выбранная стратегия, которую можно переиспользовать.
+    """
+    backend = _get_cached_backend_strategy()
+    global _backends_warmed
+    if not _backends_warmed:
+        with _backend_lock:
+            if not _backends_warmed:
+                if backend in ("onnx", "hybrid"):
+                    _get_onnx_embedder()
+                if backend in ("bge", "hybrid"):
+                    _get_bge_model()
+                _backends_warmed = True
+    return backend
+
+
+def warmup_embeddings(force: bool = False) -> None:
+    """
+    Явно прогревает необходимые бэкенды эмбеддингов.
+
+    Args:
+        force: игнорировать флаг _backends_warmed и повторно прогревать.
+    """
+    global _backends_warmed
+    if force:
+        with _backend_lock:
+            _backends_warmed = False
+    try:
+        backend = ensure_embedding_backends_ready()
+        logger.info(f"Embedding backends ready (strategy={backend}, warmed={_backends_warmed})")
+    except Exception as exc:
+        logger.warning(f"Embedding warmup failed: {exc}")
+
+
 def get_optimal_max_length(text: str, context: str = "query") -> int:
     """
     Автоматически выбирает оптимальную max_length на основе текста и контекста.
@@ -277,7 +330,7 @@ def embed_unified(
         Dict с ключами: dense_vecs, lexical_weights, colbert_vecs
     """
     # Определяем бэкенд на основе конфигурации и возможностей системы
-    backend = _get_optimal_backend_strategy()
+    backend = ensure_embedding_backends_ready()
 
     if backend == "onnx":
         return _embed_unified_onnx(text, max_length, return_dense, return_sparse, context)
@@ -529,7 +582,7 @@ def embed_batch_optimized(
     if not texts:
         return {'dense_vecs': [], 'lexical_weights': []}
 
-    backend = _get_optimal_backend_strategy()
+    backend = ensure_embedding_backends_ready()
 
     # Автооптимизация max_length для пакетной обработки
     if max_length is None:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import hashlib
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from loguru import logger
 
@@ -18,7 +18,7 @@ def text_hash(text: str) -> str:
     return hashlib.sha1(text.encode('utf-8')).hexdigest()
 
 try:
-    from rank_bm25 import BM25Okapi
+    __import__("rank_bm25")
     BM25_AVAILABLE = True
 except ImportError:
     BM25_AVAILABLE = False
@@ -52,6 +52,279 @@ class Chunk:
     category: str
     lang: str = "ru"
     metadata: Dict[str, Any] = None
+
+
+@dataclass
+class _BlockState:
+    """Состояние построения Markdown блоков.
+
+    Выделено в отдельную структуру, чтобы явно хранить
+    все флаги state-machine и не раздувать локальную
+    область видимости в цикле парсинга.
+    """
+    current_type: str = "empty"
+    current_text: List[str] = field(default_factory=list)
+    current_depth: int = 0
+    start_line: int = 0
+    in_admon: bool = False
+    admon_buf: List[str] = field(default_factory=list)
+    admon_start: int = 0
+    in_code_block: bool = False
+
+    def reset_current(self) -> None:
+        self.current_type = "empty"
+        self.current_text = []
+        self.current_depth = 0
+        self.start_line = 0
+
+
+class _MarkdownBlockParser:
+    """Выделяет Markdown блоки, инкапсулируя сложную логику state-machine.
+
+    Отвечает только за разбиение сырых строк на Block-объекты:
+    - адмонишены собираются как единый блок;
+    - fenced-код (` ``` ` / `~~~`) никогда не режется внутри;
+    - списки и заголовки следуют правилам `_should_start_new_block`.
+
+    Весь downstream-пайплайн (semantic packing, overlap и т.п.)
+    оперирует уже готовыми Block, не заботясь о деталях Markdown.
+    """
+
+    def __init__(self, chunker: "UniversalChunker"):
+        self.chunker = chunker
+
+    def parse(self, text: str) -> List[Block]:
+        if not text:
+            return []
+
+        lines = text.split('\n')
+        blocks: List[Block] = []
+        state = _BlockState()
+
+        for line_no, line in enumerate(lines):
+            self._consume_line(line, line_no, blocks, state)
+
+        # Завершаем хвостовой блок
+        self._flush_current_block(blocks, state, len(lines) - 1)
+        return blocks
+
+    def _consume_line(self, line: str, line_no: int, blocks: List[Block], state: _BlockState) -> None:
+        """
+        Обрабатывает одну строку Markdown-документа для state-machine парсера.
+
+        Осуществляет:
+        - детекцию и обработку начала/конца блоков (admonition, fenced code, списки, заголовки и др.),
+        - накопление строк в текущем блоке state,
+        - решение, следует ли начать новый блок или продолжить текущий,
+        - вызовы функций-фильтров для специальных структур.
+
+        Итог: добавляет разобранные блоки в список blocks по мере необходимости.
+        """
+        line_stripped = line.strip()
+
+        if self._handle_admonitions(line, line_stripped, line_no, blocks, state):
+            return
+
+        if not line_stripped and not state.current_text:
+            return
+
+        if self._handle_code_fence(line, line_stripped, line_no, blocks, state):
+            return
+
+        if state.in_code_block:
+            state.current_text.append(line)
+            return
+
+        block_type = self.chunker._classify_markdown_line(line_stripped)
+        if block_type == 'empty':
+            if state.current_text:
+                state.current_text.append(line)
+            return
+
+        start_new = (
+            state.current_type == 'empty'
+            or block_type != state.current_type
+            or self.chunker._should_start_new_block(line_stripped, state.current_type, state.current_text)
+        )
+
+        if start_new and state.current_text:
+            self._flush_current_block(blocks, state, line_no - 1)
+
+        if start_new:
+            self._start_block(state, block_type, line, line_stripped, line_no)
+        else:
+            state.current_text.append(line)
+
+    def _handle_admonitions(
+        self,
+        line: str,
+        line_stripped: str,
+        line_no: int,
+        blocks: List[Block],
+        state: _BlockState
+    ) -> bool:
+        """
+        Обрабатывает строки Markdown, связанные с блоками admonition (`::: tip`, `::: warning` и др.).
+
+        - Детектирует начало блока admonition по регулярному выражению (например, `::: tip`).
+        - Закрывает предыдущий открытый блок (если есть) и начинает новый буфер для admonition.
+        - Устанавливает состояние, чтобы следующие строки попадали в текущий admonition-блок.
+        - Возвращает True, если строка обработана как часть admonition, иначе False.
+        """
+        # Начало блока admonition (`::: tip`, `::: warning`, ...).
+        if self.chunker.ADMON_START_RE.match(line_stripped):
+            self._flush_current_block(blocks, state, line_no - 1)
+            state.in_admon = True
+            state.admon_buf = [line]
+            state.admon_start = line_no
+            return True
+
+        # Продолжение уже открытого admonition до строки `:::`.
+        if state.in_admon:
+            state.admon_buf.append(line)
+            if self.chunker.ADMON_END_RE.match(line_stripped):
+                text = '\n'.join(state.admon_buf).strip()
+                blocks.append(Block(
+                    type='admonition',
+                    text=text,
+                    depth=0,
+                    is_atomic=False,
+                    start_line=state.admon_start,
+                    end_line=line_no
+                ))
+                state.in_admon = False
+                state.admon_buf = []
+            return True
+
+        return False
+
+    def _handle_code_fence(
+        self,
+        line: str,
+        line_stripped: str,
+        line_no: int,
+        blocks: List[Block],
+        state: _BlockState
+    ) -> bool:
+        # Обрабатываем только fenced-код (` ``` ` / `~~~`).
+        if not line_stripped.startswith(('```', '~~~')):
+            return False
+
+        if not state.in_code_block:
+            # Открываем новый код-блок: сначала закрываем предыдущий
+            # логический блок (список/параграф и т.п.).
+            self._flush_current_block(blocks, state, line_no - 1)
+            state.in_code_block = True
+            state.current_type = 'code_block'
+            state.current_text = [line]
+            state.current_depth = 0
+            state.start_line = line_no
+        else:
+            # Вторая встреченная «заборная» строка — закрытие код-блока.
+            state.current_text.append(line)
+            self._flush_code_block(blocks, state, line_no)
+        return True
+
+    def _flush_code_block(self, blocks: List[Block], state: _BlockState, end_line: int) -> None:
+        block_text = '\n'.join(state.current_text).strip()
+        if block_text:
+            blocks.append(Block(
+                type='code_block',
+                text=block_text,
+                depth=0,
+                is_atomic=True,
+                start_line=state.start_line,
+                end_line=end_line
+            ))
+        state.in_code_block = False
+        state.reset_current()
+
+    def _start_block(
+        self,
+        state: _BlockState,
+        block_type: str,
+        line: str,
+        line_stripped: str,
+        line_no: int
+    ) -> None:
+        state.current_type = block_type
+        state.current_text = [line]
+        state.current_depth = self.chunker._get_block_depth(line_stripped, block_type)
+        state.start_line = line_no
+
+    def _flush_current_block(self, blocks: List[Block], state: _BlockState, end_line: int) -> None:
+        if not state.current_text:
+            return
+
+        block_text = '\n'.join(state.current_text).strip()
+        if block_text:
+            blocks.append(Block(
+                type=state.current_type,
+                text=block_text,
+                depth=state.current_depth,
+                is_atomic=self.chunker._is_atomic_block(state.current_type),
+                start_line=state.start_line,
+                end_line=end_line
+            ))
+        state.reset_current()
+
+
+class _ChunkAssembler:
+    """Строит итоговый список Chunk из сгруппированных блоков.
+
+    Здесь решаются вопросы:
+    - какой heading_path и глубину заголовка использовать;
+    - как правильно прикрепить overlap-блок (если он есть);
+    - как сформировать финальный текст чанка с шапкой.
+
+    Это позволяет держать `UniversalChunker.chunk()` компактным
+    и декларативным: он управляет этапами пайплайна, а не
+    строковой склейкой.
+    """
+
+    def __init__(self, chunker: "UniversalChunker", fmt: str, meta: Dict[str, Any]):
+        self.chunker = chunker
+        self.fmt = fmt
+        self.meta = meta
+
+    def assemble(self, overlapped_chunks: List[List[Block]]) -> List[Chunk]:
+        total_chunks = len(overlapped_chunks)
+        final_chunks: List[Chunk] = []
+
+        for idx, chunk_blocks in enumerate(overlapped_chunks):
+            heading_path = self.chunker._extract_heading_path(chunk_blocks)
+            last_depth = self._last_heading_depth(chunk_blocks)
+            chunk_text = self._build_chunk_text(chunk_blocks, heading_path, last_depth)
+
+            final_chunks.append(Chunk(
+                text=chunk_text,
+                chunk_index=idx,
+                total_chunks=total_chunks,
+                heading_path=heading_path,
+                content_type=self.fmt,
+                doc_id=self.meta.get('doc_id', ''),
+                site_url=self.meta.get('site_url', ''),
+                source=self.meta.get('source', ''),
+                category=self.meta.get('category', ''),
+                lang=self.meta.get('lang', 'ru'),
+                metadata=self.meta
+            ))
+
+        return final_chunks
+
+    def _last_heading_depth(self, chunk_blocks: List[Block]) -> int:
+        for block in reversed(chunk_blocks):
+            if block.type == 'heading':
+                return block.depth
+        return 1
+
+    def _build_chunk_text(self, chunk_blocks: List[Block], heading_path: List[str], last_depth: int) -> str:
+        if chunk_blocks and getattr(chunk_blocks[0], 'type', None) == 'overlap':
+            body = '\n\n'.join(b.text for b in chunk_blocks[1:])
+            return chunk_blocks[0].text + "\n\n" + self.chunker._prepend_heading(heading_path, body, heading_depth=last_depth)
+
+        chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
+        return self.chunker._prepend_heading(heading_path, chunk_text, heading_depth=last_depth)
 
 
 class OversizePolicy(Enum):
@@ -139,124 +412,8 @@ class UniversalChunker:
 
     def _blockify_markdown(self, text: str) -> List[Block]:
         """Разбирает Markdown текст на структурные блоки"""
-        lines = text.split('\n')
-        blocks = []
-        current_type = 'empty'
-        current_text = []
-        current_depth = 0
-        start_line = 0
-
-        # Состояние для admonitions
-        in_admon = False
-        admon_buf = []
-        admon_start = 0
-        in_code_block = False
-
-        for i, line in enumerate(lines):
-            line_stripped = line.strip()
-
-            # Обработка admonitions
-            if self.ADMON_START_RE.match(line_stripped):
-                # Закрыть текущий блок, если открыт
-                if current_text:
-                    block_text = '\n'.join(current_text).strip()
-                    if block_text:
-                        blocks.append(Block(
-                            type=current_type, text=block_text, depth=current_depth,
-                            is_atomic=self._is_atomic_block(current_type),
-                            start_line=start_line, end_line=i-1
-                        ))
-                    current_type, current_text = 'empty', []
-                in_admon, admon_buf, admon_start = True, [line], i
-                continue
-
-            if in_admon:
-                admon_buf.append(line)
-                if self.ADMON_END_RE.match(line_stripped):
-                    # Закрыть admonition как единый блок
-                    blocks.append(Block(
-                        type='admonition', text='\n'.join(admon_buf).strip(),
-                        depth=0, is_atomic=False, start_line=admon_start, end_line=i
-                    ))
-                    in_admon, admon_buf = False, []
-                continue
-
-            # Пропускаем пустые строки в начале
-            if not line_stripped and not current_text:
-                continue
-
-            # Определяем тип блока
-            block_type = self._classify_markdown_line(line_stripped)
-
-            # Обрабатываем код-блоки специально
-            if line_stripped.startswith(('```', '~~~')):
-                if not in_code_block:
-                    # Начало код-блока
-                    in_code_block = True
-                    block_type = 'code_block'
-                else:
-                    # Конец код-блока
-                    in_code_block = False
-                    # Добавляем строку к текущему блоку и завершаем его
-                    if current_text:
-                        current_text.append(line)
-                        block_text = '\n'.join(current_text).strip()
-                        if block_text:
-                            blocks.append(Block(
-                                type=current_type,
-                                text=block_text,
-                                depth=current_depth,
-                                is_atomic=self._is_atomic_block(current_type),
-                                start_line=start_line,
-                                end_line=i
-                            ))
-                    current_type = 'empty'
-                    current_text = []
-                    continue
-
-            # Если это пустая строка, добавляем к текущему блоку
-            if block_type == 'empty':
-                if current_text:
-                    current_text.append(line)
-                continue
-
-            # Если тип блока изменился или нужно начать новый блок
-            if (block_type != current_type and current_type != 'empty') or self._should_start_new_block(line_stripped, current_type, current_text):
-                # Завершаем текущий блок
-                if current_text:
-                    block_text = '\n'.join(current_text).strip()
-                    if block_text:  # Только если блок не пустой
-                        blocks.append(Block(
-                            type=current_type,
-                            text=block_text,
-                            depth=current_depth,
-                            is_atomic=self._is_atomic_block(current_type),
-                            start_line=start_line,
-                            end_line=i-1
-                        ))
-
-                # Начинаем новый блок
-                current_type = block_type
-                current_text = [line]
-                current_depth = self._get_block_depth(line_stripped, block_type)
-                start_line = i
-            else:
-                current_text.append(line)
-
-        # Добавляем последний блок
-        if current_text:
-            block_text = '\n'.join(current_text).strip()
-            if block_text:  # Только если блок не пустой
-                blocks.append(Block(
-                    type=current_type,
-                    text=block_text,
-                    depth=current_depth,
-                    is_atomic=self._is_atomic_block(current_type),
-                    start_line=start_line,
-                    end_line=len(lines)-1
-                ))
-
-        return blocks
+        parser = _MarkdownBlockParser(self)
+        return parser.parse(text)
 
     def _blockify_html(self, text: str) -> List[Block]:
         """Разбирает HTML текст на структурные блоки"""
@@ -873,7 +1030,7 @@ class UniversalChunker:
         Нормализация s/(1+s) даёт значение в [0,1] и стабильный порог ~0.15.
         """
         try:
-            from rank_bm25 import BM25Okapi
+            from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
             import re
 
             tok_a = re.findall(r"[\w\-_/]+", text_a.lower())
@@ -1012,7 +1169,15 @@ class UniversalChunker:
         return path
 
     def _extract_overlap_text(self, chunk: List[Block], overlap_tokens: int) -> str:
-        """Извлекает текст для overlap из конца чанка"""
+        """Извлекает текст для overlap из конца чанка.
+
+        Идём с конца списка Block и набираем столько текста,
+        сколько помещается в `overlap_tokens`. При этом:
+        - искусственные заголовки (доброшенные `_prepend_heading`)
+          пропускаются, чтобы не дублировать их в следующем чанке;
+        - для code/table/list используем `_extract_partial_text`,
+          чтобы не ломать структуру (особенно fenced-код).
+        """
         overlap_text = []
         current_tokens = 0
 
@@ -1032,7 +1197,12 @@ class UniversalChunker:
                 if current_tokens < overlap_tokens:
                     remaining_tokens = overlap_tokens - current_tokens
                     is_code_like = block.type in {"code_block", "table", "list"}
-                    partial_text = self._extract_partial_text(block.text, remaining_tokens, is_code_like=is_code_like)
+                    partial_text = self._extract_partial_text(
+                        block.text,
+                        remaining_tokens,
+                        is_code_like=is_code_like,
+                        block_type=block.type
+                    )
                     if partial_text:
                         overlap_text.insert(0, partial_text)
                 break
@@ -1059,6 +1229,8 @@ class UniversalChunker:
         """
         if not text or not text.strip():
             return []
+
+        meta = meta or {}
 
         logger.debug(f"Начинаем чанкинг документа: {meta.get('doc_id', 'unknown')}")
 
@@ -1097,47 +1269,8 @@ class UniversalChunker:
         # Шаг 4: Adaptive Overlap
         overlapped_chunks = self._apply_overlap(chunk_groups)
 
-        # Формируем финальные чанки
-        final_chunks = []
-        total_chunks = len(overlapped_chunks)
-
-        for i, chunk_blocks in enumerate(overlapped_chunks):
-            # Извлекаем heading_path
-            heading_path = self._extract_heading_path(chunk_blocks)
-
-            # Находим глубину последнего заголовка в группе
-            last_depth = 1
-            for b in reversed(chunk_blocks):
-                if b.type == 'heading':
-                    last_depth = b.depth
-                    break
-
-            # Формируем текст чанка с учетом overlap
-            if chunk_blocks and hasattr(chunk_blocks[0], 'type') and chunk_blocks[0].type == 'overlap':
-                # Если первый блок - overlap, переносим заголовок после него
-                body = '\n\n'.join(b.text for b in chunk_blocks[1:])
-                chunk_text = chunk_blocks[0].text + "\n\n" + self._prepend_heading(heading_path, body, heading_depth=last_depth)
-            else:
-                # Обычный случай
-                chunk_text = '\n\n'.join(block.text for block in chunk_blocks)
-                chunk_text = self._prepend_heading(heading_path, chunk_text, heading_depth=last_depth)
-
-            # Создаем чанк
-            chunk = Chunk(
-                text=chunk_text,
-                chunk_index=i,
-                total_chunks=total_chunks,
-                heading_path=heading_path,
-                content_type=fmt,
-                doc_id=meta.get('doc_id', ''),
-                site_url=meta.get('site_url', ''),
-                source=meta.get('source', ''),
-                category=meta.get('category', ''),
-                lang=meta.get('lang', 'ru'),
-                metadata=meta
-            )
-
-            final_chunks.append(chunk)
+        assembler = _ChunkAssembler(self, fmt, meta)
+        final_chunks = assembler.assemble(overlapped_chunks)
 
         logger.info(f"Создано {len(final_chunks)} чанков для документа {meta.get('doc_id', 'unknown')}")
         return final_chunks
@@ -1158,10 +1291,50 @@ class UniversalChunker:
 
         return f"{'#' * level} {title}\n\n{text}".strip()
 
-    def _extract_partial_text(self, text: str, max_tokens: int, is_code_like: bool = False) -> str:
-        """Извлекает частичный текст для overlap с учетом типа блока"""
+    def _extract_partial_text(
+        self,
+        text: str,
+        max_tokens: int,
+        is_code_like: bool = False,
+        block_type: Optional[str] = None
+    ) -> str:
+        """Извлекает частичный текст для overlap с учетом типа блока.
+
+        Инварианты:
+        - fenced-код либо переносится целиком с обеими «заборами»,
+          либо не переносится вовсе (чтобы не было нечётного числа ```);
+        - для «кодоподобных» блоков (списки, таблицы) режем по строкам;
+        - для обычного текста режем по токенам, двигаясь с конца.
+        """
         if max_tokens <= 0 or not text:
             return ""
+
+        if block_type == 'code_block':
+            lines = text.splitlines()
+            if not lines:
+                return ""
+
+            fence_start = lines[0]
+            fence_end = lines[-1] if lines[-1].strip().startswith(('```', '~~~')) else lines[-1]
+            body = lines[1:-1] if len(lines) > 1 else []
+
+            acc = 0
+            selected = []
+            for ln in reversed(body):
+                tokens = self._count_tokens(ln)
+                if acc + tokens > max_tokens:
+                    break
+                selected.insert(0, ln)
+                acc += tokens
+
+            if not selected:
+                return ""
+
+            if fence_end.startswith(('```', '~~~')):
+                return "\n".join([fence_start, *selected, fence_end])
+
+            # Если закрывающий fence отсутствует, просто возвращаем выбранный текст
+            return "\n".join(selected)
 
         if is_code_like:
             # Для кода/таблиц/списков - по строкам

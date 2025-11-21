@@ -14,6 +14,7 @@ from app.services.core.llm_router import (
     _gpt5_complete,
     _deepseek_complete,
 )
+from app.config import CONFIG
 
 
 THEMES_CONFIG_ENV = "THEMES_CONFIG_PATH"
@@ -104,16 +105,25 @@ def route_query(query: str, user_metadata: Optional[Dict[str, Any]] = None) -> T
     """
     Маршрутизирует пользовательский запрос к одной или нескольким тематикам.
 
-    Порядок работы:
-    1) при включённом THEME_ROUTER_USE_LLM сначала пробует LLM‑классификацию;
-    2) при ошибке LLM или пустом результате падает обратно на простую эвристику;
-    3) возвращает ThemeRoutingResult, который дальше используется поиском и оркестратором.
+    Режимы:
+    - none: роутинг отключён, возвращается пустой результат;
+    - heuristic: только эвристики;
+    - llm: LLM + fallback на эвристику.
     """
-    llm_result = None
-    if _is_llm_routing_enabled():
-        llm_result = _try_llm_routing(query, user_metadata)
-    if llm_result:
-        return llm_result
+    mode = (CONFIG.theme_router_mode or "heuristic").lower()
+    if mode == "none":
+        result = ThemeRoutingResult(
+            themes=[],
+            primary_theme=None,
+            scores={},
+            requires_disambiguation=False,
+        )
+        result["router"] = "none"
+        result["top_score"] = 0.0
+        result["second_score"] = 0.0
+        return result
+    if mode == "llm":
+        return _route_llm_mode(query, user_metadata)
     return _heuristic_routing(query, user_metadata)
 
 
@@ -172,6 +182,17 @@ def infer_theme_label(payload: Dict[str, Any]) -> Optional[str]:
     для поиска первой подходящей Theme и возвращает её display_name. Если ничего
     не подходит, возвращает None и документ считается «без явной тематики».
     """
+    theme_id = infer_theme_id(payload)
+    if not theme_id:
+        return None
+    theme = THEMES_PROVIDER.get_theme(theme_id)
+    return theme.display_name if theme else None
+
+
+def infer_theme_id(payload: Dict[str, Any]) -> Optional[str]:
+    """
+    Возвращает идентификатор темы, соответствующей метаданным документа.
+    """
     domain = str(payload.get("domain") or "").lower()
     section = str(payload.get("section") or "").lower()
     platform = str(payload.get("platform") or payload.get("sdk_platform") or "").lower()
@@ -186,7 +207,7 @@ def infer_theme_label(payload: Dict[str, Any]) -> Optional[str]:
             continue
         if theme.role and role and theme.role != role:
             continue
-        return theme.display_name
+        return theme.theme_id
     return None
 
 
@@ -231,7 +252,7 @@ def _heuristic_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> T
             if theme_obj.domain:
                 preferred_domains = [theme_obj.domain]
 
-    return ThemeRoutingResult(
+    result = ThemeRoutingResult(
         themes=[theme_id for theme_id, _ in sorted_themes],
         primary_theme=primary_theme,
         scores=scores,
@@ -240,16 +261,34 @@ def _heuristic_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> T
         preferred_platforms=preferred_platforms,
         preferred_domains=preferred_domains,
     )
+    result["router"] = "heuristic"
+    result["top_score"] = top_score
+    result["second_score"] = second_score
+    return result
+
+
+def _route_llm_mode(query: str, user_metadata: Optional[Dict[str, Any]]) -> ThemeRoutingResult:
+    if _is_llm_routing_enabled():
+        llm_result = _try_llm_routing(query, user_metadata)
+        if llm_result:
+            llm_result["router"] = "llm"
+            if "top_score" not in llm_result:
+                llm_result["top_score"] = llm_result.get("scores", {}).get(llm_result.get("primary_theme"), 0.0)
+            if "second_score" not in llm_result:
+                sorted_scores = sorted(llm_result.get("scores", {}).values(), reverse=True)
+                llm_result["second_score"] = sorted_scores[1] if len(sorted_scores) > 1 else 0.0
+            return llm_result
+    result = _heuristic_routing(query, user_metadata)
+    if _is_llm_routing_enabled():
+        result.setdefault("fallback_from", "llm")
+    return result
 
 
 def _is_llm_routing_enabled() -> bool:
     """
-    Проверяет, включена ли LLM‑маршрутизация по переменной окружения THEME_ROUTER_USE_LLM.
-
-    Любое из значений {\"1\", \"true\", \"yes\"} (без учёта регистра) считается включением.
+    Проверяет, включён ли режим LLM для тематического роутинга.
     """
-    return os.getenv("THEME_ROUTER_USE_LLM", "false").lower() in {"1", "true", "yes"}
-
+    return (CONFIG.theme_router_mode or "heuristic").lower() == "llm"
 
 def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Optional[ThemeRoutingResult]:
     """
@@ -322,7 +361,9 @@ def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Opt
         if not sorted_themes:
             return None
         primary_theme = sorted_themes[0][0]
-        requires_disambiguation = sorted_themes[0][1] < 0.5
+        top_score = sorted_themes[0][1]
+        second_score = sorted_themes[1][1] if len(sorted_themes) > 1 else 0.0
+        requires_disambiguation = top_score < 0.5
         preferred_sections = []
         preferred_platforms = []
         preferred_domains = []
@@ -334,7 +375,7 @@ def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Opt
                 preferred_platforms = [theme_obj.platform]
             if theme_obj.domain:
                 preferred_domains = [theme_obj.domain]
-        return ThemeRoutingResult(
+        result = ThemeRoutingResult(
             themes=[theme_id for theme_id, _ in sorted_themes],
             primary_theme=primary_theme,
             scores=scores,
@@ -343,6 +384,9 @@ def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Opt
             preferred_platforms=preferred_platforms,
             preferred_domains=preferred_domains,
         )
+        result["top_score"] = top_score
+        result["second_score"] = second_score
+        return result
     except Exception as exc:
         logger.warning(f"LLM routing failed, fallback to heuristics: {exc}")
         return None

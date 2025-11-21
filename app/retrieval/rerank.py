@@ -21,10 +21,12 @@ _lock = threading.Lock()
 
 
 def _get_reranker() -> Any:
-    global _reranker
-    if _reranker is None:
+    global _reranker, _ort_sess, _ort_tokenizer
+    # ONNX/DirectML путь хранит состояние в _ort_sess/_ort_tokenizer,
+    # поэтому дополнительная проверка защищает от повторной инициализации.
+    if _reranker is None and _ort_sess is None:
         with _lock:
-            if _reranker is None:
+            if _reranker is None and _ort_sess is None:
                 # Определяем устройство
                 device = get_device() if CONFIG.gpu_enabled else CONFIG.reranker_device
 
@@ -47,10 +49,8 @@ def _get_reranker() -> Any:
                         providers = ["CPUExecutionProvider"]
                         if CONFIG.onnx_provider in ("auto", "dml"):
                             providers = ["DmlExecutionProvider", "CPUExecutionProvider"]
-                        global _ort_sess
                         _ort_sess = ort.InferenceSession(str(model_path), providers=providers)
                         from transformers import AutoTokenizer
-                        global _ort_tokenizer
                         _ort_tokenizer = AutoTokenizer.from_pretrained(str(local_dir), use_fast=True)
                         logger.info("ONNX reranker initialized (direct ORT + DML)")
                     except Exception as e:

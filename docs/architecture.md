@@ -119,9 +119,9 @@
   - `section`/`platform` (ARM/SDK),
   - длина/структура текста, источник, глубина URL.
 - **Тематики** (через `route_query` + `themes.yaml`):
-  - фильтрация по `domain/section/platform/role`,
-  - мягкий thematic boost из результата роутера.
-
+  - режимы `none | heuristic | llm`, роутер никогда не блокирует поиск;
+  - фильтрация по `domain/section/platform/role` включается только при высокой уверенности (LLM ≥ 0.9 или heuristics с большим зазором);
+  - мягкий thematic boost (primary +0.08, secondary +0.04) применяется к кандидатам перед rerank.
 **Единый пайплайн для запроса (high‑level)**:
 
 ```text
@@ -138,15 +138,16 @@ Query Processing (process_query)
    ↓
 Theme Router (route_query)
    - themes from app/config/themes.yaml
-   - LLM-assisted or heuristic routing
-   - routing_result + clarification_required
+   - режимы none | heuristic | llm; маршрутизатор никогда не блокирует поиск
+   - routing_result (primary_theme, scores, router, top_score, second_score)
    ↓
 Embedding Service (embed_unified / embed_dense/sparse)
    ↓
 Hybrid Search (hybrid_search)
    - dense + sparse → RRF
-   - Qdrant filters (categories + metadata_filter from routing_result)
+   - Qdrant filters (categories + metadata_filter, только если _is_theme_filter_allowed)
    - boosting via app/retrieval/boosting.py
+   - soft theme boost (_apply_theme_boost) перед rerank
    ↓
 Rerank (bge-reranker-v2-m3)
    ↓
@@ -461,11 +462,11 @@ RAG_clean/
 │   ├── indexer.py               # 📦 Простой индексер (совместимость)
 │   └── config.yaml              # ⚙️ Конфигурация
 ├── app/                          # 🏗️ Основное приложение
-│   ├── services/                 # 🔧 Сервисы
-│   │   ├── core/                # Основные сервисы (embeddings, llm_router, query_processing, context_optimizer)
-│   │   ├── search/              # Поиск (retrieval, rerank)
-│   │   ├── quality/             # Контроль качества (quality_manager, ragas_evaluator)
-│   │   └── infrastructure/      # Инфраструктурные сервисы (orchestrator, connection_pool)
+│   ├── retrieval/               # Поисковый слой (hybrid_search, rerank, boosting, theme_router)
+│   ├── services/                # 🔧 Сервисы
+│   │   ├── core/               # Основные сервисы (embeddings, llm_router, query_processing, context_optimizer)
+│   │   └── quality/            # Контроль качества (quality_manager, ragas_evaluator)
+│   ├── infrastructure/          # Инфраструктурные компоненты (orchestrator, security, metrics, caching)
 │   ├── routes/                   # 🛣️ API маршруты
 │   │   ├── chat.py              # Чат endpoints
 │   │   ├── admin.py             # Админ endpoints

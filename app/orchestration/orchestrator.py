@@ -15,7 +15,7 @@ from app.services.core.context_optimizer import context_optimizer
 from app.infrastructure import get_metrics_collector
 from app.services.quality.quality_manager import quality_manager
 from app.retrieval import route_query
-from app.retrieval.theme_router import get_theme, infer_theme_label
+from app.retrieval.theme_router import get_theme, infer_theme_label, infer_theme_id
 
 
 class RAGError(Exception):
@@ -78,17 +78,16 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 "chat_id": chat_id
             }
 
+        routing_start = time.time()
         routing_result = route_query(normalized, user_metadata=None)
+        routing_duration = time.time() - routing_start
+        logger.info(
+            f"Theme routing in {routing_duration:.2f}s "
+            f"(primary={routing_result.get('primary_theme')}, "
+            f"via_llm={routing_result.get('router', 'unknown')}, "
+            f"disambiguation={routing_result.get('requires_disambiguation')})"
+        )
         theme_filter = _build_theme_filter(routing_result)
-        if routing_result.get("requires_disambiguation"):
-            clarification = _build_clarification_message(routing_result)
-            return {
-                "answer_markdown": clarification,
-                "sources": [],
-                "channel": channel,
-                "chat_id": chat_id,
-                "clarification_required": True,
-            }
 
         # 2. Unified Embeddings Generation
         try:
@@ -174,6 +173,24 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             logger.info(f"Hybrid search in {search_duration:.2f}s")
             get_metrics_collector().record_search_duration("hybrid", search_duration)
 
+            # Fallback: если поиск с фильтром не дал результатов, пробуем без фильтра
+            if not candidates and theme_filter is not None:
+                logger.warning("No candidates found with theme filter, trying without filter")
+                search_start = time.time()
+                candidates = hybrid_search(
+                    q_dense,
+                    q_sparse,
+                    k=20,
+                    boosts=boosts,
+                    group_boosts=group_boosts,
+                    routing_result=routing_result,
+                    metadata_filter=None,
+                )
+                search_duration = time.time() - search_start
+                logger.info(f"Hybrid search (without filter) in {search_duration:.2f}s")
+                if candidates:
+                    logger.info(f"Found {len(candidates)} candidates without theme filter")
+
             if not candidates:
                 logger.warning("No candidates found in search")
                 error_type = "no_results"
@@ -181,6 +198,8 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 return {
                     "error": "no_results",
                     "message": "К сожалению, не удалось найти релевантную информацию по вашему запросу. Попробуйте переформулировать вопрос или использовать другие ключевые слова.",
+                    "answer": "К сожалению, не удалось найти релевантную информацию по вашему запросу. Попробуйте переформулировать вопрос или использовать другие ключевые слова.",
+                    "answer_markdown": "К сожалению, не удалось найти релевантную информацию по вашему запросу. Попробуйте переформулировать вопрос или использовать другие ключевые слова.",
                     "sources": [],
                     "channel": channel,
                     "chat_id": chat_id
@@ -196,6 +215,8 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 "channel": channel,
                 "chat_id": chat_id
             }
+
+        candidates = _apply_theme_boost(candidates, routing_result)
 
         # 5. Reranking
         try:
@@ -356,7 +377,9 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
 
 
 def _build_theme_filter(routing_result: Dict[str, Any] | None) -> Optional[Filter]:
-    if not routing_result or routing_result.get("requires_disambiguation"):
+    if not routing_result:
+        return None
+    if not _is_theme_filter_allowed(routing_result):
         return None
     primary_theme = routing_result.get("primary_theme")
     if not primary_theme:
@@ -378,16 +401,15 @@ def _build_theme_filter(routing_result: Dict[str, Any] | None) -> Optional[Filte
     return Filter(must=conditions)
 
 
-def _build_clarification_message(routing_result: Dict[str, Any]) -> str:
-    themes = routing_result.get("themes", [])[:3]
-    if not themes:
-        return "Нужно уточнить, какую тематику вы имеете в виду."
-    lines = ["Я нашёл несколько тематик, уточните, что вам нужно:"]
-    for idx, theme_id in enumerate(themes, start=1):
-        theme = get_theme(theme_id)
-        if theme:
-            lines.append(f"{idx}. {theme.display_name}")
-    return "\n".join(lines)
+def _is_theme_filter_allowed(routing_result: Dict[str, Any]) -> bool:
+    router_kind = routing_result.get("router")
+    top_score = float(routing_result.get("top_score") or 0.0)
+    second_score = float(routing_result.get("second_score") or 0.0)
+    if router_kind == "llm":
+        return top_score >= 0.9
+    if router_kind == "heuristic":
+        return top_score >= 0.85 and (top_score - second_score) >= 0.35
+    return False
 
 
 def _build_theme_instruction(routing_result: Dict[str, Any] | None) -> Optional[str]:
@@ -419,3 +441,26 @@ def _attach_theme_labels(docs: List[Dict[str, Any]]) -> None:
         label = infer_theme_label(payload)
         if label:
             payload["theme_label"] = label
+
+
+def _apply_theme_boost(docs: List[Dict[str, Any]], routing_result: Dict[str, Any] | None) -> List[Dict[str, Any]]:
+    if not docs or not routing_result:
+        return docs
+    primary_theme = routing_result.get("primary_theme")
+    if not primary_theme:
+        return docs
+    secondary_themes = routing_result.get("themes", [])[1:3]
+    for doc in docs:
+        payload = doc.get("payload") or {}
+        theme_id = infer_theme_id(payload)
+        if not theme_id:
+            continue
+        base_score = doc.get("boosted_score", doc.get("score", 0.0))
+        if theme_id == primary_theme:
+            doc["boosted_score"] = base_score + 0.08
+        elif theme_id in secondary_themes:
+            doc["boosted_score"] = base_score + 0.04
+        else:
+            doc.setdefault("boosted_score", base_score)
+    docs.sort(key=lambda item: item.get("boosted_score", item.get("score", 0.0)), reverse=True)
+    return docs
