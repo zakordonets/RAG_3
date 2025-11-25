@@ -1,23 +1,23 @@
 page_type_boosts:
-  overview: 1.4
-  howto: 1.2
-  faq: 1.2
+  overview: 1.15
+  howto: 1.1
+  faq: 1.05
   reference: 1.0
-  changelog: 0.85
+  changelog: 0.9
 
 section_boosts:
-  sdk: 1.1
+  sdk: 1.03
   agent: 1.0
-  supervisor: 1.0
-  admin: 1.0
-  api: 1.05
-  faq: 1.05
+  supervisor: 1.05
+  admin: 1.03
+  api: 1.02
+  faq: 1.02
 
 platform_boosts:
-  android: 1.15
-  ios: 1.15
-  web: 1.1
-  main: 1.05
+  android: 1.05
+  ios: 1.05
+  web: 1.03
+  main: 1.0
 
 url_patterns:
   overview:
@@ -36,7 +36,7 @@ url_patterns:
 title_keywords:
   overview:
     words: ["что такое", "обзор", "введение", "начало работы", "возможности"]
-    boost: 1.2
+    boost: 1.15
   technical:
     words: ["настройка", "конфигурация", "установка"]
     boost: 1.1
@@ -63,5 +63,10 @@ depth_penalty:
   factor: 0.95
 
 theme_boost:
-  primary_boost: 1.1
-  secondary_boost: 1.05
+  primary_boost: 1.08
+  secondary_boost: 1.03
+
+url_penalty:
+  bug_report:
+    paths: ["/bug_report"]
+    factor: 0.85

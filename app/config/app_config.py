@@ -81,6 +81,12 @@ class AppConfig:
     # Theme router
     theme_router_mode: str = os.getenv("THEME_ROUTER_MODE", "heuristic").lower()
 
+    # Query logging
+    query_log_enabled: bool = os.getenv("QUERY_LOG_ENABLED", "true").lower() in ("1", "true", "yes")
+    query_log_dir: str = os.getenv("QUERY_LOG_DIR", "logs")
+    query_log_max_candidates: int = int(os.getenv("QUERY_LOG_MAX_CANDIDATES", "20"))
+    query_log_text_prefix_len: int = int(os.getenv("QUERY_LOG_TEXT_PREFIX_LEN", "300"))
+
     # Telegram
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_poll_interval: float = float(os.getenv("TELEGRAM_POLL_INTERVAL", "1.0"))
