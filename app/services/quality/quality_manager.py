@@ -43,6 +43,53 @@ class UnifiedQualityManager:
     def _generate_interaction_id(self) -> str:
         return f"interaction_{uuid.uuid4().hex[:8]}_{int(datetime.utcnow().timestamp())}"
 
+    async def save_interaction_for_feedback(
+        self,
+        interaction_id: str,
+        query: str,
+        response: str,
+        contexts: List[str],
+        sources: List[str]
+    ) -> bool:
+        """
+        Сохраняет взаимодействие в БД для последующего feedback (без RAGAS оценки).
+
+        Args:
+            interaction_id: ID взаимодействия
+            query: Запрос пользователя
+            response: Ответ системы
+            contexts: Контексты из поиска
+            sources: URL источников
+
+        Returns:
+            True если сохранение успешно
+        """
+        if not CONFIG.quality_db_enabled:
+            return False
+
+        try:
+            interaction_data = QualityInteractionData(
+                interaction_id=interaction_id,
+                query=query,
+                response=response,
+                contexts=contexts,
+                sources=sources,
+                ragas_faithfulness=None,
+                ragas_context_precision=None,
+                ragas_answer_relevancy=None,
+                ragas_overall_score=None,
+                combined_score=None,
+                created_at=datetime.utcnow()
+            )
+
+            await quality_db.save_interaction(interaction_data)
+            logger.info(f"Interaction saved for feedback: {interaction_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save interaction for feedback: {e}")
+            return False
+
     async def evaluate_interaction(
         self,
         query: str,

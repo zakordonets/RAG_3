@@ -421,27 +421,60 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         metrics.record_query_duration("total", total_time)
         metrics.record_search_results("hybrid", len(candidates))
 
-        # Создаем quality interaction асинхронно в фоне (неблокирующе)
+        # Генерируем interaction_id для feedback (независимо от RAGAS)
         interaction_id = None
-        if CONFIG.enable_ragas_evaluation:
+        contexts = [doc.get("payload", {}).get("text", "") for doc in top_docs]
+        source_urls = [source.get("url", "") for source in answer_payload.get("sources", [])]
+
+        # Если включена БД качества - сохраняем взаимодействие для feedback
+        if CONFIG.quality_db_enabled:
             try:
-                # Подготавливаем данные для quality evaluation
-                contexts = [doc.get("payload", {}).get("text", "") for doc in top_docs]
-                source_urls = [source.get("url", "") for source in answer_payload.get("sources", [])]
                 interaction_id = quality_manager.generate_interaction_id()
 
-                # Запускаем RAGAS оценку в фоне через ThreadPoolExecutor
+                # Сохраняем взаимодействие для feedback в фоне
                 import concurrent.futures
-                import threading
+
+                def save_interaction_sync():
+                    """Сохраняет взаимодействие синхронно в отдельном event loop"""
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        result = loop.run_until_complete(quality_manager.save_interaction_for_feedback(
+                            interaction_id=interaction_id,
+                            query=normalized,
+                            response=answer_payload.get("answer_markdown", ""),
+                            contexts=contexts,
+                            sources=source_urls
+                        ))
+                        return result
+                    except Exception as e:
+                        logger.error(f"Failed to save interaction for feedback: {e}")
+                        return False
+                    finally:
+                        try:
+                            if not loop.is_closed():
+                                loop.close()
+                        except Exception:
+                            pass
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    executor.submit(save_interaction_sync)
+                    logger.info(f"Interaction saved for feedback (interaction_id={interaction_id})")
+
+            except Exception as e:
+                logger.warning(f"Failed to save interaction for feedback: {e}")
+
+        # Если включена RAGAS оценка - запускаем её в фоне
+        if CONFIG.enable_ragas_evaluation and interaction_id:
+            try:
+                import concurrent.futures
 
                 def run_ragas_evaluation():
                     """Запускает RAGAS оценку в отдельном event loop"""
                     try:
-                        # Создаем новый event loop для этого потока
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
 
-                        # Запускаем оценку
                         result = loop.run_until_complete(quality_manager.evaluate_interaction(
                             query=normalized,
                             response=answer_payload.get("answer_markdown", ""),
@@ -456,7 +489,6 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                     finally:
                         try:
                             if not loop.is_closed():
-                                # Аккуратно закрываем loop, завершая оставшиеся таски
                                 pending = asyncio.all_tasks(loop=loop)
                                 for task in pending:
                                     task.cancel()
@@ -466,14 +498,12 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                         except Exception as close_err:
                             logger.warning(f"Error while closing RAGAS loop: {close_err}")
 
-                # Запускаем в фоне
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(run_ragas_evaluation)
-                    # Не ждем результат - это должно быть неблокирующим
+                    executor.submit(run_ragas_evaluation)
                     logger.info(f"RAGAS evaluation started in background (interaction_id={interaction_id})")
 
             except Exception as e:
-                logger.warning(f"Failed to start quality interaction: {e}")
+                logger.warning(f"Failed to start RAGAS evaluation: {e}")
 
         answer_markdown = answer_payload.get("answer_markdown", "")
         sources = answer_payload.get("sources", [])

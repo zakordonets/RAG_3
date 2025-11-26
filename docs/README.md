@@ -111,8 +111,9 @@ make test-unit
 - 🚦 [Monitoring Quickstart](monitoring_quickstart.md) - Быстрый старт мониторинга
 - 📈 [Grafana Quality Dashboard](grafana_quality_dashboard.md) - Dashboard для мониторинга качества
 
-### Система качества RAGAS
-- 🎯 [RAGAS Quality System](ragas_quality_system.md) - Полное описание системы качества
+### Система качества
+- 📊 **[Quality Evaluation Guide](quality_evaluation_guide.md)** - **Основное руководство по оценке качества v2.0** ⭐
+- 🎯 [RAGAS Quality System](ragas_quality_system.md) - Техническое описание RAGAS
 - 🚀 [RAGAS Quickstart](ragas_quickstart.md) - Быстрый старт с RAGAS
 - 📖 [RAGAS README](README_RAGAS.md) - Основная информация о RAGAS
 
@@ -229,8 +230,9 @@ docs/
 │   └── grafana_quality_dashboard.md
 │
 ├── 🎯 КАЧЕСТВО
-│   ├── ragas_quality_system.md     # Система качества
-│   ├── ragas_quickstart.md        # Быстрый старт RAGAS
+│   ├── quality_evaluation_guide.md # Основное руководство v2.0 ⭐
+│   ├── ragas_quality_system.md     # Техническое описание RAGAS
+│   ├── ragas_quickstart.md         # Быстрый старт RAGAS
 │   └── README_RAGAS.md
 │
 ├── 📝 СПРАВОЧНИКИ
