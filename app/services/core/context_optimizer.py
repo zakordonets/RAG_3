@@ -13,6 +13,7 @@
 - Умная обрезка текста с сохранением важных частей и Markdown-структуры
 - Резервирование токенов под ответ LLM
 - Специальная обработка списочных запросов
+- Long Context Reorder для оптимального внимания LLM (Lost in the Middle mitigation)
 """
 import re
 from typing import List, Dict, Any, Tuple, Optional
@@ -77,7 +78,13 @@ class ContextOptimizer:
         # 4. Оптимизируем размер чанков
         optimized_docs = self._optimize_chunk_sizes(documents[:target_docs], available_tokens, query)
 
-        # 5. Проверяем итоговый размер
+        # 5. Long Context Reorder — переставляем для оптимального внимания LLM
+        # Применяем только если документов больше 2 (иначе нет смысла)
+        if len(optimized_docs) > 2:
+            optimized_docs = self.reorder_for_attention(optimized_docs)
+            logger.info(f"Applied Long Context Reorder for {len(optimized_docs)} documents")
+
+        # 6. Проверяем итоговый размер
         total_tokens = sum(self._estimate_tokens(doc.get("payload", {}).get("text", ""))
                           for doc in optimized_docs)
 
@@ -272,6 +279,65 @@ class ContextOptimizer:
         # Улучшенная оценка: примерно 3.5 символа на токен для русского текста
         return int(len(text) / 3.5)
 
+    def reorder_for_attention(self, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Long Context Reorder: переставляет документы для оптимального внимания LLM.
+
+        LLM лучше "видит" начало и конец контекста — эффект "Lost in the Middle"
+        (Liu et al., 2023). Документы в середине контекста получают меньше внимания.
+
+        Алгоритм:
+        1. Сортируем документы по релевантности (score/boosted_score)
+        2. Распределяем: лучшие документы в начало и конец, средние — в середину
+
+        Пример для 5 документов по убыванию релевантности [1,2,3,4,5]:
+        Результат: [1, 3, 5, 4, 2] — топ-1 в начале, топ-2 в конце
+
+        Args:
+            documents: Список документов после reranking
+
+        Returns:
+            Переупорядоченный список документов
+        """
+        if len(documents) <= 2:
+            return documents
+
+        # Получаем score для сортировки
+        def get_score(doc: Dict[str, Any]) -> float:
+            return doc.get("boosted_score", doc.get("rrf_score", doc.get("score", 0.0)))
+
+        # Сортируем по убыванию релевантности
+        sorted_docs = sorted(documents, key=get_score, reverse=True)
+
+        n = len(sorted_docs)
+        reordered: List[Dict[str, Any]] = [None] * n  # type: ignore
+
+        # Распределяем документы: нечётные позиции от начала, чётные — от конца
+        # Это создаёт паттерн: [best, 3rd, 5th, ..., 6th, 4th, 2nd]
+        left_idx = 0
+        right_idx = n - 1
+
+        for i, doc in enumerate(sorted_docs):
+            if i % 2 == 0:
+                # Чётные индексы (0, 2, 4...) → начало списка
+                reordered[left_idx] = doc
+                left_idx += 1
+            else:
+                # Нечётные индексы (1, 3, 5...) → конец списка
+                reordered[right_idx] = doc
+                right_idx -= 1
+
+        # Логируем изменения для отладки
+        original_order = [get_score(d) for d in documents]
+        new_order = [get_score(d) for d in reordered]
+        logger.debug(
+            f"Long Context Reorder: {len(documents)} docs, "
+            f"original_scores={[f'{s:.3f}' for s in original_order[:5]]}, "
+            f"reordered_scores={[f'{s:.3f}' for s in new_order[:5]]}"
+        )
+
+        return reordered
+
     def _is_list_intent(self, query: str) -> bool:
         """
         Определяет, является ли запрос списочным (требующим перечисления).
@@ -385,3 +451,13 @@ context_optimizer = ContextOptimizer()
 def optimize_context(query: str, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Module-level proxy для совместимости с внешним API."""
     return context_optimizer.optimize_context(query, documents)
+
+
+def reorder_for_attention(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Module-level proxy для Long Context Reorder.
+
+    Может использоваться независимо от полной оптимизации контекста,
+    например, в orchestrator после auto_merge_neighbors.
+    """
+    return context_optimizer.reorder_for_attention(documents)

@@ -78,21 +78,35 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
     status = "success"
 
     try:
-        # 1. Query Processing
+        # 1. Query Processing (с Query Type Classification)
         qp_start = time.time()
         try:
             qp = process_query(message)
             normalized = qp["normalized_text"]
             boosts = qp.get("boosts", {})
             group_boosts = qp.get("group_boosts", {})
+
+            # Извлекаем стратегию retrieval на основе типа запроса
+            query_type = qp.get("query_type")
+            retrieval_strategy = qp.get("retrieval_strategy", {})
+            strategy_k = retrieval_strategy.get("k", 20)
+            strategy_rerank_top_n = retrieval_strategy.get("rerank_top_n", 6)
+            strategy_use_auto_merge = retrieval_strategy.get("use_auto_merge", True)
+
             qp_duration = time.time() - qp_start
-            logger.info(f"Query processed in {qp_duration:.2f}s")
+            logger.info(
+                f"Query processed in {qp_duration:.2f}s, "
+                f"type={query_type.value if query_type else 'unknown'}, "
+                f"strategy: k={strategy_k}, rerank={strategy_rerank_top_n}, auto_merge={strategy_use_auto_merge}"
+            )
             metrics.record_query_duration("query_processing", qp_duration)
             timings["query_processing"] = qp_duration
             log_data["request"].update({
                 "normalized": normalized,
                 "boosts": boosts,
                 "group_boosts": group_boosts,
+                "query_type": query_type.value if query_type else None,
+                "retrieval_strategy": retrieval_strategy,
             })
         except Exception as e:
             logger.error(f"Query processing failed: {e}")
@@ -205,20 +219,20 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         metrics.record_query_duration("embeddings", embedding_duration)
         timings["embeddings"] = embedding_duration
 
-        # 3. Hybrid Search
+        # 3. Hybrid Search (с параметрами из retrieval_strategy)
         try:
             search_start = time.time()
             candidates = hybrid_search(
                 q_dense,
                 q_sparse,
-                k=20,
+                k=strategy_k,  # Адаптивный k на основе типа запроса
                 boosts=boosts,
                 group_boosts=group_boosts,
                 routing_result=routing_result,
                 metadata_filter=theme_filter,
             )
             search_duration = time.time() - search_start
-            logger.info(f"Hybrid search in {search_duration:.2f}s")
+            logger.info(f"Hybrid search in {search_duration:.2f}s (k={strategy_k})")
             metrics.record_search_duration("hybrid", search_duration)
             metrics.record_query_duration("search", search_duration)
             timings["search"] = search_duration
@@ -230,7 +244,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
                 candidates = hybrid_search(
                     q_dense,
                     q_sparse,
-                    k=20,
+                    k=strategy_k,  # Используем тот же адаптивный k
                     boosts=boosts,
                     group_boosts=group_boosts,
                     routing_result=routing_result,
@@ -293,13 +307,14 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             text_prefix_len,
         )
 
-        # 5. Reranking
+        # 5. Reranking (с параметрами из retrieval_strategy)
         rerank_start = time.time()
         try:
             # Пакетная обработка reranker: batch_size=20, усечение текста до 384 симв.
-            top_docs = rerank(normalized, candidates, top_n=6, batch_size=20, max_length=384)  # Оптимизировано по Codex
+            # top_n адаптируется на основе типа запроса
+            top_docs = rerank(normalized, candidates, top_n=strategy_rerank_top_n, batch_size=20, max_length=384)
             rerank_duration = time.time() - rerank_start
-            logger.info(f"Rerank completed in {rerank_duration:.2f}s")
+            logger.info(f"Rerank completed in {rerank_duration:.2f}s (top_n={strategy_rerank_top_n})")
             metrics.record_query_duration("rerank", rerank_duration)
             timings["rerank"] = rerank_duration
         except Exception as e:
@@ -307,7 +322,7 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             logger.warning(f"Reranking failed after {rerank_duration:.2f}s: {e}, using original candidates")
             metrics.record_query_duration("rerank", rerank_duration)
             timings["rerank"] = rerank_duration
-            top_docs = candidates[:6]  # Согласованно с оптимизацией
+            top_docs = candidates[:strategy_rerank_top_n]  # Fallback с адаптивным top_n
 
         log_data["search"]["candidates_after_rerank"] = _prepare_log_candidates(
             top_docs,
@@ -315,8 +330,10 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
             text_prefix_len,
         )
 
-        # 5b. Авто-слияние соседних чанков на этапе выдачи
-        if CONFIG.retrieval_auto_merge_enabled and top_docs:
+        # 5b. Авто-слияние соседних чанков (учитываем strategy_use_auto_merge)
+        # Используем И CONFIG флаг И стратегию для максимальной гибкости
+        should_auto_merge = CONFIG.retrieval_auto_merge_enabled and strategy_use_auto_merge
+        if should_auto_merge and top_docs:
             try:
                 max_ctx_tokens = getattr(context_optimizer, "max_context_tokens", CONFIG.retrieval_auto_merge_max_tokens)
                 reserve = getattr(context_optimizer, "reserve_for_response", 0.35)
@@ -341,6 +358,9 @@ def handle_query(channel: str, chat_id: str, message: str) -> dict[str, Any]:
         else:
             log_data["context"]["auto_merge_before"] = len(top_docs) if top_docs else 0
             log_data["context"]["auto_merge_after"] = len(top_docs) if top_docs else 0
+            # Логируем причину пропуска auto_merge
+            if not strategy_use_auto_merge:
+                logger.debug(f"Auto-merge skipped by retrieval strategy (query_type={query_type.value if query_type else 'unknown'})")
 
         # 6. Context Optimization - управление размером токенов для LLM
         context_start = time.time()
