@@ -36,7 +36,7 @@ langchain-community==0.2.16
 langchain-core==0.2.38
 sqlalchemy==2.0.23
 alembic==1.13.1
-aiosqlite==0.19.0
+aiosqlite>=0.19.0
 pytest==8.3.2
 rank-bm25==0.2.2
 # Optional dependencies for Auto-Merge optimization

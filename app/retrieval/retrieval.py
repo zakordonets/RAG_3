@@ -85,7 +85,7 @@ if CACHETOOLS_AVAILABLE:
     logger.info(f"Using TTL cache (maxsize={CONFIG.retrieval_cache_maxsize}, ttl={CONFIG.retrieval_cache_ttl}s)")
 else:
     _doc_chunk_cache: Any = {}
-    logger.warning("Using simple dict cache without TTL (memory may grow over time)")
+    logger.debug("Using simple dict cache without TTL (install cachetools for TTL support)")
 
 
 def clear_chunk_cache():

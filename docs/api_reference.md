@@ -735,7 +735,16 @@ GET /v1/admin/quality/correlation
 
 ### POST /v1/admin/quality/feedback
 
-Сохранение пользовательского фидбека.
+Сохранение пользовательского фидбека к взаимодействию.
+
+**Описание:**
+- Положительная оценка (👍) - ответ полезный и правильный
+- Отрицательная оценка (👎) - ответ неполный, неточный или бесполезный
+- Опциональный текстовый комментарий
+
+**Требования:**
+- `QUALITY_DB_ENABLED=true` в конфигурации
+- База данных качества должна быть инициализирована
 
 #### Request
 
@@ -747,26 +756,33 @@ Content-Type: application/json
 **Body:**
 ```json
 {
-  "interaction_id": "uuid-1234",
-  "feedback_score": 1,
+  "interaction_id": "interaction_abc123_1699999999",
+  "feedback_type": "positive",
   "feedback_text": "Полезный ответ, спасибо!"
 }
 ```
 
 **Parameters:**
-- `interaction_id` (string, required): UUID взаимодействия
-- `feedback_score` (integer, required): Оценка (1 = 👍, -1 = 👎)
-- `feedback_text` (string, optional): Комментарий пользователя
+- `interaction_id` (string, required): UUID взаимодействия из поля `interaction_id` в ответе `/v1/chat/query`
+- `feedback_type` (string, required): Тип фидбека - `"positive"` (👍) или `"negative"` (👎)
+- `feedback_text` (string, optional): Текстовый комментарий пользователя (максимум 1000 символов)
 
 #### Response
 
 **Success (200 OK):**
 ```json
 {
-  "status": "success",
-  "interaction_id": "uuid-1234",
-  "feedback_saved": true,
-  "timestamp": "2025-10-09T10:00:00Z"
+  "message": "Feedback added successfully",
+  "interaction_id": "interaction_abc123_1699999999",
+  "feedback_type": "positive"
+}
+```
+
+**Error (400 Bad Request):**
+```json
+{
+  "error": "missing_fields",
+  "message": "interaction_id and feedback_type are required"
 }
 ```
 
@@ -776,6 +792,36 @@ Content-Type: application/json
   "error": "interaction_not_found",
   "message": "Interaction with provided ID not found"
 }
+```
+
+**Error (500 Internal Server Error):**
+```json
+{
+  "error": "failed_to_add_feedback",
+  "message": "Failed to add feedback"
+}
+```
+
+**Примеры использования:**
+
+```bash
+# Положительная оценка
+curl -X POST http://localhost:9000/v1/admin/quality/feedback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "interaction_id": "interaction_abc123_1699999999",
+    "feedback_type": "positive",
+    "feedback_text": "Отличный ответ!"
+  }'
+
+# Отрицательная оценка
+curl -X POST http://localhost:9000/v1/admin/quality/feedback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "interaction_id": "interaction_abc123_1699999999",
+    "feedback_type": "negative",
+    "feedback_text": "Не хватает деталей"
+  }'
 ```
 
 ## Error Handling

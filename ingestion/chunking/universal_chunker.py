@@ -22,7 +22,7 @@ try:
     BM25_AVAILABLE = True
 except ImportError:
     BM25_AVAILABLE = False
-    logger.warning("rank_bm25 не установлен, semantic packing будет отключен")
+    logger.debug("rank_bm25 не установлен, semantic packing будет отключен (опциональная зависимость)")
 
 # BGE-M3 модель не используется в fallback токенизаторе
 
