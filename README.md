@@ -89,7 +89,7 @@ python adapters/telegram/polling.py
 | Возможность | Технология | Статус |
 |-------------|------------|--------|
 | **Гибридный поиск** | BGE-M3 dense + sparse + RRF | ✅ Production |
-| **Multi-LLM** | YandexGPT + GPT-5 + Deepseek | ✅ Production |
+| **Multi-LLM** | YandexGPT + GigaChat + GPT-5 + Deepseek | ✅ Production |
 | **Adaptive Chunking** | 150-300 токенов (оптимизировано) | ✅ Production |
 | **Quality Control** | RAGAS + User Feedback | ✅ Production |
 | **Monitoring** | Prometheus + Grafana | ✅ Production |
@@ -130,7 +130,7 @@ Hybrid Search (Qdrant RRF fusion)
     ↓
 Reranking (BGE-reranker-v2-m3)
     ↓
-LLM Generation (YandexGPT → GPT-5 → Deepseek)
+LLM Generation (YandexGPT → GigaChat → GPT-5 → Deepseek)
     ↓
 Response + Quality Evaluation (RAGAS)
 ```

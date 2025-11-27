@@ -72,6 +72,15 @@ class AppConfig:
     gpt5_api_url: str = os.getenv("GPT5_API_URL", "")
     gpt5_api_key: str = os.getenv("GPT5_API_KEY", "")
     gpt5_model: str = os.getenv("GPT5_MODEL", "")
+    gigachat_client_id: str = os.getenv("GIGACHAT_CLIENT_ID", "")
+    gigachat_client_secret: str = os.getenv("GIGACHAT_CLIENT_SECRET", "")
+    gigachat_scope: str = os.getenv("GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
+    gigachat_model: str = os.getenv("GIGACHAT_MODEL", "GigaChat:latest")
+    gigachat_timeout: int = int(os.getenv("GIGACHAT_TIMEOUT", "60"))
+    gigachat_api_url: str = os.getenv("GIGACHAT_API_URL", "https://gigachat.devices.sberbank.ru/api/v1")
+    gigachat_auth_url: str = os.getenv("GIGACHAT_AUTH_URL", "https://ngw.devices.sberbank.ru:9443/api/v2/oauth")
+    gigachat_verify_ssl: bool = os.getenv("GIGACHAT_VERIFY_SSL", "true").lower() in ("1", "true", "yes")
+    gigachat_ca_bundle: str = os.getenv("GIGACHAT_CA_BUNDLE", "")
     yandex_api_url: str = os.getenv("YANDEX_API_URL", "https://llm.api.cloud.yandex.net/foundationModels/v1")
     yandex_catalog_id: str = os.getenv("YANDEX_CATALOG_ID", "")
     yandex_api_key: str = os.getenv("YANDEX_API_KEY", "")
@@ -224,6 +233,9 @@ class AppConfig:
 
         if self.qdrant_scroll_batch_size <= 0:
             errors.append("qdrant_scroll_batch_size must be positive")
+
+        if self.gigachat_timeout <= 0:
+            errors.append("gigachat_timeout must be positive")
 
         # Validate adaptive thresholds
         if self.adaptive_short_threshold <= 0 or self.adaptive_long_threshold <= 0:

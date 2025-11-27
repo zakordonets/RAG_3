@@ -57,6 +57,14 @@ def load_llm_router(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         gpt5_api_url="https://gpt5",
         gpt5_api_key="",
         gpt5_model="model",
+        gigachat_client_id="id",
+        gigachat_client_secret="secret",
+        gigachat_scope="GIGACHAT_API_PERS",
+        gigachat_model="GigaChat:latest",
+        gigachat_timeout=60,
+        gigachat_api_url="https://gigachat",
+        gigachat_auth_url="https://ngw",
+        gigachat_verify_ssl=True,
         connectors_telegram_format="HTML",
         telegram_html_allowlist="",
     )
@@ -65,6 +73,15 @@ def load_llm_router(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     utils_stub = ModuleType("app.utils")
     utils_stub.write_debug_event = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
     stubs["app.utils"] = utils_stub
+
+    gigachat_stub = ModuleType("app.services.core.gigachat_client")
+
+    class _FakeGigaChat:
+        def chat_completion(self, *_args, **_kwargs):
+            return "stubbed response"
+
+    gigachat_stub.get_gigachat_client = lambda: _FakeGigaChat()  # type: ignore[attr-defined]
+    stubs["app.services.core.gigachat_client"] = gigachat_stub
 
     for name, module in stubs.items():
         monkeypatch.setitem(sys.modules, name, module)

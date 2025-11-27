@@ -11,6 +11,7 @@ from loguru import logger
 from app.services.core.llm_router import (
     DEFAULT_LLM,
     _yandex_complete,
+    _gigachat_complete,
     _gpt5_complete,
     _deepseek_complete,
 )
@@ -296,7 +297,7 @@ def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Opt
 
     Порядок:
     - собирает список доступных тематик и формирует промпт с их описанием;
-    - вызывает провайдеры LLM по очереди (DEFAULT_LLM → GPT5 → DEEPSEEK);
+    - вызывает провайдеры LLM по очереди (DEFAULT_LLM → YANDEX → GIGACHAT → GPT5 → DEEPSEEK);
     - ожидает строгий JSON‑ответ (список объектов с theme_id и score);
     - при успехе строит ThemeRoutingResult, аналогичный эвристике;
     - при любой ошибке логирует предупреждение и возвращает None
@@ -325,7 +326,14 @@ def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Opt
             "Ответь JSON списком вида [{\"theme_id\": \"...\", \"score\": 0.0-1.0, \"reason\": \"...\"}]."
         )
 
-        order = [DEFAULT_LLM, "GPT5", "DEEPSEEK"]
+        preferred_order = [DEFAULT_LLM, "YANDEX", "GIGACHAT", "GPT5", "DEEPSEEK"]
+        order: List[str] = []
+        seen: set[str] = set()
+        for provider in preferred_order:
+            provider_upper = str(provider).upper()
+            if provider_upper not in seen:
+                seen.add(provider_upper)
+                order.append(provider_upper)
         raw_answer = None
         last_provider = None
         for provider in order:
@@ -333,6 +341,8 @@ def _try_llm_routing(query: str, user_metadata: Optional[Dict[str, Any]]) -> Opt
                 last_provider = provider
                 if provider == "YANDEX":
                     raw_answer = _yandex_complete(prompt, max_tokens=400, temperature=0.0, top_p=0.9, system_prompt=system_prompt)
+                elif provider == "GIGACHAT":
+                    raw_answer = _gigachat_complete(prompt, max_tokens=400, temperature=0.0, top_p=0.9, system_prompt=system_prompt)
                 elif provider == "GPT5":
                     raw_answer = _gpt5_complete(prompt, max_tokens=400, system_prompt=system_prompt)
                 else:

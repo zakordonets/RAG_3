@@ -2,7 +2,7 @@
 LLM Router - маршрутизатор для работы с различными LLM провайдерами
 
 Модуль обеспечивает единообразный интерфейс для работы с разными LLM провайдерами
-(Yandex GPT, GPT-5, DeepSeek) с автоматическим fallback'ом при недоступности.
+(Yandex GPT, GigaChat, GPT-5, DeepSeek) с автоматическим fallback'ом при недоступности.
 
 Основные функции:
 - Генерация ответов с использованием контекста документов
@@ -21,6 +21,7 @@ import requests
 from app.config import CONFIG
 from loguru import logger
 from app.utils import write_debug_event
+from app.services.core.gigachat_client import get_gigachat_client
 
 try:
     from app.utils.tokenizer import count_tokens, truncate_to_tokens  # type: ignore
@@ -407,6 +408,38 @@ def _deepseek_complete(prompt: str, max_tokens: int = 800, system_prompt: Option
     return text
 
 
+def _gigachat_complete(
+    prompt: str,
+    max_tokens: int = 800,
+    system_prompt: Optional[str] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+) -> str:
+    """
+    Генерирует ответ через GigaChat SDK.
+
+    Args:
+        prompt: Пользовательский промпт
+        max_tokens: Максимальное количество токенов
+        system_prompt: Системный промпт
+        temperature: Температура генерации
+        top_p: Top-p параметр
+
+    Returns:
+        Сгенерированный текст ответа
+    """
+    messages = _build_messages(prompt, system_prompt, content_key="content")
+    client = get_gigachat_client()
+    text = client.chat_completion(
+        messages,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
+    logger.debug(f"LLM[GIGACHAT] raw len={len(text)} preview={text[:200]!r}")
+    return text
+
+
 def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Генерирует ответ на основе контекста документов и возвращает структуру
@@ -449,7 +482,14 @@ def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[
         f"Ссылки на источники:\n{sources_block}"
     )
 
-    order = [DEFAULT_LLM, "GPT5", "DEEPSEEK"]
+    preferred_order = [DEFAULT_LLM, "YANDEX", "GIGACHAT", "GPT5", "DEEPSEEK"]
+    order: List[str] = []
+    seen: set[str] = set()
+    for provider in preferred_order:
+        provider_upper = str(provider).upper()
+        if provider_upper not in seen:
+            seen.add(provider_upper)
+            order.append(provider_upper)
     logger.info(
         f"LLM Router: mode={mode}, providers={' -> '.join(order)}, "
         f"context_docs={len(context)}, sources={len(sources)}"
@@ -470,6 +510,13 @@ def generate_answer(query: str, context: List[Dict[str, Any]], policy: Optional[
             )
             if provider == "YANDEX":
                 answer = _yandex_complete(
+                    prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
+            elif provider == "GIGACHAT":
+                answer = _gigachat_complete(
                     prompt,
                     system_prompt=system_prompt,
                     temperature=temperature,
